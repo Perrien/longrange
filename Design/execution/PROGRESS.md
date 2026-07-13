@@ -14,7 +14,11 @@
 | 0.1 | DONE | 2026-07-13 | 7d779b5 | pristine BTK WASM built under emscripten 6.0.2 (no build-only patches needed). Verified module COMPUTES via Node: `Conversions.yardsToMeters(100)`=91.44, `moaToMrad(1)`=0.290888, `fpsToMps(2700)`=823.0. Browser ballistic-calc check is OWNER-SIDE (agent can't bind a localhost server — see capabilities table); **owner confirmed ballistic-calc runs correctly in-browser on the 6.0.2 build (2026-07-13)**. Node function-call proof satisfies "Done when". Values are float32-precision. |
 | 0.2 | DONE | 2026-07-13 | 04e267f | `GameBuild/engine/` created as owned copy of BTK core (src/, include/, CMakeLists.txt, LICENSE.BTK, README.md) from BTK commit `29d43c1` (`29d43c13f4945cb9caf4e73d2041c22645ebf4e7`, 2026-07-07) — the oracle version for task 0.7. Removed `copy_web_files` target per task; `web/` not copied. `emmake make -j` builds clean under emscripten 6.0.2 → `GameBuild/engine/build-wasm/ballistics_toolkit_wasm.js` (244417 B, loads+computes in Node). `BallisticsToolkit/` untouched (clean). `build-wasm/` git-ignored. |
 | 0.3 | DONE | 2026-07-13 | 052193c | Native (non-emscripten) CMake path added to `GameBuild/engine/CMakeLists.txt`: `if(EMSCRIPTEN)` keeps the WASM build byte-identical (244417 B, verified), `else()` builds `ballistics_core` static lib (all sources minus `bindings.cpp`) + GoogleTest suite. Native build uses plain `cmake`→Apple clang (independent of emscripten even though emcc is on PATH); `-Werror` dropped natively (newer host clang; we don't edit copied sources). 5 ctests green: 3× Conversions round-trips, ISA atmosphere spot values, 6.5CM computeZero@100m. Rendering sources compile natively (embind guarded by `#ifdef __EMSCRIPTEN__`). `build-native/` git-ignored; BTK untouched. |
-| 0.4 | TODO | | | ready — npm unblocked; no further installs needed |
+| 0.4 | split | | | oversized → split into 0.4a–d (protocol §3). Owner approved latest-stable pins + "do 0.4a then stop" (2026-07-13) |
+| 0.4a | DONE | 2026-07-13 | (pending) | `GameBuild/app/` scaffolded (Vite+React+TS, minimal app). `npm install` clean (422 pkgs, 0 vuln, no peer conflicts). Verified: `npm run build`→`dist/` (190 KB js), `tsc --noEmit` clean, vitest 1/1. `npm run dev` visual check is OWNER-SIDE (agent can't bind dev-server socket). Pinned deps (exact) recorded below. `node_modules/`+`dist/` git-ignored; `package-lock.json` tracked. |
+| 0.4b | TODO | | | units service (MIL/MOA/metric/imperial) + Vitest tests |
+| 0.4c | TODO | | | engine-bridge: load engine WASM, solveTrajectory/computeZero, `.delete()` discipline |
+| 0.4d | TODO | | | debug drop/windage table (MIL+MOA, m+yd) + `GameBuild/validation/loads.json` + ≥5-row BTK numeric match |
 | 0.5 | TODO | | | |
 | 0.6 | TODO | | | |
 | 0.7 | TODO | | | |
@@ -24,6 +28,13 @@
 
 ## Increment 1 — First shippable slice
 *(rows added when Increment 0 exits)*
+
+## App dependency pins (GameBuild/app, task 0.4a — owner-approved latest-stable 2026-07-13)
+`dependencies`: react 19.2.7, react-dom 19.2.7, three 0.185.1, zustand 5.0.14, idb 8.0.3.
+`devDependencies`: vite 8.1.4, @vitejs/plugin-react 6.0.3, vite-plugin-pwa 1.3.0,
+vitest 4.1.10, typescript 7.0.2, @types/react 19.2.17, @types/react-dom 19.2.3,
+@types/three 0.185.1, jsdom 29.1.1. Exact pins (no `^`); full tree locked in
+`GameBuild/app/package-lock.json`. Node v26.5.0, npm 11.17.0.
 
 ## Environment capabilities (filled by task 0.0)
 | Capability | Status | Checked | Note |
