@@ -11,7 +11,7 @@
 | Task | Status | Date | Commit | Note |
 |---|---|---|---|---|
 | 0.0 | DONE | 2026-07-13 | 9263b65 | env preflight done; git repo initialized at root (was not a repo before). See capabilities table + owner queue below |
-| 0.1 | DONE | 2026-07-13 | 7d779b5 | pristine BTK WASM built under emscripten 6.0.2 (no build-only patches needed). Verified module COMPUTES via Node: `Conversions.yardsToMeters(100)`=91.44, `moaToMrad(1)`=0.290888, `fpsToMps(2700)`=823.0. Browser ballistic-calc check skipped (offline + headless); Node function-call proof is stronger. Values are float32-precision. |
+| 0.1 | DONE | 2026-07-13 | 7d779b5 | pristine BTK WASM built under emscripten 6.0.2 (no build-only patches needed). Verified module COMPUTES via Node: `Conversions.yardsToMeters(100)`=91.44, `moaToMrad(1)`=0.290888, `fpsToMps(2700)`=823.0. Browser ballistic-calc check is OWNER-SIDE (agent can't bind a localhost server — see capabilities table); Node function-call proof satisfies "Done when". Values are float32-precision. |
 | 0.2 | TODO | | | ready — needs no further installs |
 | 0.3 | TODO | | | tools available (cmake 4.4.0 + GoogleTest 1.17.0); native ctest path needs no emsdk |
 | 0.4 | TODO | | | ready — npm unblocked; no further installs needed |
@@ -38,6 +38,7 @@
 | node | PASS | 2026-07-13 | v26.5.0 (Homebrew, `/opt/homebrew/bin/node`). |
 | npm | **PASS (RESOLVED 2026-07-13)** | 2026-07-13 | v11.17.0. The `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` failure is **fixed** — see the resolved-escalation writeup below. `npm ping` → PONG, `npm view react version` → 19.2.7, real registry fetches work; `npm install` will work. |
 | python3 | PASS | 2026-07-13 | 3.13.2. |
+| listening sockets (localhost servers) | **FAIL (agent sandbox)** | 2026-07-13 | The agent process **cannot bind a listening TCP socket** — `socket.bind()` on both `127.0.0.1:8001` and `0.0.0.0:8001` returns `PermissionError [Errno 1] Operation not permitted` (sandbox seatbelt, not port-in-use). ⇒ **any verification that requires serving the app to a browser is OWNER-SIDE** (owner runs the server in a normal Terminal, not via the `!` prefix which shares this sandbox). Affects task 0.1's browser check (already satisfied via Node instead), and will affect 0.6 (PWA offline reload) and 0.9 (touch-aiming). Command for the owner: `python3 -m http.server 8001 --directory <path>` then open in browser. |
 | git | PASS (local) / github 403 | 2026-07-13 | 2.50.1, user.name/email configured. github.com still blocked by sandbox domain allowlist (only matters for the emsdk git-clone route + task 0.5 push). |
 
 **Root repo status:** this directory was **not a git repository** before 2026-07-13
