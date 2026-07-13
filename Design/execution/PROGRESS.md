@@ -14,7 +14,7 @@
 | 0.1 | DONE | 2026-07-13 | 7d779b5 | pristine BTK WASM built under emscripten 6.0.2 (no build-only patches needed). Verified module COMPUTES via Node: `Conversions.yardsToMeters(100)`=91.44, `moaToMrad(1)`=0.290888, `fpsToMps(2700)`=823.0. Browser ballistic-calc check skipped (offline + headless); Node function-call proof is stronger. Values are float32-precision. |
 | 0.2 | TODO | | | ready — needs no further installs |
 | 0.3 | TODO | | | tools available (cmake 4.4.0 + GoogleTest 1.17.0); native ctest path needs no emsdk |
-| 0.4 | TODO | 2026-07-13 | — | **npm unblocked**; ready |
+| 0.4 | TODO | | | ready — npm unblocked; no further installs needed |
 | 0.5 | TODO | | | |
 | 0.6 | TODO | | | |
 | 0.7 | TODO | | | |
@@ -28,9 +28,9 @@
 ## Environment capabilities (filled by task 0.0)
 | Capability | Status | Checked | Note |
 |---|---|---|---|
-| general internet (registry.npmjs.org, github.com) | FAIL | 2026-07-13 | `curl -sI https://registry.npmjs.org` and `git ls-remote` to github.com both return HTTP 403 from a local sandbox proxy ("Apple Claude Code security sandbox", `HTTPS_PROXY=http://localhost:4373`), not a DNS/network-down failure — these domains are simply not on the sandbox's allowlist yet. |
-| npm registry (npm.apple.com, configured default) | FAIL | 2026-07-13 | `npm ping` → `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`. `curl` to the same host succeeds (200) using the system trust store, but Node's own TLS stack gets `EPERM` on a direct `https.get` — looks like the sandbox permits `curl` but not raw Node socket/TLS access to this host yet. `NODE_EXTRA_CA_CERTS` is set (`/Users/analyst/.claude/apple/certs/bundle.pem`, exists) but doesn't fix it, consistent with a permission block rather than a cert-trust problem. |
-| git remote (push/fetch) | FAIL (untested push) | 2026-07-13 | Only tested via `BallisticsToolkit/` clone: `git ls-remote origin` → 403 (same sandbox proxy). Root repo has no remote configured yet (it was not a git repo at all until this session — now `git init` done, see task 0.0 note). |
+| general internet (registry.npmjs.org, github.com) | FAIL (not blocking) | 2026-07-13 | Public `registry.npmjs.org` / `github.com` still return HTTP 403 from the local sandbox proxy ("Apple Claude Code security sandbox", `HTTPS_PROXY=http://localhost:4373`) — not a DNS/network-down failure, just not on the allowlist. **Not currently blocking anything:** npm installs go through the internal mirror (`npm.apple.com`, works — see npm row), and the owner pushes to GitHub owner-side. |
+| npm registry (npm.apple.com, configured default) | **PASS (resolved 2026-07-13)** | 2026-07-13 | Initial `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` failure is **fixed** via `npm config set cafile` — full writeup in Resolved escalations. (Same subject as the `npm` row below.) |
+| git remote (push/fetch) | PASS (owner-side) | 2026-07-13 | Owner created the GitHub repo and pushed `main` (CLAUDE.md, .gitignore, Design/) successfully on 2026-07-13. Pushing is done **owner-side** — github.com is 403-blocked from the agent sandbox, so the agent cannot `git push` directly. |
 | emcc / emsdk | **PASS (emscripten 6.0.2)** | 2026-07-13 | Installed via `brew install emscripten` per owner decision (6.0.2 replaces the 4.0.17 pin — see decisions log). Homebrew's postinstall failed to write the toolchain config, so the agent fixed `/opt/homebrew/Cellar/emscripten/6.0.2/libexec/.emscripten`: set `LLVM_ROOT=/opt/homebrew/opt/emscripten/libexec/llvm/bin`, `BINARYEN_ROOT=/opt/homebrew/opt/emscripten/libexec/binaryen` (were `/usr/bin`,`/usr/local`). Smoke test: `emcc t.cpp -o t.js` + `node t.js` → `wasm ok: 42`. `emcc`/`emcmake`/`emmake` all on PATH. |
 | cmake ≥3.16 | **PASS** | 2026-07-13 | Owner ran `brew install cmake` → 4.4.0. `make` 3.81 and `g++`/`clang` (Apple clang 21, Xcode CLT) also present — native build path is now viable once GoogleTest wiring (0.3) is attempted. |
 | GoogleTest | **PASS** | 2026-07-13 | Owner ran `brew install googletest` → 1.17.0. No CLI binary (`googletest --version` doesn't exist — that's expected, GTest is a library not a tool); confirmed present via `find_package(GTest)` config at `/opt/homebrew/lib/cmake/GTest/GTestConfig.cmake` and static libs at `/opt/homebrew/lib/libgtest*.a`. |
@@ -40,7 +40,13 @@
 | python3 | PASS | 2026-07-13 | 3.13.2. |
 | git | PASS (local) / github 403 | 2026-07-13 | 2.50.1, user.name/email configured. github.com still blocked by sandbox domain allowlist (only matters for the emsdk git-clone route + task 0.5 push). |
 
-**Root repo status:** this directory was **not a git repository** before this session (only the nested `BallisticsToolkit/` clone had its own `.git`). Ran `git init` at `/Users/analyst/CCode/LongRange`, added a root `.gitignore` (ignores `BallisticsToolkit/` itself — it stays a separately-versioned nested clone/oracle, plus standard build/node_modules/OS noise), and committed the existing docs tree as a baseline (`9263b65`).
+**Root repo status:** this directory was **not a git repository** before 2026-07-13
+(only the nested `BallisticsToolkit/` clone had its own `.git`). Ran `git init` at
+`/Users/analyst/CCode/LongRange`, added a root `.gitignore`, and committed a baseline
+(`9263b65`). Repo now tracks **only `CLAUDE.md` + `Design/`**; `BallisticsToolkit/`,
+`Documentation/`, and `Wiki/` are git-ignored and were scrubbed from history (they
+were briefly in the initial baseline before the scrub — see decisions log). Owner has
+pushed `main` to GitHub.
 
 ## Owner install queue
 *(agent adds exact commands here when a needed install fails; owner marks done)*
@@ -48,7 +54,10 @@
 **All installs complete.** cmake 4.4.0, GoogleTest 1.17.0, emscripten 6.0.2, npm
 (via cafile fix) — nothing outstanding.
 
-- **`git push`** — no remote configured yet; not needed until task 0.5 (CI). Re-queue then.
+- **`git push`** — DONE owner-side (remote configured, `main` pushed 2026-07-13).
+  Future pushes remain owner-side (github.com blocked from the agent sandbox); CI
+  (task 0.5) runs on GitHub's own infra, so its workflow file is written locally and
+  the owner pushes it.
 
 ## Resolved escalations
 
