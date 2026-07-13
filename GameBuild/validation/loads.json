@@ -1,0 +1,42 @@
+{
+  "$comment": "Reference loads for validation + the debug screen (task 0.4d; extended to >=6 loads in task 0.7). Box values are representative manufacturer catalog specs. The `si` block is the authoritative solve input (exact conversions: 1 gr = 0.00006479891 kg, 1 in = 0.0254 m, 1 fps = 0.3048 m/s). Spin rate is derived, not stored: spinRateRadPerSec = 2*PI*muzzleVelocityMps/twistM.",
+  "conditions": {
+    "$comment": "ISA sea level, 50% humidity, pressure derived from altitude (0 => ISA). Identical on both sides of every comparison.",
+    "atmosphere": { "temperatureK": 288.15, "altitudeM": 0, "humidity": 0.5, "pressurePa": 0 },
+    "zeroRangeM": 100,
+    "maxRangeM": 1000,
+    "stepM": 100,
+    "windCases": [
+      { "name": "no wind", "windVec": { "x": 0, "y": 0, "z": 0 } },
+      {
+        "name": "10 mph full-value crosswind (from 9 o'clock, blowing +x/left-to-right)",
+        "windVec": { "x": 4.4704, "y": 0, "z": 0 }
+      }
+    ]
+  },
+  "loads": [
+    {
+      "id": "65cm-140-match",
+      "name": "6.5 Creedmoor 140 gr match (reference)",
+      "box": {
+        "bulletWeightGr": 140,
+        "diameterIn": 0.264,
+        "lengthIn": 1.392,
+        "bc": 0.326,
+        "dragModel": "G7",
+        "muzzleVelocityFps": 2710,
+        "twistInPerTurn": 8,
+        "source": "representative catalog values for a 140 gr 6.5 mm match load (e.g. Hornady 140 ELD Match class)"
+      },
+      "si": {
+        "massKg": 0.0090718474,
+        "diameterM": 0.0067056,
+        "lengthM": 0.0353568,
+        "bc": 0.326,
+        "dragModel": "G7",
+        "muzzleVelocityMps": 826.008,
+        "twistM": 0.2032
+      }
+    }
+  ]
+}

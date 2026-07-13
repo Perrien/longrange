@@ -1,5 +1,6 @@
-// Walking-skeleton root (LongRange task 0.4a). Replaced by the debug drop-table
-// screen in task 0.4d.
+// Root — currently the task-0.4d debug drop-table screen.
+import { DropTable } from './debug/DropTable';
+
 export function App() {
-  return <h1>LongRange — walking skeleton</h1>;
+  return <DropTable />;
 }

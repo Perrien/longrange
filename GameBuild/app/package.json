@@ -8,6 +8,7 @@
     "build": "node scripts/check-engine.mjs && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "validate:match": "node ../validation/match-check.mjs",
     "test": "node scripts/check-engine.mjs && vitest run",
     "test:watch": "node scripts/check-engine.mjs && vitest",
     "engine:build": "cd ../engine && emcmake cmake -S . -B build-wasm && emmake make -C build-wasm -j"
