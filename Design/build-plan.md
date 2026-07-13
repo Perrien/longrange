@@ -38,7 +38,7 @@ Emscripten CI pattern.
 
 - **Keep the C++/WASM ballistics engine as-is and extend it in place** for the
   Bucket-A physics (custom drag, McDrag, bullet core/shape → full stability, Coriolis,
-  incline). The engine source is copied into a new `engine/` directory that we own;
+  incline). The engine source is copied into a new `GameBuild/engine/` directory that we own;
   the pristine `BallisticsToolkit/` checkout stays untouched as the **golden-vector
   oracle**.
 - **Rebuild the presentation and game layer fresh** in TypeScript/React/Three.js,
@@ -204,7 +204,7 @@ AI-agent familiarity (execution reality), and fit to a 3D-scene-plus-HUD game.
 │   typed façade over embind API; owns WASM lifecycle; runs      │
 │   Monte-Carlo + batch solves in a Web Worker                   │
 ├────────────────────────────────────────────────────────────────┤
-│ engine/ — C++17 → WASM (owned copy of BTK core + Bucket A)     │
+│ GameBuild/engine/ — C++17 → WASM (owned copy of BTK core + Bucket A)     │
 │   RK2 point-mass solver · G1/G7 + custom Cd(Mach) drag · ISA   │
 │   atmosphere · curl-noise wind · spin drift · aero jump ·      │
 │   Miller Sg (+ full Sg later) · Coriolis · incline · McDrag ·  │
@@ -243,15 +243,15 @@ AI-agent familiarity (execution reality), and fit to a 3D-scene-plus-HUD game.
 ## 4. Engine reuse plan (keep / adapt / port / drop)
 
 **Repository move:** copy `BallisticsToolkit/{src,include,CMakeLists.txt}` into a new
-top-level `engine/` (with its own `bindings.cpp` and CMake), which the project owns
+top-level `GameBuild/engine/` (with its own `bindings.cpp` and CMake), which the project owns
 and extends. **`BallisticsToolkit/` itself is never modified** — it remains the
 pristine, runnable oracle (record its current commit hash in
-`validation/ORACLE_VERSION`). MIT license permits the copy; keep the license and
-attribution in `engine/`.
+`GameBuild/validation/ORACLE_VERSION`). MIT license permits the copy; keep the license and
+attribution in `GameBuild/engine/`.
 
 | BTK asset | Disposition |
 |---|---|
-| `src/ballistics/` + `include/ballistics/` (Bullet, Simulator, Trajectory — RK2 solver, G1/G7 Cd tables, zeroing) | **Keep** verbatim in `engine/`; extend for Bucket A (below) |
+| `src/ballistics/` + `include/ballistics/` (Bullet, Simulator, Trajectory — RK2 solver, G1/G7 Cd tables, zeroing) | **Keep** verbatim in `GameBuild/engine/`; extend for Bucket A (below) |
 | `src/physics/` (ISA atmosphere + speed of sound; curl-noise WindGenerator) | **Keep** verbatim |
 | `src/match/` (Monte-Carlo dispersion, targets, scoring stats) | **Keep**; extend scoring hooks for game rules (silhouette zones, FRH probability comes from hit stats) |
 | `src/rendering/` (steel-target reaction physics, impact detector — C++) | **Keep**; genuinely reusable target feel |
@@ -263,13 +263,13 @@ attribution in `engine/`.
 | `web/target-gen`, Boar/PrairieDog hunting modes | **Drop** (catalog §0.8 / §M) |
 | `.github/workflows/deploy.yml` (pinned emsdk 4.0.17 → Pages) | **Adapt** for the new repo layout (build engine WASM + Vite app) |
 
-**Bucket-A extensions land in `engine/` C++** (each gated on its spec article, §5):
+**Bucket-A extensions land in `GameBuild/engine/` C++** (each gated on its spec article, §5):
 
 1. **Custom drag (CDM):** extend `DragFunction` with `CUSTOM`; `Bullet` gains an
    optional owned `{mach, cd}` table; `interpolateCd` already does table lookup —
    route custom tables through the same interpolator. Anchor/validate on McCoy's
    measured .50 Ball M33 curve.
-2. **McDrag predictor:** new module `engine/src/ballistics/mcdrag.cpp` — geometry →
+2. **McDrag predictor:** new module `GameBuild/engine/src/ballistics/mcdrag.cpp` — geometry →
    Cd(Mach) table (feeds #1). Validate against McCoy Ch4 worked cases.
 3. **Bullet core & shape:** new `BulletDesign` type (layered densities → mass, CG,
    Ip/It) feeding BC/form factor and a **full** stability factor; keep simplified
@@ -284,7 +284,7 @@ attribution in `engine/`.
    resolves effective MV. No C++ change.
 
 **Oracle preservation:** golden vectors are always generated from the **pristine**
-`BallisticsToolkit/` build at `ORACLE_VERSION`. `engine/` must match the oracle
+`BallisticsToolkit/` build at `ORACLE_VERSION`. `GameBuild/engine/` must match the oracle
 exactly (within float tolerance) for every factor BTK implements, in every increment
 — Bucket-A features must be **additive and default-off** so the baseline diff stays
 clean. The four no-oracle features are validated against their spec articles instead
@@ -311,7 +311,7 @@ agent must satisfy before moving on.
 
 Goal: a walking skeleton that retires every existential risk.
 
-- Repo restructure: `engine/` (owned BTK copy), `app/` (Vite+React+TS), `validation/`
+- Repo restructure: `GameBuild/engine/` (owned BTK copy), `GameBuild/app/` (Vite+React+TS), `GameBuild/validation/`
   (harness + vectors), pristine `BallisticsToolkit/` untouched. CI builds engine WASM
   (pinned emsdk) + app, deploys to GitHub Pages.
 - Engine WASM loads in the app; typed bridge solves a trajectory; a debug screen
@@ -324,7 +324,7 @@ Goal: a walking skeleton that retires every existential risk.
 - **Touch-aiming spike:** minimal Three.js scene, scope overlay, drag-to-pan with
   magnification-scaled sensitivity, pinch zoom, fire button. This is the highest
   *design* risk (steel-sim is pointer-lock mouse); prove the feel early on the iPad.
-- Validation harness v0: Node script runs pristine-BTK WASM and `engine/` WASM on
+- Validation harness v0: Node script runs pristine-BTK WASM and `GameBuild/engine/` WASM on
   ~6 reference loads (.22 LR subsonic, .223, 6.5 CM, .308, .338 LM, .50 BMG) ×
   standard + non-standard atmospheres; diffs drop/drift/spin drift/TOF/retained
   velocity at 100 yd increments; CI-gated.
@@ -394,7 +394,7 @@ Goal: apply the skills where answers aren't labeled. Catalog: §E2, §E4, §G
 
 - **[GATE] Spec articles first:** `angle-incline-shooting.md` (Litz Ch4; McCoy §3.4)
   and `coriolis-effect.md` (Litz Ch7; McCoy §8.8) authored from the in-hand,
-  page-routed sources; formulas verified; then implement in `engine/` (default-off,
+  page-routed sources; formulas verified; then implement in `GameBuild/engine/` (default-off,
   additive), validate vs. article worked examples, then expose in gameplay.
 - **UKD mission ranges:** unlabeled, irregular placement; ranging via known-size
   props (§E4 set: cars, benches, doorways, signage, silhouettes — FM 23-10-grounded
@@ -448,7 +448,7 @@ Goal: the .50-past-a-mile promise, honestly modeled. Catalog: Bucket-A **CDM/McD
 - **[GATE] Spec articles first:** `custom-drag-models.md` (McCoy Ch4 + drag chapters;
   M33 measured curve) and `bullet-anatomy-stability.md` (Litz Ch17–18; McCoy §6.6)
   authored and verified; then implement CDM + McDrag + BulletDesign/full-Sg in
-  `engine/` (additive, default-off), validated against the articles + the **M33
+  `GameBuild/engine/` (additive, default-off), validated against the articles + the **M33
   anchor** (McDrag-predicted vs. measured curve within McCoy's stated error bands;
   trajectory from measured M33 CDM vs. McCoy's published tables).
 - **ELR gear:** .375/.408 CheyTac, .50 BMG on measured/custom drag; **canted-base
@@ -593,11 +593,11 @@ canonical game state), `meta` (schema version, timestamps), optional `vectors`
 
 The project's differentiator; runs continuously, not as a phase.
 
-1. **Golden-vector oracle diffing (factors BTK implements).** `validation/` harness
-   (Node) runs pristine-BTK WASM (at `ORACLE_VERSION`) and `engine/` WASM over a
+1. **Golden-vector oracle diffing (factors BTK implements).** `GameBuild/validation/` harness
+   (Node) runs pristine-BTK WASM (at `ORACLE_VERSION`) and `GameBuild/engine/` WASM over a
    fixed matrix: ≥6 loads (.22 LR → .50 BMG) × ≥3 atmospheres × wind cases; compares
    drop, windage, spin drift, TOF, retained velocity at 100 yd steps. Tolerance:
-   bit-similar is expected while `engine/` is unmodified; after Bucket-A additions
+   bit-similar is expected while `GameBuild/engine/` is unmodified; after Bucket-A additions
    (default-off), baseline runs must stay within float-noise (≤0.01%). **CI-gated on
    every engine change.**
 2. **Primary-source cross-checks.** McCoy .50 M33 (drag + trajectory tables) and the
@@ -644,14 +644,14 @@ The project's differentiator; runs continuously, not as a phase.
 ```
 LongRange/
 ├── BallisticsToolkit/        # PRISTINE — oracle only, never edited
-├── engine/                   # owned copy of BTK core + Bucket A
+├── GameBuild/engine/                   # owned copy of BTK core + Bucket A
 │   ├── src/  include/  bindings/  tests/        # tests = native CTest
 │   └── CMakeLists.txt        # emscripten + native targets
-├── app/                      # Vite + React + TS PWA
+├── GameBuild/app/                      # Vite + React + TS PWA
 │   ├── src/{ui,game,scene,engine-bridge,persistence,units}/
 │   ├── public/               # icons, manifest assets
 │   └── vite.config.ts        # vite-plugin-pwa, wasm asset handling
-├── validation/               # golden-vector harness + fixtures
+├── GameBuild/validation/               # golden-vector harness + fixtures
 │   ├── ORACLE_VERSION        # pinned BTK commit
 │   ├── vectors/  sources/    # oracle outputs; McCoy/Litz encoded cases
 │   └── run.mjs
@@ -681,11 +681,11 @@ Each is small, concrete, and has a binary success check.
 
 1. **Prove the BTK build.** Install pinned emsdk; `./build_web.sh -s`; open steel-sim
    locally. *Done when* steel-sim runs at `localhost:8001` from a local build.
-2. **Create `engine/` from the BTK core** (copy `src/`, `include/`, CMake; keep MIT
-   notice); build WASM unchanged. *Done when* `engine/` emits a loadable module whose
+2. **Create `GameBuild/engine/` from the BTK core** (copy `src/`, `include/`, CMake; keep MIT
+   notice); build WASM unchanged. *Done when* `GameBuild/engine/` emits a loadable module whose
    drop table for a 6.5 CM reference load matches pristine BTK's ballistic-calc
    output exactly.
-3. **Walking-skeleton app.** Vite+React+TS shell loads `engine/` WASM via the typed
+3. **Walking-skeleton app.** Vite+React+TS shell loads `GameBuild/engine/` WASM via the typed
    bridge; debug screen renders the drop table in MIL+MOA / m+yd. *Done when* the
    table matches step 2 and hot-reload works.
 4. **PWA on the iPad.** Manifest + Workbox precache (vendored Three.js — no CDN);
@@ -698,7 +698,7 @@ Each is small, concrete, and has a binary success check.
    *Done when* the owner can hold a simulated 1-MOA wobble on a 500 yd plate at 25×
    and calls it controllable.
 7. **Golden-vector harness v0.** Pin `ORACLE_VERSION`; generate vectors from pristine
-   BTK; diff `engine/` in CI. *Done when* CI fails on an intentionally-broken drag
+   BTK; diff `GameBuild/engine/` in CI. *Done when* CI fails on an intentionally-broken drag
    constant and passes when reverted.
 8. **Native engine tests.** Plain-CMake CTest target + first tests (conversions,
    atmosphere ISA points, zero convergence). *Done when* `ctest` passes locally

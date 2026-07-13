@@ -24,7 +24,7 @@ goals, features, and exit conditions and remains authoritative.
    tasks MUST be authoring the required Wiki article(s) from the page-routed
    sources in `Documentation/source-map.md`, following `Wiki/_Template.md`, every
    claim cited by PDF page, worked examples extracted into
-   `validation/sources/` harness cases. **No implementation task for a gated
+   `GameBuild/validation/sources/` harness cases. **No implementation task for a gated
    feature may precede its article being `reviewed`.** (Catalog §L. The owner
    reviews each article — they are also its learning material.)
 4. **Draft `Design/execution/increment-N.md`**: session-sized tasks (≤ ~400

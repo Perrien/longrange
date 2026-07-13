@@ -1,4 +1,4 @@
-# `engine/` — LongRange's owned copy of the BallisticsToolkit physics core
+# `GameBuild/engine/` — LongRange's owned copy of the BallisticsToolkit physics core
 
 This directory is a **vendored, owned copy** of the C++ physics core from
 [BallisticsToolkit](https://github.com/chasep255/BallisticsToolkit) (BTK), the
@@ -42,11 +42,11 @@ The C++ sources are unchanged from the upstream commit above.
 ## Building the WASM module
 
 ```
-mkdir engine/build-wasm && cd engine/build-wasm
+mkdir GameBuild/engine/build-wasm && cd GameBuild/engine/build-wasm
 emcmake cmake ..
 emmake make -j
 ```
 
-Emits `engine/build-wasm/ballistics_toolkit_wasm.js` — a single ES6 module with the
+Emits `GameBuild/engine/build-wasm/ballistics_toolkit_wasm.js` — a single ES6 module with the
 WASM embedded (`SINGLE_FILE=1`). Built/verified under Emscripten **6.0.2**.
 `build-wasm/` is git-ignored.

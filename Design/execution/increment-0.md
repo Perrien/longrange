@@ -26,7 +26,7 @@ and record PASS/FAIL in a new *Environment capabilities* table in `PROGRESS.md`:
 compiler, Node ≥ LTS, Python 3 (`--version` each). For every FAIL that a task in
 this increment needs, add an entry to the *Owner install queue* in `PROGRESS.md`
 with exact commands (emsdk 4.0.17 per `BallisticsToolkit/.github/workflows/
-deploy.yml`; `npm install` in `app/` once it exists; GoogleTest — see 0.3; git
+deploy.yml`; `npm install` in `GameBuild/app/` once it exists; GoogleTest — see 0.3; git
 push access). Batch them so the owner can do one install session.
 
 **Done when:** capabilities table filled in; owner install queue written (or
@@ -62,23 +62,23 @@ online) computes results from the locally built module.
 **Stop if:** the build fails on the pinned emsdk — escalate before trying other
 versions.
 
-## Task 0.2 — Create `engine/` (owned copy of the BTK core)
+## Task 0.2 — Create `GameBuild/engine/` (owned copy of the BTK core)
 
-**Do:** Create top-level `engine/`. Copy from `BallisticsToolkit/`: `src/`,
-`include/`, `CMakeLists.txt`; copy `LICENSE` → `engine/LICENSE.BTK` and add an
-attribution note in a new `engine/README.md` (what was copied, from which commit).
+**Do:** Create top-level `GameBuild/engine/`. Copy from `BallisticsToolkit/`: `src/`,
+`include/`, `CMakeLists.txt`; copy `LICENSE` → `GameBuild/engine/LICENSE.BTK` and add an
+attribution note in a new `GameBuild/engine/README.md` (what was copied, from which commit).
 Do **not** copy `web/` — and therefore **delete the `copy_web_files` custom
-target** from `engine/CMakeLists.txt` (it is `ALL` and would break every build
-without `web/`; `engine/` is our owned copy, so editing its CMake is normal work,
+target** from `GameBuild/engine/CMakeLists.txt` (it is `ALL` and would break every build
+without `web/`; `GameBuild/engine/` is our owned copy, so editing its CMake is normal work,
 not an oracle patch). Leave the C++ sources unchanged. Note: `SINGLE_FILE=1`
 means the build emits a single `.js` with the WASM embedded — that satisfies this
 task; whether to switch to a separate `.wasm` (smaller, streaming-compilable —
 better for the PWA) is decided at task 0.4 and logged either way. Record the
-source commit hash — it becomes `validation/ORACLE_VERSION` in task 0.7. Build
-WASM: `mkdir engine/build-wasm && cd engine/build-wasm && emcmake cmake .. &&
+source commit hash — it becomes `GameBuild/validation/ORACLE_VERSION` in task 0.7. Build
+WASM: `mkdir GameBuild/engine/build-wasm && cd GameBuild/engine/build-wasm && emcmake cmake .. &&
 emmake make -j`.
 
-**Done when:** `engine/build-wasm/` emits a loadable `ballistics_toolkit_wasm.js`
+**Done when:** `GameBuild/engine/build-wasm/` emits a loadable `ballistics_toolkit_wasm.js`
 module; a plain `emmake make` succeeds with no missing-directory errors;
 `BallisticsToolkit/` is untouched (`git status` clean there).
 **Stop if:** you feel the urge to "clean up" the C++ while copying. Don't —
@@ -86,13 +86,13 @@ CMake build plumbing is the only thing this task may change.
 
 ## Task 0.3 — Native build + first CTest suite
 
-**Do:** Add a native (non-Emscripten) CMake path to `engine/CMakeLists.txt`
+**Do:** Add a native (non-Emscripten) CMake path to `GameBuild/engine/CMakeLists.txt`
 (guard the embind/emscripten flags behind `if(EMSCRIPTEN)`; exclude
 `bindings.cpp` from the native target). Add GoogleTest — **offline note (protocol
 §4b):** `FetchContent` needs the network; prefer `find_package(GTest)` against an
 owner-installed copy, or have the owner drop a pinned googletest source tarball
-into `engine/third_party/` and use `add_subdirectory`. Queue whichever for the
-owner if 0.0 flagged no internet. Then `engine/tests/` with first tests: (a) `Conversions` round-trips
+into `GameBuild/engine/third_party/` and use `add_subdirectory`. Queue whichever for the
+owner if 0.0 flagged no internet. Then `GameBuild/engine/tests/` with first tests: (a) `Conversions` round-trips
 (yards↔m, MOA↔mrad↔rad, °F↔K); (b) ISA atmosphere spot values (15 °C sea level →
 ρ≈1.225 kg/m³, speed of sound ≈340.3 m/s); (c) `computeZero` converges for a 6.5 CM
 load at 100 m and the zeroed trajectory passes within tolerance of the aim point.
@@ -105,21 +105,21 @@ with a proposal first.
 
 ## Task 0.4 — Walking-skeleton app + typed engine bridge
 
-**Do:** Scaffold `app/` with Vite + React + TypeScript (npm; pinned deps: react,
+**Do:** Scaffold `GameBuild/app/` with Vite + React + TypeScript (npm; pinned deps: react,
 three, zustand, idb, vite-plugin-pwa, vitest — exact versions recorded in
 `PROGRESS.md`). **Offline note (protocol §4b):** `npm install` needs the registry
 — write the complete `package.json` (all deps, exact pinned versions) first, then
 queue a single `npm install` for the owner if 0.0 flagged no registry access;
-verify with `npm ls --depth=0` before proceeding. Create `app/src/engine-bridge/`: loads the `engine/` WASM module
+verify with `npm ls --depth=0` before proceeding. Create `GameBuild/app/src/engine-bridge/`: loads the `GameBuild/engine/` WASM module
 (modularized `BallisticsToolkit()` factory), exposes
 `solveTrajectory(load, atmosphere, windVec, opts) → TrajectoryTable` and
 `computeZero(...)`; **all embind `.delete()` calls live here**. Create
-`app/src/units/` (MIL/MOA/metric/imperial conversion service) with Vitest tests.
+`GameBuild/app/src/units/` (MIL/MOA/metric/imperial conversion service) with Vitest tests.
 Add a debug screen: inputs for a load, renders a drop/windage table at 100 m steps
 in **MIL and MOA, metric and imperial side-by-side**.
 
 **Done when:** `npm run dev` shows the debug table; for the 6.5 CM reference load
-(pick box values; record them in `validation/loads.json`) the table matches
+(pick box values; record them in `GameBuild/validation/loads.json`) the table matches
 pristine BTK's ballistic-calc output for identical inputs (manually compare ≥5
 rows; note them in the commit message); vitest green.
 **Stop if:** you need engine API not exposed by embind — log it; do not hack around
@@ -129,7 +129,7 @@ via `Module` internals.
 
 **Do:** `.github/workflows/ci.yml` at repo root: (1) native ctest; (2) WASM build
 (**pinned to the same Emscripten version used locally — 6.0.2 per the task 0.1
-decision**); (3) vitest; (4) `npm run build`; (5) deploy `app/dist` to GitHub
+decision**); (3) vitest; (4) `npm run build`; (5) deploy `GameBuild/app/dist` to GitHub
 Pages on `main`. Base-path config for Pages.
 
 **Done when:** CI green on a PR; the deployed URL serves the debug screen.
@@ -142,7 +142,7 @@ queue the push for the owner (protocol §4b.6) and have them report the CI resul
 **Do:** vite-plugin-pwa: manifest (name, icons incl. `apple-touch-icon`,
 `display: standalone`), Workbox precache of the full build **including the .wasm**
 (check `globPatterns` covers it) — nothing loaded from any CDN (`grep -r
-"unpkg\|cdn" app/src app/index.html` must be empty). iOS meta tags,
+"unpkg\|cdn" GameBuild/app/src GameBuild/app/index.html` must be empty). iOS meta tags,
 `viewport-fit=cover`.
 
 **Done when:** on desktop: Lighthouse PWA installable check passes; DevTools
@@ -152,28 +152,28 @@ no device access.)
 
 ## Task 0.7 — Golden-vector harness v0
 
-**Do:** Create `validation/`: `ORACLE_VERSION` (BTK base commit from 0.2 **plus
+**Do:** Create `GameBuild/validation/`: `ORACLE_VERSION` (BTK base commit from 0.2 **plus
 the list of any `oracle-patch:` commits and the Emscripten version — vectors are
 only valid for that exact combination**);
 `loads.json` (≥6 loads: .22 LR subsonic, .223, 6.5 CM, .308, .338 LM, .50 BMG —
 box-realistic values, cite where they came from) × 3 atmospheres (ISA sea level;
 hot/high; cold/dense) × wind cases (none; 10 mph full-value). `run.mjs` (Node):
-loads **both** WASM builds (pristine BTK's and `engine/`'s), solves each case,
+loads **both** WASM builds (pristine BTK's and `GameBuild/engine/`'s), solves each case,
 compares drop, windage, spin drift, TOF, retained velocity at 100 yd steps to max
 supersonic range. Tolerance: relative ≤ 1e-4 (they're the same code today — expect
 near-bit-equal; investigate anything larger). Wire into CI. Commit the generated
-oracle vectors (`validation/vectors/*.json`) so future diffs don't depend on
+oracle vectors (`GameBuild/validation/vectors/*.json`) so future diffs don't depend on
 rebuilding pristine BTK.
 
-**Done when:** `node validation/run.mjs` green locally and in CI; **negative
-test:** temporarily perturb one G7 Cd table entry in `engine/`, confirm the harness
+**Done when:** `node GameBuild/validation/run.mjs` green locally and in CI; **negative
+test:** temporarily perturb one G7 Cd table entry in `GameBuild/engine/`, confirm the harness
 fails, revert.
 **Stop if:** outputs differ beyond tolerance already — that means the 0.2 copy
 diverged; find out why before anything else.
 
 ## Task 0.8 — Durable save v1 + export/import
 
-**Do:** `app/src/persistence/`: `SaveStore` interface (get/put/export/import/
+**Do:** `GameBuild/app/src/persistence/`: `SaveStore` interface (get/put/export/import/
 migrate); IndexedDB impl via `idb` (db `longrange`, stores `save`, `meta`);
 `schemaVersion: 1` = settings only for now. Call
 `navigator.storage.persist()` on first run; show result + `storage.estimate()` on

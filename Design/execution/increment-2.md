@@ -17,7 +17,7 @@ v2. Build-plan §5 Increment 2. `Protocol:`
 **Tasks:**
 
 ## 2.1 Hidden-truth model + save schema v2
-`app/src/game/hidden-truth.ts`: per rifle **instance** — MV offset, zero offset
+`GameBuild/app/src/game/hidden-truth.ts`: per rifle **instance** — MV offset, zero offset
 (h/v), inherent precision; per ammo **lot** — mean-MV shift, MV SD, true BC, BC
 SD; all **derived deterministically from a stored RNG seed + catalog ranges**
 (owner-approved; keeps saves small, resists casual spoiling). True values flow
@@ -29,7 +29,7 @@ catalog ranges; migration green; grep-style check that no UI/HUD module imports
 hidden-truth internals.
 
 ## 2.2 Gear catalog + inventory
-Catalog data (`app/src/game/catalog.ts`): rifles .22 LR, .223, 6.5 CM, .308 with
+Catalog data (`GameBuild/app/src/game/catalog.ts`): rifles .22 LR, .223, 6.5 CM, .308 with
 per-model variance *ranges*; 2–3 factory loads each per catalog §C2 (match
 low-SD ↔ bulk high-SD, box MV/BC). Inventory UI: acquire (skill-gated, **no
 money**), select rifle+lot. Acquiring the same model twice creates two instances.

@@ -57,7 +57,7 @@ every rack distance, group size consistent with the load's SD + accuracy spec
 inputs — must match within 10%).
 
 ## 1.5 Reactive steel + audio
-Steel reaction via `engine/`'s C++ steel-target physics (swing/rotation from
+Steel reaction via `GameBuild/engine/`'s C++ steel-target physics (swing/rotation from
 impact impulse) mirrored to the Three.js meshes; impact marks; hit/miss dust
 color; WebAudio: shot report immediately, ping delayed by distance/speed-of-sound,
 attenuated. Audio unlocked on first user gesture (iOS).

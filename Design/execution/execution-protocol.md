@@ -66,21 +66,21 @@ When you find a conflict, **stop and log it** (§6) rather than picking silently
 ## 4. Standing guardrails (never violate; these encode the hard constraints)
 
 1. **`BallisticsToolkit/` physics is immutable; the build may be minimally patched.**
-   (Amended 2026-07-15, owner decision.) All engine work happens in `engine/`.
+   (Amended 2026-07-15, owner decision.) All engine work happens in `GameBuild/engine/`.
    To keep the oracle *buildable on the current toolchain*, you MAY change, in BTK:
    `CMakeLists.txt` / build flags, `bindings.cpp`, and mechanical warning fixes
    (e.g. new-clang `-Werror` complaints) — provided the change **cannot alter
    computed results** (removing `-ffast-math` or `-O3`, or editing any expression
    in `src/ballistics|physics|match|rendering`, DOES alter results — forbidden;
    escalate instead). Every such patch: its own commit prefixed `oracle-patch:`,
-   listed in `validation/ORACLE_VERSION` under the base commit, and after any
+   listed in `GameBuild/validation/ORACLE_VERSION` under the base commit, and after any
    patch re-run the McCoy/Litz source cross-checks to confirm the oracle still
    matches ground truth.
-2. **Never edit golden vectors or loosen tolerances** in `validation/` to make a
+2. **Never edit golden vectors or loosen tolerances** in `GameBuild/validation/` to make a
    failing check pass. A failing vector diff means the code is wrong (or, rarely, a
    real discrepancy to escalate — §6).
 3. **Engine changes must keep the baseline oracle diff green.** Bucket-A features
-   are additive and default-off; with them off, `engine/` output must match pristine
+   are additive and default-off; with them off, `GameBuild/engine/` output must match pristine
    BTK within the stated tolerance.
 4. **All UI shows MIL and MOA, metric and imperial**, via the units service only.
    No unit math inline in components (catalog §0.6).
@@ -129,7 +129,7 @@ owner can perform installs for you. Rules:
 Minimum, in this order — the task may add more:
 
 1. `engine` native tests: `ctest` green (when engine touched).
-2. Golden-vector harness: `node validation/run.mjs` → zero/in-tolerance diff (when
+2. Golden-vector harness: `node GameBuild/validation/run.mjs` → zero/in-tolerance diff (when
    engine touched).
 3. App unit tests: `npx vitest run` green.
 4. Build: `npm run build` succeeds; for PWA-affecting tasks, offline relaunch check.
@@ -193,10 +193,10 @@ and the owner has done the play-check on the iPad. Then:
 
 ## 9. Working with the C++ engine (Sonnet-specific notes)
 
-- Prefer changing `engine/` via the **native build first** (`cmake -B build-native
+- Prefer changing `GameBuild/engine/` via the **native build first** (`cmake -B build-native
   && ctest`) — fast, debuggable; only then rebuild WASM and re-run the vector diff.
 - embind objects returned to JS must be `.delete()`d; all embind access lives in
-  `app/src/engine-bridge/` — if you're writing embind calls anywhere else, you're
+  `GameBuild/app/src/engine-bridge/` — if you're writing embind calls anywhere else, you're
   in the wrong file.
 - Keep engine diffs small and heavily commented with the Wiki article + source page
   they implement (`// per Wiki/coriolis-effect.md §2; Litz PDF p.XXX`).

@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | 0.0 | DONE | 2026-07-13 | 9263b65 | env preflight done; git repo initialized at root (was not a repo before). See capabilities table + owner queue below |
 | 0.1 | DONE | 2026-07-13 | 7d779b5 | pristine BTK WASM built under emscripten 6.0.2 (no build-only patches needed). Verified module COMPUTES via Node: `Conversions.yardsToMeters(100)`=91.44, `moaToMrad(1)`=0.290888, `fpsToMps(2700)`=823.0. Browser ballistic-calc check is OWNER-SIDE (agent can't bind a localhost server — see capabilities table); **owner confirmed ballistic-calc runs correctly in-browser on the 6.0.2 build (2026-07-13)**. Node function-call proof satisfies "Done when". Values are float32-precision. |
-| 0.2 | DONE | 2026-07-13 | 04e267f | `engine/` created as owned copy of BTK core (src/, include/, CMakeLists.txt, LICENSE.BTK, README.md) from BTK commit `29d43c1` (`29d43c13f4945cb9caf4e73d2041c22645ebf4e7`, 2026-07-07) — the oracle version for task 0.7. Removed `copy_web_files` target per task; `web/` not copied. `emmake make -j` builds clean under emscripten 6.0.2 → `engine/build-wasm/ballistics_toolkit_wasm.js` (244417 B, loads+computes in Node). `BallisticsToolkit/` untouched (clean). `build-wasm/` git-ignored. |
+| 0.2 | DONE | 2026-07-13 | 04e267f | `GameBuild/engine/` created as owned copy of BTK core (src/, include/, CMakeLists.txt, LICENSE.BTK, README.md) from BTK commit `29d43c1` (`29d43c13f4945cb9caf4e73d2041c22645ebf4e7`, 2026-07-07) — the oracle version for task 0.7. Removed `copy_web_files` target per task; `web/` not copied. `emmake make -j` builds clean under emscripten 6.0.2 → `GameBuild/engine/build-wasm/ballistics_toolkit_wasm.js` (244417 B, loads+computes in Node). `BallisticsToolkit/` untouched (clean). `build-wasm/` git-ignored. |
 | 0.3 | TODO | | | tools available (cmake 4.4.0 + GoogleTest 1.17.0); native ctest path needs no emsdk |
 | 0.4 | TODO | | | ready — npm unblocked; no further installs needed |
 | 0.5 | TODO | | | |
@@ -104,7 +104,7 @@ fix this environment-wide for all Node tools without the per-tool `cafile` worka
   (GitHub domain-blocked locally; owner prefers current versions). One version
   everywhere: local builds, root `ci.yml`, golden-vector generation. Protocol §4.1
   amended: minimal **build-only** patches to `BallisticsToolkit/` are allowed
-  (`oracle-patch:` commits, recorded in `validation/ORACLE_VERSION`); numerical
+  (`oracle-patch:` commits, recorded in `GameBuild/validation/ORACLE_VERSION`); numerical
   code paths and optimization flags remain untouchable; re-run McCoy/Litz
   cross-checks after any oracle patch.
 - 2026-07-13: owner ran `brew install cmake googletest` (both confirmed working).
@@ -126,3 +126,9 @@ fix this environment-wide for all Node tools without the per-tool `cafile` worka
   owner before starting the next (every boundary 0.0→…→0.10 and beyond). Encoded in
   `execution-protocol.md` §2.7 / §3.
 - 2026-07-13: initial push to GitHub done by owner (CLAUDE.md, .gitignore, Design/).
+- 2026-07-13: **Layout decided (owner) — `GameBuild/` umbrella.** All buildable code
+  lives under `GameBuild/`: `GameBuild/engine/`, `GameBuild/app/`, `GameBuild/validation/`
+  (keeps repo root clean). `.github/` must stay at repo root (GitHub Actions requirement).
+  `engine/` was `git mv`'d to `GameBuild/engine/` and rebuilt (verified). All path refs
+  in build-plan / feature-catalog / execution docs / CLAUDE.md updated `engine|app|validation/`
+  → `GameBuild/…`. Supersedes the flat root layout in build-plan §5.

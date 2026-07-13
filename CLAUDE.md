@@ -24,7 +24,7 @@ with no paid Apple account and no weekly re-signing).
 **Build plan produced (2026-07-13) — start here.** The *what* is consolidated in
 `Design/feature-catalog.md` (authoritative feature set + hard constraints + validation
 rules). The *how* is now decided in **`Design/build-plan.md`**: keep the C++/WASM
-physics core (extended in an owned `engine/` copy; pristine `BallisticsToolkit/` stays
+physics core (extended in an owned `GameBuild/engine/` copy; pristine `BallisticsToolkit/` stays
 the golden-vector oracle) and build the game fresh as a TypeScript + React + Three.js +
 Vite PWA. Execution is broken into verified, session-sized tasks for a coding agent
 under **`Design/execution/`** — agents doing build work start at
@@ -61,7 +61,7 @@ to building.
   offline with no paid Apple account and no re-signing; native Swift ruled out by the
   free-Apple-account provisioning expiry. See `Design/btk-assessment-and-path-forward.md`.
 - **Stack & reuse (DECIDED 2026-07-13, `Design/build-plan.md` §2):** keep the validated
-  C++/WASM physics core, extended for Bucket A in an owned `engine/` copy; pristine
+  C++/WASM physics core, extended for Bucket A in an owned `GameBuild/engine/` copy; pristine
   `BallisticsToolkit/` is never modified and serves as the **golden-vector oracle**.
   The game app is built fresh: **TypeScript + React + Three.js (plain) + Vite PWA**,
   Zustand state, IndexedDB via `idb`, deployed to GitHub Pages. Tie-broken on longevity
@@ -98,7 +98,11 @@ to building.
 ```
 LongRange/
 ├── CLAUDE.md          ← this file: project context & conventions
-├── BallisticsToolkit/ ← the engine we build on (C++/WASM + Three.js; MIT). ~80% of the model.
+├── BallisticsToolkit/ ← the engine we build on (C++/WASM + Three.js; MIT). ~80% of the model. Pristine oracle; local-only (git-ignored).
+├── GameBuild/         ← the buildable product (all site/code folders live here; only this + Design/ are pushed)
+│   ├── engine/        ← owned copy of the BTK C++/WASM core (extended for Bucket A); native tests
+│   ├── app/           ← the PWA: TypeScript + React + Three.js + Vite (created in task 0.4)
+│   └── validation/    ← golden-vector harness + fixtures (oracle diff vs BallisticsToolkit/)
 ├── Design/            ← Phase-2 decisions & plans
 │   ├── feature-catalog.md                  ← AUTHORITATIVE feature set + hard constraints + validation rules
 │   ├── build-plan.md                       ← AUTHORITATIVE architecture / stack / reuse / sequencing plan
