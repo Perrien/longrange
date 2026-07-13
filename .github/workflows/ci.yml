@@ -1,0 +1,103 @@
+# LongRange CI — task 0.5.
+# Jobs: native engine tests (ctest) · engine WASM + app build/tests · deploy to
+# GitHub Pages (push to main only).
+#
+# Toolchain pins (owner decision 2026-07-15): Emscripten 6.0.2 — the SAME version
+# used for local builds and golden-vector generation. Do not bump one without the
+# others (see Design/execution/PROGRESS.md decisions log).
+#
+# NOTE: pristine BallisticsToolkit/ is git-ignored/local-only (owner decision), so
+# the engine-vs-pristine match check (GameBuild/validation/match-check.mjs) runs
+# locally, not here. Task 0.7 commits oracle vectors so CI can diff the engine
+# against them without needing BTK.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-tests:
+    name: Engine native tests (ctest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GoogleTest
+        run: sudo apt-get update && sudo apt-get install -y libgtest-dev
+      - name: Configure (native)
+        run: cmake -S GameBuild/engine -B GameBuild/engine/build-native
+      - name: Build
+        run: cmake --build GameBuild/engine/build-native -j
+      - name: Test
+        run: ctest --test-dir GameBuild/engine/build-native --output-on-failure
+
+  web:
+    name: Engine WASM + app build & tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Emscripten (pinned 6.0.2)
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '6.0.2'
+
+      - name: Build engine WASM
+        run: |
+          emcmake cmake -S GameBuild/engine -B GameBuild/engine/build-wasm
+          emmake make -C GameBuild/engine/build-wasm -j
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: GameBuild/app/package-lock.json
+
+      - name: Install app deps
+        working-directory: GameBuild/app
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: GameBuild/app
+        run: npm run typecheck
+
+      - name: Unit tests (vitest)
+        working-directory: GameBuild/app
+        run: npm test
+
+      - name: Build app
+        working-directory: GameBuild/app
+        run: npm run build
+
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: GameBuild/app/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [web, native-tests]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
