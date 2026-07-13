@@ -11,7 +11,7 @@
 | Task | Status | Date | Commit | Note |
 |---|---|---|---|---|
 | 0.0 | DONE | 2026-07-13 | 90f18b6 | env preflight done; git repo initialized at root (was not a repo before). See capabilities table + owner queue below |
-| 0.1 | DONE | 2026-07-13 | (see below) | pristine BTK WASM built under emscripten 6.0.2 (no build-only patches needed). Verified module COMPUTES via Node: `Conversions.yardsToMeters(100)`=91.44, `moaToMrad(1)`=0.290888, `fpsToMps(2700)`=823.0. Browser ballistic-calc check skipped (offline + headless); Node function-call proof is stronger. Values are float32-precision. |
+| 0.1 | DONE | 2026-07-13 | f5605c9 | pristine BTK WASM built under emscripten 6.0.2 (no build-only patches needed). Verified module COMPUTES via Node: `Conversions.yardsToMeters(100)`=91.44, `moaToMrad(1)`=0.290888, `fpsToMps(2700)`=823.0. Browser ballistic-calc check skipped (offline + headless); Node function-call proof is stronger. Values are float32-precision. |
 | 0.2 | TODO | | | ready — needs no further installs |
 | 0.3 | TODO | | | tools available (cmake 4.4.0 + GoogleTest 1.17.0); native ctest path needs no emsdk |
 | 0.4 | TODO | 2026-07-13 | — | **npm unblocked**; ready |

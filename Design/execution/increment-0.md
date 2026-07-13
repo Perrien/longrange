@@ -35,8 +35,18 @@ empty because everything passed).
 
 ## Task 0.1 — Prove the pristine BTK build
 
-**Do:** Ensure emsdk **4.0.17** is available (owner-installed if 0.0 flagged it).
-From `BallisticsToolkit/`, run `./build_web.sh -s`.
+> **Toolchain decision (owner, 2026-07-15):** the 4.0.17 pin is replaced by
+> **Emscripten 6.0.2 from the internal brew mirror** — newer is preferred; what
+> matters is ONE recorded version used everywhere (local + root `ci.yml` + vector
+> generation). If BTK does not compile under 6.0.2, apply minimal build-only
+> patches per protocol §4.1 (as amended): `-Werror` warning fixes, linker-flag
+> renames, dropping the vestigial `USE_WEBGL2`/`FULL_ES3` flags are all allowed;
+> anything touching numerical code paths or optimization flags (`-O3`,
+> `-ffast-math`) is not — escalate instead. Golden vectors (task 0.7) must be
+> generated under this same toolchain.
+
+**Do:** Ensure Emscripten **6.0.2** is available (owner-installed if 0.0 flagged
+it). From `BallisticsToolkit/`, run `./build_web.sh -s`.
 - **With internet:** open `http://localhost:8001/steel-sim/steel-sim.html`; fire a
   few shots. (steel-sim pulls Three.js from unpkg at page load — a BTK defect we
   fix in our own app, never in BTK.)
@@ -109,8 +119,9 @@ via `Module` internals.
 ## Task 0.5 — CI: build + test + deploy skeleton
 
 **Do:** `.github/workflows/ci.yml` at repo root: (1) native ctest; (2) WASM build
-(pinned emsdk 4.0.17); (3) vitest; (4) `npm run build`; (5) deploy `app/dist` to
-GitHub Pages on `main`. Base-path config for Pages.
+(**pinned to the same Emscripten version used locally — 6.0.2 per the task 0.1
+decision**); (3) vitest; (4) `npm run build`; (5) deploy `app/dist` to GitHub
+Pages on `main`. Base-path config for Pages.
 
 **Done when:** CI green on a PR; the deployed URL serves the debug screen.
 **Offline note:** CI itself runs on GitHub's infrastructure (has internet) — the
@@ -132,7 +143,9 @@ no device access.)
 
 ## Task 0.7 — Golden-vector harness v0
 
-**Do:** Create `validation/`: `ORACLE_VERSION` (BTK commit from 0.2);
+**Do:** Create `validation/`: `ORACLE_VERSION` (BTK base commit from 0.2 **plus
+the list of any `oracle-patch:` commits and the Emscripten version — vectors are
+only valid for that exact combination**);
 `loads.json` (≥6 loads: .22 LR subsonic, .223, 6.5 CM, .308, .338 LM, .50 BMG —
 box-realistic values, cite where they came from) × 3 atmospheres (ISA sea level;
 hot/high; cold/dense) × wind cases (none; 10 mph full-value). `run.mjs` (Node):

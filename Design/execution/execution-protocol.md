@@ -59,8 +59,17 @@ When you find a conflict, **stop and log it** (§6) rather than picking silently
 
 ## 4. Standing guardrails (never violate; these encode the hard constraints)
 
-1. **Never modify `BallisticsToolkit/`.** It is the pristine oracle. All engine work
-   happens in `engine/`.
+1. **`BallisticsToolkit/` physics is immutable; the build may be minimally patched.**
+   (Amended 2026-07-15, owner decision.) All engine work happens in `engine/`.
+   To keep the oracle *buildable on the current toolchain*, you MAY change, in BTK:
+   `CMakeLists.txt` / build flags, `bindings.cpp`, and mechanical warning fixes
+   (e.g. new-clang `-Werror` complaints) — provided the change **cannot alter
+   computed results** (removing `-ffast-math` or `-O3`, or editing any expression
+   in `src/ballistics|physics|match|rendering`, DOES alter results — forbidden;
+   escalate instead). Every such patch: its own commit prefixed `oracle-patch:`,
+   listed in `validation/ORACLE_VERSION` under the base commit, and after any
+   patch re-run the McCoy/Litz source cross-checks to confirm the oracle still
+   matches ground truth.
 2. **Never edit golden vectors or loosen tolerances** in `validation/` to make a
    failing check pass. A failing vector diff means the code is wrong (or, rarely, a
    real discrepancy to escalate — §6).
