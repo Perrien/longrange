@@ -67,13 +67,22 @@ versions.
 **Do:** Create top-level `engine/`. Copy from `BallisticsToolkit/`: `src/`,
 `include/`, `CMakeLists.txt`; copy `LICENSE` → `engine/LICENSE.BTK` and add an
 attribution note in a new `engine/README.md` (what was copied, from which commit).
-Delete nothing yet; change nothing. Record the source commit hash — it becomes
-`validation/ORACLE_VERSION` in task 0.7. Build WASM: `mkdir engine/build-wasm && cd
-engine/build-wasm && emcmake cmake .. && emmake make -j`.
+Do **not** copy `web/` — and therefore **delete the `copy_web_files` custom
+target** from `engine/CMakeLists.txt` (it is `ALL` and would break every build
+without `web/`; `engine/` is our owned copy, so editing its CMake is normal work,
+not an oracle patch). Leave the C++ sources unchanged. Note: `SINGLE_FILE=1`
+means the build emits a single `.js` with the WASM embedded — that satisfies this
+task; whether to switch to a separate `.wasm` (smaller, streaming-compilable —
+better for the PWA) is decided at task 0.4 and logged either way. Record the
+source commit hash — it becomes `validation/ORACLE_VERSION` in task 0.7. Build
+WASM: `mkdir engine/build-wasm && cd engine/build-wasm && emcmake cmake .. &&
+emmake make -j`.
 
-**Done when:** `engine/build-wasm/` emits `ballistics_toolkit_wasm.js/.wasm`;
+**Done when:** `engine/build-wasm/` emits a loadable `ballistics_toolkit_wasm.js`
+module; a plain `emmake make` succeeds with no missing-directory errors;
 `BallisticsToolkit/` is untouched (`git status` clean there).
-**Stop if:** you feel the urge to "clean up" the C++ while copying. Don't.
+**Stop if:** you feel the urge to "clean up" the C++ while copying. Don't —
+CMake build plumbing is the only thing this task may change.
 
 ## Task 0.3 — Native build + first CTest suite
 

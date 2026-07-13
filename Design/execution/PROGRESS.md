@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | 0.0 | DONE | 2026-07-13 | 9263b65 | env preflight done; git repo initialized at root (was not a repo before). See capabilities table + owner queue below |
 | 0.1 | DONE | 2026-07-13 | 7d779b5 | pristine BTK WASM built under emscripten 6.0.2 (no build-only patches needed). Verified module COMPUTES via Node: `Conversions.yardsToMeters(100)`=91.44, `moaToMrad(1)`=0.290888, `fpsToMps(2700)`=823.0. Browser ballistic-calc check is OWNER-SIDE (agent can't bind a localhost server — see capabilities table); **owner confirmed ballistic-calc runs correctly in-browser on the 6.0.2 build (2026-07-13)**. Node function-call proof satisfies "Done when". Values are float32-precision. |
-| 0.2 | TODO | | | ready — needs no further installs |
+| 0.2 | DONE | 2026-07-13 | (pending) | `engine/` created as owned copy of BTK core (src/, include/, CMakeLists.txt, LICENSE.BTK, README.md) from BTK commit `29d43c1` (`29d43c13f4945cb9caf4e73d2041c22645ebf4e7`, 2026-07-07) — the oracle version for task 0.7. Removed `copy_web_files` target per task; `web/` not copied. `emmake make -j` builds clean under emscripten 6.0.2 → `engine/build-wasm/ballistics_toolkit_wasm.js` (244417 B, loads+computes in Node). `BallisticsToolkit/` untouched (clean). `build-wasm/` git-ignored. |
 | 0.3 | TODO | | | tools available (cmake 4.4.0 + GoogleTest 1.17.0); native ctest path needs no emsdk |
 | 0.4 | TODO | | | ready — npm unblocked; no further installs needed |
 | 0.5 | TODO | | | |

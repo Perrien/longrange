@@ -1,0 +1,227 @@
+#pragma once
+
+#include "ballistics/trajectory.h"
+#include "math/quaternion.h"
+#include "math/vector.h"
+#include "rendering/steel_target.h"
+#include <map>
+#include <optional>
+#include <vector>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten/val.h>
+#endif
+
+namespace btk::rendering
+{
+
+  /**
+   * @brief Result of a bullet-object impact.
+   */
+  struct ImpactResult
+  {
+    btk::math::Vector3D position_m; ///< Impact point in BTK coordinates (meters)
+    btk::math::Vector3D normal;     ///< Surface normal at impact
+    float time_s;                   ///< Time of impact (seconds)
+    int object_id;                  ///< Application-defined object ID
+
+    ImpactResult() : position_m(0, 0, 0), normal(0, 0, 1), time_s(0), object_id(-1) {}
+
+    ImpactResult(const btk::math::Vector3D& pos, const btk::math::Vector3D& n, float t, int id) : position_m(pos), normal(n), time_s(t), object_id(id) {}
+  };
+
+  /**
+   * @brief Unified collider for meshes and steel targets.
+   *
+   * Supports both mesh geometry (with transform) and steel targets (via pointer).
+   * If steel_target_ is not null, uses steel target mode; otherwise uses mesh mode.
+   */
+  class Collider
+  {
+    public:
+    /**
+     * @brief Construct mesh collider from triangle geometry.
+     *
+     * @param vertices Flat array [x0,y0,z0, x1,y1,z1, ...] in meters (local space)
+     * @param indices  Triangle indices (if empty, assumes sequential: every 3 verts = 1 triangle)
+     */
+    Collider(const std::vector<float>& vertices, const std::vector<uint32_t>& indices = {});
+
+    /**
+     * @brief Construct steel target collider.
+     *
+     * @param target   SteelTarget pointer (non-owning, must outlive collider)
+     * @param radius_m Radius for bounds computation
+     */
+    Collider(btk::rendering::SteelTarget* target, float radius_m);
+
+    /**
+     * @brief Test if a segment intersects this collider.
+     *
+     * @param start_m      Segment start in BTK coordinates (meters)
+     * @param end_m        Segment end in BTK coordinates (meters)
+     * @param t_start_s    Time at segment start (seconds)
+     * @param t_end_s      Time at segment end (seconds)
+     * @param bullet_radius Bullet radius for line-break rule (meters)
+     * @param object_id    Application object ID
+     * @return ImpactResult if hit, std::nullopt otherwise
+     */
+    std::optional<ImpactResult> intersectSegment(const btk::math::Vector3D& start_m, const btk::math::Vector3D& end_m, float t_start_s, float t_end_s, float bullet_radius) const;
+
+    /**
+     * @brief Set world transform (position and rotation).
+     *
+     * @param position World position (meters)
+     * @param rotation World rotation quaternion
+     */
+    void setTransform(const btk::math::Vector3D& position, const btk::math::Quaternion& rotation);
+
+    /// Grid management - get AABB min bounds (world space)
+    const btk::math::Vector3D& minBounds() const;
+
+    /// Grid management - get AABB max bounds (world space)
+    const btk::math::Vector3D& maxBounds() const;
+
+    /// Check if this collider is enabled
+    bool isEnabled() const { return enabled_; }
+
+    /// Set enabled state
+    void setEnabled(bool enabled) { enabled_ = enabled; }
+
+    /// Set object ID
+    void setObjectId(int id) { object_id_ = id; }
+    int getObjectId() const { return object_id_; }
+
+    private:
+    // Mesh data (only used when steel_target_ == nullptr)
+    std::vector<btk::math::Vector3D> vertices_; ///< Vertices in local space
+    std::vector<uint32_t> indices_;
+    btk::math::Vector3D local_min_; ///< AABB min in local space
+    btk::math::Vector3D local_max_; ///< AABB max in local space
+
+    // Transform (applies to mesh mode)
+    btk::math::Vector3D position_;   ///< World position
+    btk::math::Quaternion rotation_; ///< World rotation
+
+    // World bounds (always valid)
+    btk::math::Vector3D min_bounds_m_; ///< AABB min bounds for grid binning
+    btk::math::Vector3D max_bounds_m_; ///< AABB max bounds for grid binning
+
+    // Steel target mode (if not null, this is a steel target)
+    // For steel targets, min_bounds_m_.x stores the radius (local bounds not used)
+    btk::rendering::SteelTarget* steel_target_ = nullptr;
+
+    // State
+    bool enabled_ = true; ///< Enabled state (disabled colliders are skipped)
+    int object_id_ = -1;  ///< Application-defined object ID
+
+    void computeLocalBounds();
+    void updateWorldBounds();
+
+    bool segmentIntersectsAABB(const btk::math::Vector3D& start_m, const btk::math::Vector3D& end_m, const btk::math::Vector3D& min_bounds, const btk::math::Vector3D& max_bounds) const;
+
+    std::optional<float> intersectTriangle(const btk::math::Vector3D& ray_origin, const btk::math::Vector3D& ray_dir, const btk::math::Vector3D& v0, const btk::math::Vector3D& v1,
+                                           const btk::math::Vector3D& v2) const;
+  };
+
+  /**
+   * @brief Spatial grid-based impact detector for fast trajectory queries.
+   *
+   * Grid bins are defined over the XZ plane (BTK coords). Each object is
+   * registered with its AABB and inserted into all overlapping bins.
+   */
+  class ImpactDetector
+  {
+    public:
+    /**
+     * @brief Construct detector with world bounds and bin size.
+     *
+     * @param bin_size_m    Bin size in meters (default 10m)
+     * @param world_min_x_m Min X of world in meters
+     * @param world_max_x_m Max X of world in meters
+     * @param world_min_z_m Min Z of world in meters
+     * @param world_max_z_m Max Z of world in meters
+     */
+    ImpactDetector(float bin_size_m, float world_min_x_m, float world_max_x_m, float world_min_z_m, float world_max_z_m);
+
+    /**
+     * @brief Register a static mesh collider from geometry.
+     *
+     * Uses fast bulk conversion (convertJSArrayToNumberVector) for efficient JS → C++ data transfer.
+     * JS should pass a Float32Array of vertices and optional Uint32Array of indices.
+     *
+     * @param vertices_val Emscripten val wrapping Float32Array [x0,y0,z0, ...]
+     * @param indices_val  Emscripten val wrapping Uint32Array (optional, empty for sequential)
+     * @param object_id    Application ID
+     * @return Collider handle (>=0) or -1 on error
+     */
+#ifdef __EMSCRIPTEN__
+    int addMeshCollider(emscripten::val vertices_val, emscripten::val indices_val, int object_id);
+#endif
+
+    /**
+     * @brief Register a moving steel target.
+     *
+     * @param target      SteelTarget pointer (non-owning, must outlive detector)
+     * @param radius_m    Radius for bin coverage (accounts for swing)
+     * @param object_id   Application ID
+     * @return Collider handle (>=0) or -1 on error
+     */
+    int addSteelCollider(btk::rendering::SteelTarget* target, float radius_m, int object_id);
+
+    void moveCollider(int handle, const btk::math::Vector3D& position, const btk::math::Quaternion& rotation);
+
+    void removeCollider(int handle);
+
+    /**
+     * @brief Find first impact of a trajectory in time interval [t0, t1].
+     *
+     * @param trajectory Bullet trajectory in BTK coords
+     * @param t0_s       Start time (seconds)
+     * @param t1_s       End time (seconds)
+     * @return ImpactResult if hit, std::nullopt otherwise
+     */
+    std::optional<ImpactResult> findFirstImpact(const btk::ballistics::Trajectory& trajectory, float t0_s, float t1_s) const;
+
+    /**
+     * @brief Enable or disable a collider by handle.
+     *
+     * Disabled colliders are skipped during collision detection.
+     *
+     * @param handle Collider handle returned from addMeshCollider or addSteelCollider
+     * @param enabled True to enable, false to disable
+     */
+    void setColliderEnabled(int handle, bool enabled);
+
+    /**
+     * @brief Check if a collider is enabled.
+     *
+     * @param handle Collider handle
+     * @return True if enabled, false if disabled or invalid handle
+     */
+    bool isColliderEnabled(int handle) const;
+
+    int getNextHandle() { return next_handle_++; }
+
+    private:
+    float bin_size_m_;
+    float world_min_x_;
+    float world_max_x_;
+    float world_min_z_;
+    float world_max_z_;
+    int bins_x_;
+    int bins_z_;
+
+    int next_handle_ = 0;
+
+    std::vector<std::vector<Collider*>> grid_; ///< bins_x_ * bins_z_ bins, stores pointers to colliders
+    std::map<int, Collider> colliders_;        ///< Handle -> Collider map (std::map for pointer stability)
+
+    int binIndexX(float x_m) const;
+    int binIndexZ(float z_m) const;
+    int gridIndex(int bin_x, int bin_z) const;
+
+    std::optional<ImpactResult> checkSegmentCollisions(const btk::math::Vector3D& start_m, const btk::math::Vector3D& end_m, float t_start_s, float t_end_s, float bullet_radius) const;
+  };
+
+} // namespace btk::rendering
