@@ -1,6 +1,11 @@
 # BallisticsToolkit is its own git repo (pristine oracle) — never tracked here
 BallisticsToolkit/
 
+# Ground-truth sources & synthesized notes are kept local-only, never pushed
+# (Documentation/ holds copyrighted source PDFs; Wiki/ is the local reference/spec)
+Documentation/
+Wiki/
+
 # Build directories
 build/
 build-*/
