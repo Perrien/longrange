@@ -38,14 +38,20 @@ When you find a conflict, **stop and log it** (§6) rather than picking silently
    `PROGRESS.md` with date + one-line note + commit hash. Anything red → §6.
 6. Commit with message `inc<N>/task<M>: <summary>` (one task = one commit unless the
    task doc says otherwise).
-7. If the session must end mid-task, set the task `IN PROGRESS` in `PROGRESS.md`
+7. **STOP after each task and confirm with the owner before starting the next one**
+   (owner rule, 2026-07-13). Never auto-advance from one task to the next — not even
+   when the next task is unblocked and obvious. Report what was done + what's next,
+   and wait for the owner's go-ahead. This applies to every task boundary (0.0 → 0.1
+   → … → 0.10, and across all increments).
+8. If the session must end mid-task, set the task `IN PROGRESS` in `PROGRESS.md`
    with a note describing exactly where you stopped and what remains.
 
 ## 3. Task discipline
 
-- **One task at a time, in order.** Tasks within an increment are ordered by
-  dependency; do not reorder or parallelize unless the doc marks tasks
-  `[parallel-ok]`.
+- **One task at a time, in order — and stop at every task boundary** (see §2.7).
+  Tasks within an increment are ordered by dependency; do not reorder or parallelize
+  unless the doc marks tasks `[parallel-ok]`. Do not begin the next task until the
+  owner confirms.
 - **Size limit:** if a task turns out to need > ~400 changed lines or touches > ~10
   files, stop — split it into sub-tasks in `PROGRESS.md` (`task 3a, 3b…`), get each
   verified separately.

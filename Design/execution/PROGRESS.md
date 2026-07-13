@@ -111,3 +111,8 @@ fix this environment-wide for all Node tools without the per-tool `cafile` worka
   (filter-branch) so they never appear in any commit. Files remain on disk. Owner
   pushes to GitHub manually (github.com is blocked from the agent sandbox). Pre-scrub
   state recoverable locally under `.git/refs/original/` until owner drops it.
+- 2026-07-13: **Owner rule — stop after every task.** The agent must NOT auto-advance
+  between tasks. Finish a task, verify, log/commit, then stop and confirm with the
+  owner before starting the next (every boundary 0.0→…→0.10 and beyond). Encoded in
+  `execution-protocol.md` §2.7 / §3.
+- 2026-07-13: initial push to GitHub done by owner (CLAUDE.md, .gitignore, Design/).
