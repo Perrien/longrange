@@ -64,6 +64,9 @@ jobs:
           cache: npm
           cache-dependency-path: GameBuild/app/package-lock.json
 
+      - name: Golden-vector check (engine vs committed oracle vectors)
+        run: node GameBuild/validation/run.mjs
+
       - name: Check lockfile is public-registry canonical
         working-directory: GameBuild/app
         run: node scripts/check-lockfile.mjs

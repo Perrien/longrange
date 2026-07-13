@@ -1,5 +1,5 @@
 {
-  "$comment": "Reference loads for validation + the debug screen (task 0.4d; extended to >=6 loads in task 0.7). Box values are representative manufacturer catalog specs. The `si` block is the authoritative solve input (exact conversions: 1 gr = 0.00006479891 kg, 1 in = 0.0254 m, 1 fps = 0.3048 m/s). Spin rate is derived, not stored: spinRateRadPerSec = 2*PI*muzzleVelocityMps/twistM.",
+  "$comment": "Reference loads for validation + the debug screen. `conditions` is the debug-screen config (task 0.4d; DropTable.tsx depends on its shape). `validation` + per-load `ranges` drive the golden-vector matrix (task 0.7). Box values are representative manufacturer catalog specs; the `si` block is the authoritative solve input (exact conversions: 1 gr = 0.00006479891 kg, 1 in = 0.0254 m, 1 fps = 0.3048 m/s). Spin rate is derived, not stored: spinRateRadPerSec = 2*PI*muzzleVelocityMps/twistM.",
   "conditions": {
     "$comment": "ISA sea level, 50% humidity, pressure derived from altitude (0 => ISA). Identical on both sides of every comparison.",
     "atmosphere": { "temperatureK": 288.15, "altitudeM": 0, "humidity": 0.5, "pressurePa": 0 },
@@ -12,6 +12,19 @@
         "name": "10 mph full-value crosswind (from 9 o'clock, blowing +x/left-to-right)",
         "windVec": { "x": 4.4704, "y": 0, "z": 0 }
       }
+    ]
+  },
+  "validation": {
+    "$comment": "Golden-vector matrix (task 0.7): every load x atmosphere x wind case, sampled per the load's `ranges`. Zero-wind windage is the spin-drift/aero-jump channel.",
+    "zeroRangeM": 100,
+    "atmospheres": [
+      { "name": "ISA sea level", "temperatureK": 288.15, "altitudeM": 0, "humidity": 0.5, "pressurePa": 0 },
+      { "name": "hot and high", "temperatureK": 308.15, "altitudeM": 1500, "humidity": 0.2, "pressurePa": 0 },
+      { "name": "cold dense", "temperatureK": 263.15, "altitudeM": 0, "humidity": 0.8, "pressurePa": 0 }
+    ],
+    "windCases": [
+      { "name": "no wind", "windVec": { "x": 0, "y": 0, "z": 0 } },
+      { "name": "10 mph crosswind +x", "windVec": { "x": 4.4704, "y": 0, "z": 0 } }
     ]
   },
   "loads": [
@@ -36,7 +49,128 @@
         "dragModel": "G7",
         "muzzleVelocityMps": 826.008,
         "twistM": 0.2032
-      }
+      },
+      "ranges": { "maxRangeM": 1000, "stepM": 100 }
+    },
+    {
+      "id": "22lr-40-standard",
+      "name": ".22 LR 40 gr standard velocity (subsonic-transonic teacher)",
+      "box": {
+        "bulletWeightGr": 40,
+        "diameterIn": 0.2255,
+        "lengthIn": 0.451,
+        "bc": 0.138,
+        "dragModel": "G1",
+        "muzzleVelocityFps": 1070,
+        "twistInPerTurn": 16,
+        "source": "representative 40 gr standard-velocity .22 LR (CCI SV class)"
+      },
+      "si": {
+        "massKg": 0.0025919564,
+        "diameterM": 0.0057277,
+        "lengthM": 0.0114554,
+        "bc": 0.138,
+        "dragModel": "G1",
+        "muzzleVelocityMps": 326.136,
+        "twistM": 0.4064
+      },
+      "ranges": { "maxRangeM": 300, "stepM": 50 }
+    },
+    {
+      "id": "223-77-match",
+      "name": ".223 Rem 77 gr match",
+      "box": {
+        "bulletWeightGr": 77,
+        "diameterIn": 0.224,
+        "lengthIn": 0.98,
+        "bc": 0.19,
+        "dragModel": "G7",
+        "muzzleVelocityFps": 2750,
+        "twistInPerTurn": 8,
+        "source": "representative 77 gr SMK-class .223 match load"
+      },
+      "si": {
+        "massKg": 0.0049895161,
+        "diameterM": 0.0056896,
+        "lengthM": 0.024892,
+        "bc": 0.19,
+        "dragModel": "G7",
+        "muzzleVelocityMps": 838.2,
+        "twistM": 0.2032
+      },
+      "ranges": { "maxRangeM": 800, "stepM": 100 }
+    },
+    {
+      "id": "308-175-match",
+      "name": ".308 Win 175 gr match (transonic wall ~1000 yd)",
+      "box": {
+        "bulletWeightGr": 175,
+        "diameterIn": 0.308,
+        "lengthIn": 1.24,
+        "bc": 0.243,
+        "dragModel": "G7",
+        "muzzleVelocityFps": 2600,
+        "twistInPerTurn": 10,
+        "source": "representative 175 gr SMK-class .308 match load (M118LR class)"
+      },
+      "si": {
+        "massKg": 0.0113398093,
+        "diameterM": 0.0078232,
+        "lengthM": 0.031496,
+        "bc": 0.243,
+        "dragModel": "G7",
+        "muzzleVelocityMps": 792.48,
+        "twistM": 0.254
+      },
+      "ranges": { "maxRangeM": 1000, "stepM": 100 }
+    },
+    {
+      "id": "338lm-300-match",
+      "name": ".338 Lapua Magnum 300 gr match (mile-class)",
+      "box": {
+        "bulletWeightGr": 300,
+        "diameterIn": 0.338,
+        "lengthIn": 1.68,
+        "bc": 0.381,
+        "dragModel": "G7",
+        "muzzleVelocityFps": 2725,
+        "twistInPerTurn": 10,
+        "source": "representative 300 gr SMK-class .338 LM load"
+      },
+      "si": {
+        "massKg": 0.019439673,
+        "diameterM": 0.0085852,
+        "lengthM": 0.042672,
+        "bc": 0.381,
+        "dragModel": "G7",
+        "muzzleVelocityMps": 830.58,
+        "twistM": 0.254
+      },
+      "ranges": { "maxRangeM": 1500, "stepM": 100 }
+    },
+    {
+      "id": "50bmg-661-m33",
+      "name": ".50 BMG 661 gr ball (M33 class, ELR anchor)",
+      "box": {
+        "bulletWeightGr": 661,
+        "diameterIn": 0.51,
+        "lengthIn": 2.31,
+        "bc": 0.34,
+        "dragModel": "G7",
+        "muzzleVelocityFps": 2910,
+        "twistInPerTurn": 15,
+        "source": "representative .50 Ball M33 specs; the measured-CDM anchor arrives in Increment 5 (McCoy)"
+      },
+      "si": {
+        "massKg": 0.0428320795,
+        "diameterM": 0.012954,
+        "lengthM": 0.058674,
+        "bc": 0.34,
+        "dragModel": "G7",
+        "muzzleVelocityMps": 886.968,
+        "twistM": 0.381
+      },
+      "ranges": { "maxRangeM": 1800, "stepM": 100 }
     }
   ]
 }
