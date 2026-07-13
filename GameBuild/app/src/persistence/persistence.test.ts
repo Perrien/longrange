@@ -16,12 +16,17 @@ describe('save round-trip', () => {
   it('memory store saves and loads (stamping updatedAt)', async () => {
     const store = new MemorySaveStore();
     expect(await store.load()).toBeNull();
+    // Compare against the clock, not the fixture: fixture dates carry no
+    // guaranteed relation to "now" (this assertion originally failed because
+    // the fixture timestamp was accidentally in the future).
+    const before = Date.now();
     await store.save(validSave);
     const loaded = await store.load();
     expect(loaded).not.toBeNull();
     expect(loaded!.settings.unitsPrimary).toBe('MOA');
     expect(loaded!.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(Date.parse(loaded!.updatedAt)).toBeGreaterThan(Date.parse(validSave.updatedAt));
+    expect(Date.parse(loaded!.updatedAt)).toBeGreaterThanOrEqual(before);
+    expect(loaded!.updatedAt).not.toBe(validSave.updatedAt); // stamp actually happened
   });
 
   it('export → import reproduces the save (modulo nothing — serialize is pure)', () => {
