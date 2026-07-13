@@ -36,19 +36,23 @@ When you find a conflict, **stop and log it** (§6) rather than picking silently
 4. Do the task. Small steps; run checks as you go.
 5. Run the task's **verification** exactly as written. All green → mark `DONE` in
    `PROGRESS.md` with date + one-line note + commit hash. Anything red → §6.
-6. Commit with message `inc<N>/task<M>: <summary>` (one task = one commit unless the
+6. **Always update `PROGRESS.md` at the end of every task** (owner rule, 2026-07-13),
+   whatever the outcome — `DONE`, `BLOCKED`, `AWAITING OWNER`, or `IN PROGRESS`. The
+   task row's status/date/commit/note must reflect reality before you stop. This is
+   not optional and not only for the DONE case.
+7. Commit with message `inc<N>/task<M>: <summary>` (one task = one commit unless the
    task doc says otherwise).
-7. **STOP after each task and confirm with the owner before starting the next one**
+8. **STOP after each task and confirm with the owner before starting the next one**
    (owner rule, 2026-07-13). Never auto-advance from one task to the next — not even
    when the next task is unblocked and obvious. Report what was done + what's next,
    and wait for the owner's go-ahead. This applies to every task boundary (0.0 → 0.1
    → … → 0.10, and across all increments).
-8. If the session must end mid-task, set the task `IN PROGRESS` in `PROGRESS.md`
+9. If the session must end mid-task, set the task `IN PROGRESS` in `PROGRESS.md`
    with a note describing exactly where you stopped and what remains.
 
 ## 3. Task discipline
 
-- **One task at a time, in order — and stop at every task boundary** (see §2.7).
+- **One task at a time, in order — and stop at every task boundary** (see §2.8).
   Tasks within an increment are ordered by dependency; do not reorder or parallelize
   unless the doc marks tasks `[parallel-ok]`. Do not begin the next task until the
   owner confirms.

@@ -124,7 +124,7 @@ fix this environment-wide for all Node tools without the per-tool `cafile` worka
 - 2026-07-13: **Owner rule — stop after every task.** The agent must NOT auto-advance
   between tasks. Finish a task, verify, log/commit, then stop and confirm with the
   owner before starting the next (every boundary 0.0→…→0.10 and beyond). Encoded in
-  `execution-protocol.md` §2.7 / §3.
+  `execution-protocol.md` §2.8 / §3.
 - 2026-07-13: initial push to GitHub done by owner (CLAUDE.md, .gitignore, Design/).
 - 2026-07-13: **Layout decided (owner) — `GameBuild/` umbrella.** All buildable code
   lives under `GameBuild/`: `GameBuild/engine/`, `GameBuild/app/`, `GameBuild/validation/`
@@ -132,3 +132,6 @@ fix this environment-wide for all Node tools without the per-tool `cafile` worka
   `engine/` was `git mv`'d to `GameBuild/engine/` and rebuilt (verified). All path refs
   in build-plan / feature-catalog / execution docs / CLAUDE.md updated `engine|app|validation/`
   → `GameBuild/…`. Supersedes the flat root layout in build-plan §5.
+- 2026-07-13: **Owner rule — update `PROGRESS.md` at the end of every task**, whatever
+  the outcome (DONE/BLOCKED/AWAITING/IN PROGRESS), before stopping. Encoded in
+  `execution-protocol.md` §2.6.
