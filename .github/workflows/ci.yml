@@ -64,6 +64,10 @@ jobs:
           cache: npm
           cache-dependency-path: GameBuild/app/package-lock.json
 
+      - name: Check lockfile is public-registry canonical
+        working-directory: GameBuild/app
+        run: node scripts/check-lockfile.mjs
+
       - name: Install app deps
         working-directory: GameBuild/app
         run: npm ci
