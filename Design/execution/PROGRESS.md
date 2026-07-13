@@ -17,8 +17,8 @@
 | 0.4 | split | | | oversized → split into 0.4a–d (protocol §3). Owner approved latest-stable pins + "do 0.4a then stop" (2026-07-13) |
 | 0.4a | DONE | 2026-07-13 | d2cfba7 | `GameBuild/app/` scaffolded (Vite+React+TS, minimal app). `npm install` clean (422 pkgs, 0 vuln, no peer conflicts). Verified: `npm run build`→`dist/` (190 KB js), `tsc --noEmit` clean, vitest 1/1. `npm run dev` visual check is OWNER-SIDE (agent can't bind dev-server socket). Pinned deps (exact) recorded below. `node_modules/`+`dist/` git-ignored; `package-lock.json` tracked. |
 | 0.4b | DONE | 2026-07-13 | c8a4c17 | units service `GameBuild/app/src/units/` (angle/length/velocity + index): MIL/MOA/rad via radians pivot, metric/imperial via exact intl definitions (1 yd=0.9144 m etc.), dual-unit `asMilMoa`/`asMetricImperial*` helpers. Enforces guardrail §4.4 (no inline unit math in components). vitest 9/9, `tsc --noEmit` clean, build green. Removed 0.4a smoke test. |
-| 0.4c | TODO | | | engine-bridge: load engine WASM, solveTrajectory/computeZero, `.delete()` discipline |
-| 0.4d | TODO | | | debug drop/windage table (MIL+MOA, m+yd) + `GameBuild/validation/loads.json` + ≥5-row BTK numeric match |
+| 0.4c | DONE | 2026-07-13 | fc90026 | engine-bridge `GameBuild/app/src/engine-bridge/`: `wasm-module.ts` (sole `@engine` import site + cached factory), `types.ts` (public SI types + minimal embind surface), `engine.d.ts` (ambient `@engine` decl), `index.ts` (`solveTrajectory`/`computeZero`/`createEngineBridge`, **all `.delete()` here** — computeZero/getState/getPosition copies deleted, getTrajectory reference not). Vite `@engine` alias + `server.fs.allow` GameBuild/ per owner wiring. Added `engine:build` npm script + `scripts/check-engine.mjs` precheck on dev/build/test. Verified: `tsc --noEmit` clean, **vitest 12/12** (bridge test loads real WASM in Node via the alias, checks drop/velocity/TOF monotonicity + crosswind drift), build green. Added dep `@types/node@26.1.1` (see pins note). |
+| 0.4d | AWAITING OWNER | 2026-07-15 | a2e6d45 | Code + numeric match DONE (session ran in the owner-review sandbox, not the Mac). Built: `GameBuild/validation/loads.json` (6.5CM ref load, SI-authoritative), `validation/match-check.mjs` (engine-artifact vs pristine-BTK, Vite-free Node), `app/src/debug/DropTable.tsx` (MIL+MOA / m+yd / cm+in table, wind-case selector), `spinRateFromTwist` in bridge, `validate:match` npm script. **Verified here:** artifacts byte-identical (`cmp`); match check 10 rows × 2 wind cases, worst rel diff **0.000e+0** (satisfies the ≥5-row near-exact bar). **Mac-side to finish (native binaries — tsc 7/esbuild are platform-specific):** `npm run typecheck`, `npm test`, `npm run dev` → confirm table renders + numbers match `npm run validate:match` output. Then flip to DONE. |
 | 0.5 | TODO | | | |
 | 0.6 | TODO | | | |
 | 0.7 | TODO | | | |
@@ -35,6 +35,9 @@
 vitest 4.1.10, typescript 7.0.2, @types/react 19.2.17, @types/react-dom 19.2.3,
 @types/three 0.185.1, jsdom 29.1.1. Exact pins (no `^`); full tree locked in
 `GameBuild/app/package-lock.json`. Node v26.5.0, npm 11.17.0.
+**Added in 0.4c:** `@types/node@26.1.1` (devDep) — essential tooling for `vite.config.ts`
+(`fileURLToPath` for the `@engine` alias); beyond the build-plan's named list but
+implied by "Vite + Vitest". Flagged for owner awareness.
 
 ## Environment capabilities (filled by task 0.0)
 | Capability | Status | Checked | Note |
@@ -103,7 +106,20 @@ omits (e.g. DigiCert Global Root G2). Regenerating that bundle to be complete wo
 fix this environment-wide for all Node tools without the per-tool `cafile` workaround.
 
 ## Deferred observations
-- (none yet)
+- (0.4d) **Sight height over bore is not modeled** — the bridge zeroes the bore
+  line through the target, so debug-table drops are bore-line values, not scope
+  come-ups. Must be added (engine takes it via initial Y position, or bridge-side
+  offset) before the task-1.6 DOPE table is real. The screen carries a visible
+  footnote.
+- (0.4d) `validation/match-check.mjs` intentionally duplicates the bridge's solve
+  sequence (Vite-free oracle-harness seed). If the bridge solve changes, keep them
+  in sync by hand — task 0.7 should consider extracting a shared driver.
+- (0.4d) The owner-review sandbox (Linux) cannot run the Mac-native toolchain
+  (typescript 7 / esbuild platform binaries) — only Node+WASM checks are portable
+  across the two agent environments. Plan Mac-side verification for any task
+  finished from that side.
+- (0.4d) Stale `.git/index.lock` had to be cleared via the sandbox delete
+  permission; the review sandbox cannot delete under `.git/` by default.
 
 ## Blocked / escalations
 - (none — all Increment 0 tooling in place as of 2026-07-13)

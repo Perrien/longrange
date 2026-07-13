@@ -118,6 +118,15 @@ verify with `npm ls --depth=0` before proceeding. Create `GameBuild/app/src/engi
 Add a debug screen: inputs for a load, renders a drop/windage table at 100 m steps
 in **MIL and MOA, metric and imperial side-by-side**.
 
+> **Engine-artifact wiring (owner decision, 2026-07-15):** keep `SINGLE_FILE=1`
+> (revisit only at 1.8's precache audit). Import the artifact via a Vite
+> `resolve.alias` `@engine` → `../engine/build-wasm/ballistics_toolkit_wasm.js`,
+> with `server.fs.allow` extended to `GameBuild/engine/`; the raw specifier lives
+> in exactly one bridge file. Vitest inherits the alias from `vite.config.ts`.
+> `GameBuild/validation/run.mjs` uses a plain relative `import()` (no Vite).
+> Because the artifact is git-ignored: add `engine:build` npm script + a precheck
+> in `dev`/`test` that fails with "run `npm run engine:build`" when it's missing.
+
 **Done when:** `npm run dev` shows the debug table; for the 6.5 CM reference load
 (pick box values; record them in `GameBuild/validation/loads.json`) the table matches
 pristine BTK's ballistic-calc output for identical inputs (manually compare ≥5
