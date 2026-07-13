@@ -1,0 +1,175 @@
+// Typed engine bridge — the ONLY code that touches embind objects and their
+// `.delete()` memory rules (build-plan §3; execution-protocol §9). The app calls
+// these typed functions and never sees a raw handle.
+//
+// Coordinate convention (engine): X=crossrange(+right), Y=vertical(+up),
+// Z=-downrange, so a target R metres downrange is at (0, 0, -R).
+import { loadBtkModule } from './wasm-module';
+import type {
+  AtmosphereInput,
+  BtkModule,
+  DragFunctionValue,
+  EBullet,
+  ESimulator,
+  Load,
+  SolveOptions,
+  TrajectoryTable,
+  WindVec,
+  ZeroResult,
+} from './types';
+
+export type {
+  AtmosphereInput,
+  Load,
+  SolveOptions,
+  TrajectoryRow,
+  TrajectoryTable,
+  WindVec,
+  ZeroResult,
+} from './types';
+
+const DEFAULT_DT = 0.001;
+const ZERO_MAX_ITERATIONS = 50;
+const ZERO_TOLERANCE_M = 1e-5;
+
+/** Spin rate (rad/s) from muzzle velocity and twist length (m/turn):
+ * one turn per `twistM` of travel → 2π·v/twist. Engine-adjacent physics, kept
+ * here so components never derive it inline. Matches validation/match-check.mjs. */
+export function spinRateFromTwist(muzzleVelocityMps: number, twistM: number): number {
+  return (2 * Math.PI * muzzleVelocityMps) / twistM;
+}
+
+function dragValue(module: BtkModule, model: Load['dragModel']): DragFunctionValue {
+  return model === 'G1' ? module.DragFunction.G1 : module.DragFunction.G7;
+}
+
+/**
+ * Configure a simulator with the load/atmosphere/wind and solve the zeroed
+ * launch state for `zeroRangeM`. Returns the simulator (caller must delete it
+ * and all handles in `owned`). `computeZero` leaves the simulator reset to the
+ * zeroed initial state with a cleared trajectory.
+ */
+function setupZeroedSimulator(
+  module: BtkModule,
+  load: Load,
+  atmosphere: AtmosphereInput,
+  wind: WindVec,
+  zeroRangeM: number,
+  dt: number,
+): { sim: ESimulator; owned: { delete(): void }[] } {
+  const bullet = new module.Bullet(
+    load.massKg,
+    load.diameterM,
+    load.lengthM,
+    load.bc,
+    dragValue(module, load.dragModel),
+  );
+  const atmos = new module.Atmosphere(
+    atmosphere.temperatureK,
+    atmosphere.altitudeM,
+    atmosphere.humidity,
+    atmosphere.pressurePa ?? 0,
+  );
+  const windVec = new module.Vector3D(wind.x, wind.y, wind.z);
+  const target = new module.Vector3D(0, 0, -zeroRangeM);
+  const sim = new module.BallisticsSimulator();
+  const owned = [bullet, atmos, windVec, target, sim];
+
+  sim.setInitialBullet(bullet);
+  sim.setAtmosphere(atmos);
+  sim.setWind(windVec);
+
+  // computeZero returns a COPIED bullet handle — delete it immediately; the
+  // simulator retains the zeroed state internally (and resets to it).
+  const zeroed = sim.computeZero(
+    load.muzzleVelocityMps,
+    target,
+    dt,
+    ZERO_MAX_ITERATIONS,
+    ZERO_TOLERANCE_M,
+    load.spinRateRadPerSec ?? 0,
+  );
+  zeroed.delete();
+
+  return { sim, owned };
+}
+
+/** Solve a full trajectory and sample it at `stepM` intervals to `maxRangeM`. */
+export function solveTrajectory(
+  module: BtkModule,
+  load: Load,
+  atmosphere: AtmosphereInput,
+  wind: WindVec,
+  opts: SolveOptions,
+): TrajectoryTable {
+  const dt = opts.dt ?? DEFAULT_DT;
+  const { sim, owned } = setupZeroedSimulator(module, load, atmosphere, wind, opts.zeroRangeM, dt);
+
+  try {
+    // Simulate a little past the last sample so atDistance can interpolate it.
+    sim.simulate(opts.maxRangeM * 1.05, dt, 10.0);
+    const trajectory = sim.getTrajectory(); // reference — do NOT delete
+
+    const rows: TrajectoryTable = [];
+    for (let range = opts.stepM; range <= opts.maxRangeM + 1e-6; range += opts.stepM) {
+      const point = trajectory.atDistance(range);
+      if (!point) continue;
+      const state = point.getState(); // copied Bullet handle
+      const pos = state.getPosition(); // copied Vector3D handle
+      rows.push({
+        rangeM: point.getDistance(),
+        dropM: pos.y,
+        windageM: pos.x,
+        velocityMps: point.getVelocity(),
+        timeOfFlightS: point.getTime(),
+        energyJ: point.getKineticEnergy(),
+      });
+      pos.delete();
+      state.delete();
+      point.delete();
+    }
+    return rows;
+  } finally {
+    for (const handle of owned) handle.delete();
+  }
+}
+
+/** Solve just the zeroed launch angles for a load/atmosphere/wind at a range. */
+export function computeZero(
+  module: BtkModule,
+  load: Load,
+  atmosphere: AtmosphereInput,
+  wind: WindVec,
+  zeroRangeM: number,
+  dt: number = DEFAULT_DT,
+): ZeroResult {
+  const { sim, owned } = setupZeroedSimulator(module, load, atmosphere, wind, zeroRangeM, dt);
+  try {
+    // The simulator was reset to the zeroed initial bullet; read its launch angles.
+    const initial: EBullet = sim.getInitialBullet(); // copied handle → delete
+    const result: ZeroResult = {
+      elevationRad: initial.getElevationAngle(),
+      windageRad: initial.getAzimuthAngle(),
+    };
+    initial.delete();
+    return result;
+  } finally {
+    for (const handle of owned) handle.delete();
+  }
+}
+
+export interface EngineBridge {
+  solveTrajectory(load: Load, atmosphere: AtmosphereInput, wind: WindVec, opts: SolveOptions): TrajectoryTable;
+  computeZero(load: Load, atmosphere: AtmosphereInput, wind: WindVec, zeroRangeM: number, dt?: number): ZeroResult;
+}
+
+/** Load the WASM engine and return a bridge with the module bound in. */
+export async function createEngineBridge(): Promise<EngineBridge> {
+  const module = await loadBtkModule();
+  return {
+    solveTrajectory: (load, atmosphere, wind, opts) =>
+      solveTrajectory(module, load, atmosphere, wind, opts),
+    computeZero: (load, atmosphere, wind, zeroRangeM, dt) =>
+      computeZero(module, load, atmosphere, wind, zeroRangeM, dt),
+  };
+}
