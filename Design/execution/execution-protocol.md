@@ -70,7 +70,7 @@ When you find a conflict, **stop and log it** (§6) rather than picking silently
 ## 4. Standing guardrails (never violate; these encode the hard constraints)
 
 1. **`BallisticsToolkit/` physics is immutable; the build may be minimally patched.**
-   (Amended 2026-07-15, owner decision.) All engine work happens in `GameBuild/engine/`.
+   (Amended 2026-07-13, owner decision.) All engine work happens in `GameBuild/engine/`.
    To keep the oracle *buildable on the current toolchain*, you MAY change, in BTK:
    `CMakeLists.txt` / build flags, `bindings.cpp`, and mechanical warning fixes
    (e.g. new-clang `-Werror` complaints) — provided the change **cannot alter
@@ -172,7 +172,7 @@ Keep it terse and mechanical; it is the single source of truth for state.
 | Task | Status | Date | Commit | Note |
 |---|---|---|---|---|
 | 0.1 | DONE | 2026-07-14 | abc123 | steel-sim runs locally |
-| 0.2 | IN PROGRESS | 2026-07-15 | — | CMake copied; native target not building yet |
+| 0.2 | IN PROGRESS | 2026-07-13 | — | CMake copied; native target not building yet |
 ...
 ## Deferred observations
 - (inc0/task2) build_web.sh assumes bash; fine on runner, note for docs

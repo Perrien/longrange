@@ -1,7 +1,7 @@
 // Fails fast with an actionable message if the engine WASM artifact is missing.
 // The artifact (GameBuild/engine/build-wasm/ballistics_toolkit_wasm.js) is a
 // git-ignored build output, so a fresh checkout won't have it until built.
-// Wired into dev/build/test scripts (task 0.4c, owner decision 2026-07-15).
+// Wired into dev/build/test scripts (task 0.4c, owner decision 2026-07-13).
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 

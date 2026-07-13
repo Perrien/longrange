@@ -2,7 +2,7 @@
 # Jobs: native engine tests (ctest) · engine WASM + app build/tests · deploy to
 # GitHub Pages (push to main only).
 #
-# Toolchain pins (owner decision 2026-07-15): Emscripten 6.0.2 — the SAME version
+# Toolchain pins (owner decision 2026-07-13): Emscripten 6.0.2 — the SAME version
 # used for local builds and golden-vector generation. Do not bump one without the
 # others (see Design/execution/PROGRESS.md decisions log).
 #

@@ -2,6 +2,6 @@
 # (execution-protocol §4.1; increment-0 task 0.7)
 btk-commit: 29d43c13f4945cb9caf4e73d2041c22645ebf4e7   # pristine BallisticsToolkit/, 2026-07-07
 oracle-patches: (none)
-emscripten: 6.0.2   # owner decision 2026-07-15 — same version for local, CI, and vector generation
+emscripten: 6.0.2   # owner decision 2026-07-13 — same version for local, CI, and vector generation
 tolerance: 1e-4 relative (expected: ~0; engine is an unmodified copy)
 vectors: vectors/golden.json (regenerate: node GameBuild/validation/run.mjs --generate — requires local pristine BTK build)

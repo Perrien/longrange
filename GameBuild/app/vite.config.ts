@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// Engine-artifact wiring (owner decision, 2026-07-15): the single-file WASM ES
+// Engine-artifact wiring (owner decision, 2026-07-13): the single-file WASM ES
 // module (SINGLE_FILE=1, WASM embedded) is imported via the `@engine` alias, and
 // the raw specifier lives in exactly one bridge file (src/engine-bridge/wasm-module.ts).
 // Vitest inherits these aliases from this config. GameBuild/validation/run.mjs does

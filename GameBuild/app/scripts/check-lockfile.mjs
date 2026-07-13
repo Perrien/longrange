@@ -2,7 +2,7 @@
 //
 // npm on the corp machine resolves packages via the internal mirror and writes
 // those URLs into package-lock.json's `resolved` fields; GitHub CI can't reach
-// them (ENOTFOUND artifacts.apple.com — seen 2026-07-15). The lockfile must
+// them (ENOTFOUND artifacts.apple.com — seen 2026-07-13). The lockfile must
 // stay canonicalized to the public registry: npm substitutes the locally
 // configured mirror for public URLs automatically, so public URLs work
 // everywhere; internal URLs work only inside the corp network.

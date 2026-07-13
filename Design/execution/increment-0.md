@@ -35,7 +35,7 @@ empty because everything passed).
 
 ## Task 0.1 — Prove the pristine BTK build
 
-> **Toolchain decision (owner, 2026-07-15):** the 4.0.17 pin is replaced by
+> **Toolchain decision (owner, 2026-07-13):** the 4.0.17 pin is replaced by
 > **Emscripten 6.0.2 from the internal brew mirror** — newer is preferred; what
 > matters is ONE recorded version used everywhere (local + root `ci.yml` + vector
 > generation). If BTK does not compile under 6.0.2, apply minimal build-only
@@ -118,7 +118,7 @@ verify with `npm ls --depth=0` before proceeding. Create `GameBuild/app/src/engi
 Add a debug screen: inputs for a load, renders a drop/windage table at 100 m steps
 in **MIL and MOA, metric and imperial side-by-side**.
 
-> **Engine-artifact wiring (owner decision, 2026-07-15):** keep `SINGLE_FILE=1`
+> **Engine-artifact wiring (owner decision, 2026-07-13):** keep `SINGLE_FILE=1`
 > (revisit only at 1.8's precache audit). Import the artifact via a Vite
 > `resolve.alias` `@engine` → `../engine/build-wasm/ballistics_toolkit_wasm.js`,
 > with `server.fs.allow` extended to `GameBuild/engine/`; the raw specifier lives
