@@ -105,3 +105,9 @@ fix this environment-wide for all Node tools without the per-tool `cafile` worka
   /Users/analyst/node-ca.pem` (legitimate npm config, no security/env/sandbox
   change; see Resolved escalations). The pause condition is now satisfied — emsdk
   install is ready to proceed pending owner's choice of route (Owner install queue).
+- 2026-07-13: **Repo scope decided (owner).** The git repo tracks only `CLAUDE.md`
+  and `Design/`. `BallisticsToolkit/`, `Documentation/` (copyrighted source PDFs),
+  and `Wiki/` are **git-ignored, local-only, never pushed** — history was scrubbed
+  (filter-branch) so they never appear in any commit. Files remain on disk. Owner
+  pushes to GitHub manually (github.com is blocked from the agent sandbox). Pre-scrub
+  state recoverable locally under `.git/refs/original/` until owner drops it.
