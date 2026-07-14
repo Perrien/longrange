@@ -6,9 +6,13 @@
 //  - Drag sensitivity is 1:1 with the visible field of view (rad-per-pixel =
 //    fov/screenHeight), so the world tracks the finger identically at any zoom;
 //    the sensitivity slider scales from there. Automatically ∝ 1/magnification.
-//  - Hand wobble: ~1 MOA-class slow drift (two incommensurate sines per axis +
-//    a 4 s breathing cycle on pitch) added to the aimed direction; the player
-//    rides it, as with a real rifle. Toggleable for comparison.
+//  - Hand wobble (owner feedback, iteration 2): three layers — slow sway,
+//    higher-frequency muscle tremor, and occasional random micro-jerks — all
+//    scaled by a 0–2× amplitude slider (0 = off). Wobble MUST remain a
+//    user-adjustable setting in the real game (logged in PROGRESS).
+//  - Recoil (owner feedback, iteration 2): FIRE kicks the view up and slightly
+//    sideways through a spring-damper, settling back NEAR the hold but with a
+//    small random residual shift — follow-through and re-acquisition are real.
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { radToMil, radToMoa, yardsToMeters } from '../units';
@@ -20,7 +24,14 @@ const EYE_HEIGHT_M = 1.2;
 const BASE_FOV_DEG = 24; // "1x" vertical FOV; scope FOV = BASE/mag
 const MAG_MIN = 4.5;
 const MAG_MAX = 35;
-const WOBBLE_RAD = 0.00015; // ~0.5 MOA component amplitude → ~1 MOA-class total
+const WOBBLE_RAD = 0.00015; // slow-sway component amplitude (~1 MOA-class total at 1×)
+const TREMOR_RAD = 0.00004; // muscle-tremor layer amplitude
+// Disturbance spring-damper (shared by recoil + micro-jerks): x'' = -K·x − C·x'
+const SPRING_K = 64; // ω≈8 rad/s → settles in ~0.5 s
+const SPRING_C = 9; // slightly underdamped — visible overshoot on recoil
+const RECOIL_PITCH_VEL = 0.05; // rad/s impulse ≈ 3 mrad peak muzzle rise
+const RECOIL_YAW_VEL = 0.012; // max random sideways component
+const RESIDUAL_SHIFT_RAD = 0.0001; // ±0.1 mrad POA shift after recoil (follow-through)
 
 interface ShotResult {
   hit: boolean;
@@ -32,17 +43,27 @@ export function AimSpike() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [mag, setMag] = useState(8);
   const [sens, setSens] = useState(1.0);
-  const [wobbleOn, setWobbleOn] = useState(true);
+  const [wobbleAmp, setWobbleAmp] = useState(1.0); // 0 = off … 2 = shaky day
   const [shots, setShots] = useState<{ hits: number; total: number; last?: ShotResult }>({
     hits: 0,
     total: 0,
   });
 
   // Loop-visible mutable state (React state is for the HUD only).
-  const stateRef = useRef({ yaw: 0, pitch: 0, mag: 8, sens: 1.0, wobbleOn: true, t: 0 });
+  const stateRef = useRef({
+    yaw: 0,
+    pitch: 0,
+    mag: 8,
+    sens: 1.0,
+    wobbleAmp: 1.0,
+    t: 0,
+    // spring-damper disturbance channel (recoil + micro-jerks)
+    dist: { y: 0, p: 0, vy: 0, vp: 0 },
+    nextJerkAt: 2,
+  });
   stateRef.current.mag = mag;
   stateRef.current.sens = sens;
-  stateRef.current.wobbleOn = wobbleOn;
+  stateRef.current.wobbleAmp = wobbleAmp;
 
   const fireRef = useRef<() => void>(() => {});
 
@@ -159,25 +180,38 @@ export function AimSpike() {
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
     // ---- wobble + render loop ----
+    // Three layers, all scaled by the amplitude slider (0 disables everything):
+    // slow sway (ride-able), muscle tremor (fast, small), and micro-jerks
+    // (random kicks through the spring-damper — see frame()).
     function wobble(t: number): { yaw: number; pitch: number } {
-      if (!st.wobbleOn) return { yaw: 0, pitch: 0 };
-      return {
-        yaw: WOBBLE_RAD * (Math.sin(0.31 * t) + 0.5 * Math.sin(0.83 * t + 1.7)),
-        pitch:
-          WOBBLE_RAD * (Math.sin(0.23 * t + 0.9) + 0.5 * Math.sin(0.71 * t + 0.3)) +
-          0.00008 * Math.sin((2 * Math.PI * t) / 4), // breathing
-      };
+      const a = st.wobbleAmp;
+      if (a === 0) return { yaw: 0, pitch: 0 };
+      const swayY = WOBBLE_RAD * (Math.sin(0.31 * t) + 0.5 * Math.sin(0.83 * t + 1.7));
+      const swayP =
+        WOBBLE_RAD * (Math.sin(0.23 * t + 0.9) + 0.5 * Math.sin(0.71 * t + 0.3)) +
+        0.00008 * Math.sin((2 * Math.PI * t) / 4); // breathing
+      const tremY = TREMOR_RAD * (Math.sin(2 * Math.PI * 6.1 * t) + 0.6 * Math.sin(2 * Math.PI * 9.7 * t + 0.5));
+      const tremP = TREMOR_RAD * (Math.sin(2 * Math.PI * 5.3 * t + 1.1) + 0.6 * Math.sin(2 * Math.PI * 8.9 * t));
+      return { yaw: a * (swayY + tremY), pitch: a * (swayP + tremP) };
     }
 
     function aimQuaternion(t: number): THREE.Quaternion {
       const w = wobble(t);
       const q = new THREE.Quaternion();
-      q.setFromEuler(new THREE.Euler(-(st.pitch + w.pitch), -(st.yaw + w.yaw), 0, 'YXZ'));
+      q.setFromEuler(
+        new THREE.Euler(
+          -(st.pitch + w.pitch + st.dist.p),
+          -(st.yaw + w.yaw + st.dist.y),
+          0,
+          'YXZ',
+        ),
+      );
       return q;
     }
 
     fireRef.current = () => {
       // Shot goes exactly where the (wobbling) crosshair points — feel spike, no ballistics.
+      // Sampled BEFORE the recoil impulse below disturbs the view.
       raycaster.set(
         camera.position,
         new THREE.Vector3(0, 0, -1).applyQuaternion(aimQuaternion(st.t)).normalize(),
@@ -198,13 +232,32 @@ export function AimSpike() {
         mat.color.set(0xff8c00);
         setTimeout(() => mat.color.set(0xf5f5f0), 250);
       }
+      // Recoil: muzzle rise + random sideways kick through the spring-damper,
+      // plus a small permanent POA shift — the scope does NOT return exactly.
+      st.dist.vp -= RECOIL_PITCH_VEL;
+      st.dist.vy += (Math.random() * 2 - 1) * RECOIL_YAW_VEL;
+      st.pitch += (Math.random() * 2 - 1) * RESIDUAL_SHIFT_RAD;
+      st.yaw += (Math.random() * 2 - 1) * RESIDUAL_SHIFT_RAD;
     };
 
     let raf = 0;
     let last = performance.now();
     function frame(now: number) {
-      st.t += (now - last) / 1000;
+      const dt = Math.min((now - last) / 1000, 0.05);
+      st.t += dt;
       last = now;
+      // Integrate the disturbance spring-damper (recoil + micro-jerks).
+      st.dist.vy += (-SPRING_K * st.dist.y - SPRING_C * st.dist.vy) * dt;
+      st.dist.vp += (-SPRING_K * st.dist.p - SPRING_C * st.dist.vp) * dt;
+      st.dist.y += st.dist.vy * dt;
+      st.dist.p += st.dist.vp * dt;
+      // Random micro-jerks (the "erratic" layer) — scheduled every 1.5–3.5 s,
+      // scaled by the wobble slider; silent at 0.
+      if (st.wobbleAmp > 0 && st.t >= st.nextJerkAt) {
+        st.dist.vy += (Math.random() * 2 - 1) * 0.004 * st.wobbleAmp;
+        st.dist.vp += (Math.random() * 2 - 1) * 0.004 * st.wobbleAmp;
+        st.nextJerkAt = st.t + 1.5 + Math.random() * 2;
+      }
       camera.fov = BASE_FOV_DEG / st.mag;
       camera.updateProjectionMatrix();
       camera.quaternion.copy(aimQuaternion(st.t));
@@ -263,7 +316,9 @@ export function AimSpike() {
           <input type="range" min={0.3} max={3} step={0.05} value={sens} onChange={(e) => setSens(Number(e.target.value))} />
         </label>
         <label style={{ display: 'block' }}>
-          <input type="checkbox" checked={wobbleOn} onChange={(e) => setWobbleOn(e.target.checked)} /> wobble (~1 MOA)
+          wobble ×{wobbleAmp.toFixed(2)}{' '}
+          <input type="range" min={0} max={2} step={0.05} value={wobbleAmp} onChange={(e) => setWobbleAmp(Number(e.target.value))} />
+          {wobbleAmp === 0 ? ' (off)' : ''}
         </label>
       </div>
       <button
