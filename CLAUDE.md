@@ -56,10 +56,11 @@ to building.
   audio)** underway per `Design/execution/increment-1.5-plan.md`: **1.5a** (steel swing/
   rotate via the C++ SteelTarget) and **1.5d** (distance-delayed audio: report always,
   hit-only steel ping, energy-scaled, no miss sound) built + **owner-confirmed on device**;
-  **1.5c** (impact marks + dust + reactive chains) in progress — **Commit 1 (pooled sprite
-  marks + GPU dust puffs, colour-keyed by hit/miss) built + gates green**, reactive chains
-  are Commit 2; **1.5b** (in-scope bullet trace) still TODO. Test scope zero currently 300 yd
-  (owner, for hold over/under testing).
+  **1.5c** (impact marks + dust + reactive chains) in progress — **Commit 1 (pooled
+  camera-facing sprite dust puffs, colour-keyed by hit/miss; ground-miss projection)
+  built + owner-confirmed on device**, reactive chains are Commit 2; **1.5b** (in-scope
+  bullet trace) still TODO. Test scope zero currently 300 yd (owner, for hold over/under
+  testing).
 
 ## Design decisions locked in
 

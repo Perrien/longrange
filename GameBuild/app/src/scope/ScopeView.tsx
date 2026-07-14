@@ -38,6 +38,11 @@ import { getGameLoad, DEFAULT_GAME_LOAD_ID, SCOPE_ZERO_RANGE_M } from '../game/l
 
 const EYE_HEIGHT_M = 1.6; // matches the Range A look-around
 
+// A low miss resolves on the far target plane BELOW ground level; place its dust
+// where the round actually lands by projecting the sight ray onto the grass.
+const GROUND_Y_M = 0; // RangeScene grass lane height
+const GROUND_PUFF_LIFT_M = 0.12; // sit the dust just above the grass, not half-buried
+
 /** Fixed ISA atmosphere for Increment 1 (matches validation/loads.json conditions). */
 const ISA_ATMOSPHERE: AtmosphereInput = { temperatureK: 288.15, altitudeM: 0, humidity: 0.5, pressurePa: 0 };
 
@@ -357,10 +362,22 @@ export function ScopeView() {
           const impactEnergyJ = 0.5 * gameLoad.load.massKg * solved.velocityMps * solved.velocityMps;
           playShotAudio(result.hitPlateId != null, soundDistanceM, impactEnergyJ);
 
-          // Impact FX (task 1.5c): a dust puff always (metallic on a steel hit,
-          // brown on a berm/ground miss), plus a persistent scuff mark on a hit.
+          // Impact FX (task 1.5c): a dust puff on every shot — metallic on a
+          // steel hit, brown on a miss. A low miss resolves BELOW the ground on
+          // the far target plane (underground → occluded by the grass), so
+          // project it down the sight ray onto the grass in front, where the
+          // round actually kicks up dirt.
+          let fxX = result.impact.x;
+          let fxY = result.impact.y;
+          let fxZ = impactZ;
+          if (result.hitPlateId == null && fxY < GROUND_Y_M) {
+            const t = (GROUND_Y_M - camera.position.y) / (fxY - camera.position.y);
+            fxX = camera.position.x + t * (fxX - camera.position.x);
+            fxZ = camera.position.z + t * (fxZ - camera.position.z);
+            fxY = GROUND_Y_M + GROUND_PUFF_LIFT_M;
+          }
           emitImpact({
-            impactWorld: new THREE.Vector3(result.impact.x, result.impact.y, impactZ),
+            impactWorld: new THREE.Vector3(fxX, fxY, fxZ),
             hit: result.hitPlateId != null,
           });
         }

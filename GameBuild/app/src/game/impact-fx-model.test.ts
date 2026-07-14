@@ -1,20 +1,17 @@
-// Impact-FX model tests (task 1.5c): the pool bookkeeping (allocate → cap
-// respected → recycle) and outcome→colour selection behind marks/dust. Pure (no
+// Impact-FX model tests (task 1.5c): the puff pool bookkeeping (allocate → cap
+// respected → recycle → age) and outcome→colour selection. Pure (no
 // canvas/WebGL), so it runs in the node vitest env — see plan 1.5c "Verify".
 import { describe, it, expect } from 'vitest';
-import { EffectPool, pickImpactColor, STEEL_IMPACT, DIRT_IMPACT } from './impact-fx-model';
+import { EffectPool, pickPuffColor, STEEL_PUFF, DIRT_PUFF } from './impact-fx-model';
 
-describe('impact-fx-model/pickImpactColor', () => {
-  it('picks a metallic steel scuff on a hit, brown dirt on a miss', () => {
-    expect(pickImpactColor(true)).toBe(STEEL_IMPACT);
-    expect(pickImpactColor(false)).toBe(DIRT_IMPACT);
+describe('impact-fx-model/pickPuffColor', () => {
+  it('picks a metallic spark on a hit, brown dirt on a miss', () => {
+    expect(pickPuffColor(true)).toBe(STEEL_PUFF);
+    expect(pickPuffColor(false)).toBe(DIRT_PUFF);
   });
 
-  it('hit and miss colours differ in both mark tint and dust', () => {
-    const hit = pickImpactColor(true);
-    const miss = pickImpactColor(false);
-    expect(hit.markHex).not.toBe(miss.markHex);
-    expect(hit.dust).not.toEqual(miss.dust);
+  it('hit and miss puff colours differ', () => {
+    expect(pickPuffColor(true)).not.toEqual(pickPuffColor(false));
   });
 });
 
@@ -59,6 +56,16 @@ describe('impact-fx-model/EffectPool', () => {
     expect(freed.length).toBe(2);
     expect(pool.activeCount).toBe(0);
     for (const i of freed) expect(pool.isActive(i)).toBe(false);
+  });
+
+  it('tracks live age for animation and reports -1 when free', () => {
+    const pool = new EffectPool(2);
+    const a = pool.acquire();
+    expect(pool.ageOf(a)).toBe(0);
+    pool.releaseExpired(0.3, 1.0);
+    expect(pool.ageOf(a)).toBeCloseTo(0.3, 6);
+    pool.release(a);
+    expect(pool.ageOf(a)).toBe(-1);
   });
 
   it('frees a slot explicitly and makes it available again', () => {

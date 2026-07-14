@@ -1,57 +1,47 @@
 // Pure impact-FX model (task 1.5c) — the pool bookkeeping and outcome→colour
-// choices behind bullet impact marks and dust puffs. Kept framework-, DOM- and
+// choice behind the dust puffs a shot kicks up. Kept framework-, DOM- and
 // THREE-free so it unit-tests in the node vitest env (no canvas, no WebGL). The
-// ImpactFx renderer (scope/impact-fx.ts) consumes these; it owns the sprites,
-// the dust shader, and the textures.
+// ImpactFx renderer (scope/impact-fx.ts) consumes these; it owns the sprites and
+// the puff texture.
 //
 // Same split rationale as the audio module (audio-model.ts ÷ audio-manager.ts):
-// the physics/bookkeeping is testable in isolation, the rendering is not.
+// the bookkeeping is testable in isolation, the rendering is not.
+//
+// Design (owner 2026-07-14): a shot ALWAYS kicks a dust puff — a light metallic
+// spark on a steel hit, brown dirt on a berm/ground miss. There is no persistent
+// impact "mark" (the earlier decal/sprite scuff read wrong on a swinging plate);
+// the transient puff carries all the hit/miss feedback.
 
-/** An RGB colour, 0–255 per channel — the shape DustCloud's reset() expects. */
+/** An RGB colour, 0–255 per channel. */
 export interface RgbColor {
   r: number;
   g: number;
   b: number;
 }
 
-/** The two colour choices an impact drives: a multiply-tint for the persistent
- * mark sprite, and the dust-puff RGB. */
-export interface ImpactColor {
-  /** Multiply-blend tint for the impact-mark sprite (hex). */
-  markHex: number;
-  /** Dust-puff colour (0–255 RGB). */
-  dust: RgbColor;
-}
+/** A steel hit: a light, metallic/grey spark puff. */
+export const STEEL_PUFF: RgbColor = { r: 220, g: 220, b: 210 };
+/** A miss into the berm/ground: a brown dirt puff. */
+export const DIRT_PUFF: RgbColor = { r: 156, g: 122, b: 77 };
 
-/** A steel hit: a dark metallic scuff on the plate + a grey/metallic spark puff. */
-export const STEEL_IMPACT: ImpactColor = {
-  markHex: 0x2b2b2b,
-  dust: { r: 205, g: 205, b: 195 },
-};
-/** A miss into the berm/ground: no mark (there's no plate to mark), a brown
- * dirt puff. `markHex` is unused for misses but kept for a total colour. */
-export const DIRT_IMPACT: ImpactColor = {
-  markHex: 0x3d2817,
-  dust: { r: 150, g: 116, b: 72 },
-};
-
-/** Outcome → colours: metallic spark on a steel hit, brown dirt on a miss
+/** Outcome → puff colour: metallic spark on a steel hit, brown dirt on a miss
  * (plan 1.5c "colour keyed on hitPlateId != null"). */
-export function pickImpactColor(hit: boolean): ImpactColor {
-  return hit ? STEEL_IMPACT : DIRT_IMPACT;
+export function pickPuffColor(hit: boolean): RgbColor {
+  return hit ? STEEL_PUFF : DIRT_PUFF;
 }
 
 /**
- * A fixed-capacity slot pool with oldest-first recycling — the shared mechanic
- * behind both effect pools. It owns no rendering: it hands out slot indices in
- * [0, capacity) and tracks which are live and how long they've been live. The
- * renderer maps each index to a sprite / dust cloud.
+ * A fixed-capacity slot pool with oldest-first recycling and lifetime expiry —
+ * the mechanic behind the puff pool. It owns no rendering: it hands out slot
+ * indices in [0, capacity) and tracks which are live and how long they've been
+ * live (so the renderer can animate size/opacity over each puff's life). The
+ * renderer maps each index to a sprite.
  *
  * - `acquire()` reuses a free slot if one exists, otherwise evicts (recycles)
  *   the oldest live slot — so `activeCount` never exceeds `capacity`.
  * - `releaseExpired(dt, lifetimeS)` ages the live slots and frees any past their
- *   lifetime (dust puffs fade and recycle). Marks never call this — they persist
- *   until evicted by a later `acquire()`.
+ *   lifetime, returning the freed indices.
+ * - `ageOf(index)` is the live age (s) for animation, or -1 when free.
  */
 export class EffectPool {
   readonly capacity: number;
@@ -72,6 +62,11 @@ export class EffectPool {
 
   isActive(index: number): boolean {
     return index >= 0 && index < this.capacity && this.age[index] >= 0;
+  }
+
+  /** Live age in seconds, or -1 if the slot is free. */
+  ageOf(index: number): number {
+    return this.isActive(index) ? this.age[index] : -1;
   }
 
   /** Reserve a slot, evicting the oldest if the pool is full. Always returns a
