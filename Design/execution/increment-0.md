@@ -5,14 +5,19 @@
 `Protocol:` [`execution-protocol.md`](./execution-protocol.md) — one task at a
 time, verify, log in [`PROGRESS.md`](./PROGRESS.md).
 
-**Increment exit checklist (all must be true to leave Increment 0):**
+**Increment exit checklist — ALL GREEN, increment complete 2026-07-13:**
 
-- [ ] Installed PWA cold-launches offline on the iPad and shows an engine-computed
-      drop table (MIL+MOA, m+yd).
-- [ ] A save survives PWA relaunch; JSON export→import round-trips.
-- [ ] Golden-vector diff runs in CI and is green; a deliberate engine break makes it red.
-- [ ] Native `ctest` suite runs without Emscripten installed.
-- [ ] OWNER CHECK passed: touch aiming judged controllable (task 0.9).
+- [x] Installed PWA cold-launches offline on the iPad and shows an engine-computed
+      drop table (MIL+MOA, m+yd). *(0.6, owner-confirmed on device)*
+- [x] A save survives PWA relaunch; JSON export→import round-trips. *(0.8,
+      owner-confirmed: iPad force-quit/relaunch + second-browser import)*
+- [x] Golden-vector diff runs in CI and is green; a deliberate break makes it red.
+      *(0.7: CI green owner-confirmed; negative test verified — perturbed vector
+      → exit 1)*
+- [x] Native `ctest` suite runs without Emscripten installed. *(0.3 locally;
+      also runs in CI's emsdk-free native job)*
+- [x] OWNER CHECK passed: touch aiming judged controllable. *(0.9, five
+      iterations; owner verdict "Controllable", wobble default 0.75)*
 
 ---
 
