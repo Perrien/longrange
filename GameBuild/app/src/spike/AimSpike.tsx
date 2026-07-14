@@ -52,7 +52,7 @@ export function AimSpike() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [mag, setMag] = useState(8);
   const [sens, setSens] = useState(1.0);
-  const [wobbleAmp, setWobbleAmp] = useState(1.0); // 0 = off … 2 = shaky day
+  const [wobbleAmp, setWobbleAmp] = useState(0.75); // owner-tuned default (iter 5); 0 = off … 2 = shaky day
   const [shots, setShots] = useState<{ hits: number; total: number; last?: ShotResult }>({
     hits: 0,
     total: 0,
@@ -64,7 +64,7 @@ export function AimSpike() {
     pitch: 0,
     mag: 8,
     sens: 1.0,
-    wobbleAmp: 1.0,
+    wobbleAmp: 0.75,
     t: 0,
     // spring-damper disturbance channel (recoil + micro-jerks)
     dist: { y: 0, p: 0, vy: 0, vp: 0 },
@@ -141,46 +141,53 @@ export function AimSpike() {
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
 
-    // ---- input ----
+    // ---- input (rewritten iter 5 — owner bug report) ----
+    // Pinch is ABSOLUTE per gesture: mag = magAtGestureStart × spread/spreadAtStart.
+    // No incremental compounding (the old version drifted, snapped to max, and
+    // couldn't recover). Drag is locked out from the moment a second finger
+    // lands until ALL fingers lift, so a pinch never ends with an aim jump.
     const pointers = new Map<number, { x: number; y: number }>();
-    let pinchDist = 0;
+    let pinch: { startDist: number; startMag: number } | null = null;
+    let dragLocked = false;
 
     function radPerPixel(): number {
       const fovRad = (BASE_FOV_DEG / st.mag) * (Math.PI / 180);
       return (st.sens * fovRad) / canvas.clientHeight;
+    }
+    function spread(): number {
+      const [a, b] = [...pointers.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y);
     }
 
     function onPointerDown(e: PointerEvent) {
       canvas.setPointerCapture(e.pointerId);
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pointers.size === 2) {
-        const [a, b] = [...pointers.values()];
-        pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+        pinch = { startDist: spread(), startMag: st.mag };
+        dragLocked = true;
+      } else if (pointers.size > 2) {
+        pinch = null; // 3+ fingers: ignore gestures entirely
       }
     }
     function onPointerMove(e: PointerEvent) {
       const prev = pointers.get(e.pointerId);
       if (!prev) return;
       const cur = { x: e.clientX, y: e.clientY };
-      if (pointers.size === 1) {
+      pointers.set(e.pointerId, cur);
+      if (pointers.size === 1 && !dragLocked) {
         const rpp = radPerPixel();
         st.yaw += (cur.x - prev.x) * rpp; // drag right → aim right (FPS-style; flip sign here if map-style feels better)
         st.pitch += (cur.y - prev.y) * rpp;
         st.pitch = Math.max(-0.5, Math.min(0.5, st.pitch));
-      }
-      pointers.set(e.pointerId, cur);
-      if (pointers.size === 2) {
-        const [a, b] = [...pointers.values()];
-        const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (pinchDist > 0) {
-          setMag((m) => Math.max(MAG_MIN, Math.min(MAG_MAX, m * (d / pinchDist))));
-        }
-        pinchDist = d;
+      } else if (pointers.size === 2 && pinch && pinch.startDist > 0) {
+        const next = pinch.startMag * (spread() / pinch.startDist);
+        setMag(Math.max(MAG_MIN, Math.min(MAG_MAX, next)));
       }
     }
     function onPointerUp(e: PointerEvent) {
       pointers.delete(e.pointerId);
-      pinchDist = 0;
+      if (pointers.size < 2) pinch = null;
+      if (pointers.size === 0) dragLocked = false; // drag resumes only when clean
     }
     function onWheel(e: WheelEvent) {
       e.preventDefault();
@@ -314,7 +321,16 @@ export function AimSpike() {
 
   const last = shots.last;
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100dvh', background: '#000' }}>
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100dvh',
+        background: '#000',
+        touchAction: 'none', // belt-and-suspenders vs Safari page pinch-zoom
+        overscrollBehavior: 'none',
+      }}
+    >
       <canvas
         ref={canvasRef}
         style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none' }}
@@ -393,8 +409,17 @@ export function AimSpike() {
         </button>
       </div>
       <button
-        onClick={() => fireRef.current()}
+        // onPointerDown, NOT onClick (iter 5): iOS does not synthesize click
+        // while another finger (the HOLD thumb) is down — fire on the touch itself.
+        onPointerDown={(e) => {
+          e.preventDefault();
+          fireRef.current();
+        }}
+        onContextMenu={(e) => e.preventDefault()}
         style={{
+          touchAction: 'none',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
           position: 'absolute',
           right: 'calc(24px + env(safe-area-inset-right))',
           bottom: 'calc(24px + env(safe-area-inset-bottom))',
