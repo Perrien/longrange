@@ -59,6 +59,25 @@ describe('buildReticle', () => {
     expect(tight.maxValue).toBeLessThan(wide.maxValue);
   });
 
+  it('MOA reticle thins with distance: every 1 to 15, every 5 to 50, every 10 beyond', () => {
+    // Low zoom → wide MOA span so all three bands appear inside the circle.
+    const r = buildReticle('MOA', fovRadForMag(4.5), H, RADIUS);
+    const pos = r.ticksX.filter((t) => t.value > 0).map((t) => t.value).sort((a, b) => a - b);
+    for (let v = 1; v <= 15; v++) expect(pos).toContain(v); // every 1 to 15
+    for (const v of [16, 17, 18, 19, 21, 26, 44]) expect(pos).not.toContain(v); // thinned past 15
+    for (const v of [20, 25, 30, 35, 40, 45, 50]) expect(pos).toContain(v); // every 5 to 50
+    for (const v of [60, 70, 80]) expect(pos).toContain(v); // every 10 beyond 50
+    for (const v of [55, 65, 75]) expect(pos).not.toContain(v); // not every 5 beyond 50
+    // Majors (labelled) are multiples of 5; the 1-MOA minors are not labelled.
+    expect(r.ticksX.find((t) => t.value === 3)!.label).toBeUndefined();
+    expect(r.ticksX.find((t) => t.value === 20)!.label).toBe('20');
+  });
+
+  it('MOA cadence stays inside the scope circle', () => {
+    const r = buildReticle('MOA', fovRadForMag(4.5), H, RADIUS);
+    for (const t of r.ticksX) expect(Math.abs(t.offsetPx)).toBeLessThanOrEqual(RADIUS);
+  });
+
   it('both units build without error across the zoom range', () => {
     for (const unit of ['MIL', 'MOA'] as ReticleUnit[]) {
       for (const mag of [4.5, 10, 20, 35]) {

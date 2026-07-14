@@ -129,7 +129,11 @@ fix this environment-wide for all Node tools without the per-tool `cafile` worka
   elevation/windage moving the reticle (holds) and real impact arrive with the
   firing-solution plumbing (1.4) and the loop/HUD (1.6). Reticle minor step is
   1 mil / 1 MOA with labelled majors every 5 — easy to retune (0.9-style) if the
-  owner wants finer hashes for ranging.
+  owner wants finer hashes for ranging. **REVISION 2026-07-14 (owner: MOA was
+  "a bit noisy"):** MOA reticle cadence made variable via cadence "bands" —
+  **1-MOA hashes to 15, every 5 to 50, every 10 beyond** (MIL unchanged: every 1,
+  major/label every 5). Majors (longer + labelled) remain multiples of 5. Verified
+  HERE: tsc clean, vitest 61/61 (+2 MOA-cadence tests), build green. Committed.
 - (1.2) **Range A uses BTK's authored-inputs model (rev 4, owner 2026-07-14):**
   three independent authored inputs per rack — fixed frame width
   (`RACK_WIDTH_YARDS`, BTK's 1.5→3 yd ladder), an explicit plate list

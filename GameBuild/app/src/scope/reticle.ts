@@ -16,12 +16,28 @@ import { pixelsPerMil, pixelsPerMoa } from './scope-projection';
 
 export type ReticleUnit = 'MIL' | 'MOA';
 
-/** Tick cadence per unit: a minor tick every `step`, a labelled major every
- *  `majorEvery` steps. MIL: 1-mil hashes, label every 5. MOA: 1-MOA hashes,
- *  label every 5. */
-const CADENCE: Record<ReticleUnit, { step: number; majorEvery: number }> = {
-  MIL: { step: 1, majorEvery: 5 },
-  MOA: { step: 1, majorEvery: 5 },
+/** A cadence band: place a tick every `step` units until the subtension reaches
+ *  `until`, then the next band takes over (bands are consulted in order). Lets a
+ *  reticle thin out with distance from centre. */
+interface CadenceBand {
+  readonly until: number;
+  readonly step: number;
+}
+
+/** Tick cadence per unit. A labelled major falls on every `majorEvery` units.
+ *  MIL: 1-mil hashes all the way, label every 5. MOA: 1-MOA hashes to 15, then
+ *  every 5 to 50, then every 10 beyond (owner-tuned — a flat 1-MOA cadence was
+ *  too noisy at low zoom); label every 5. */
+const CADENCE: Record<ReticleUnit, { bands: readonly CadenceBand[]; majorEvery: number }> = {
+  MIL: { bands: [{ until: Infinity, step: 1 }], majorEvery: 5 },
+  MOA: {
+    bands: [
+      { until: 15, step: 1 },
+      { until: 50, step: 5 },
+      { until: Infinity, step: 10 },
+    ],
+    majorEvery: 5,
+  },
 };
 
 /** Half-length (px, perpendicular to the axis) of a minor / major tick. */
@@ -55,14 +71,33 @@ export interface ReticleGeometry {
   maxValue: number;
 }
 
-function buildAxis(pxPerUnit: number, maxOffsetPx: number, step: number, majorEvery: number): Tick[] {
+/** Positive tick subtension values in increasing order, walking the cadence
+ *  bands, stopping once a tick would fall outside the scope circle. */
+function axisValues(bands: readonly CadenceBand[], maxValue: number): number[] {
+  const out: number[] = [];
+  let v = 0;
+  for (const band of bands) {
+    while (v + band.step <= band.until + 1e-9) {
+      v += band.step;
+      if (v > maxValue) return out;
+      out.push(v);
+    }
+  }
+  return out;
+}
+
+function buildAxis(
+  pxPerUnit: number,
+  maxOffsetPx: number,
+  bands: readonly CadenceBand[],
+  majorEvery: number,
+): Tick[] {
   const ticks: Tick[] = [];
-  // Whole steps whose offset fits inside the scope circle (skip 0 — the centre
-  // is the crosshair, drawn separately).
-  const maxK = Math.floor(maxOffsetPx / (pxPerUnit * step));
-  for (let k = 1; k <= maxK; k++) {
-    const value = k * step;
-    const major = k % majorEvery === 0;
+  const maxValue = maxOffsetPx / pxPerUnit;
+  // Positive values from the cadence; mirror each to the negative side (skip 0 —
+  // the centre is the crosshair, drawn separately).
+  for (const value of axisValues(bands, maxValue)) {
+    const major = value % majorEvery === 0;
     const half = major ? MAJOR_HALF_PX : MINOR_HALF_PX;
     for (const sign of [1, -1] as const) {
       ticks.push({
@@ -90,9 +125,9 @@ export function buildReticle(
   const pxPerUnit = unit === 'MIL'
     ? pixelsPerMil(fovRad, viewportHeightPx)
     : pixelsPerMoa(fovRad, viewportHeightPx);
-  const { step, majorEvery } = CADENCE[unit];
-  const ticksX = buildAxis(pxPerUnit, maxOffsetPx, step, majorEvery);
-  const ticksY = buildAxis(pxPerUnit, maxOffsetPx, step, majorEvery);
+  const { bands, majorEvery } = CADENCE[unit];
+  const ticksX = buildAxis(pxPerUnit, maxOffsetPx, bands, majorEvery);
+  const ticksY = buildAxis(pxPerUnit, maxOffsetPx, bands, majorEvery);
   const maxValue = ticksX.reduce((m, t) => Math.max(m, Math.abs(t.value)), 0);
   return { unit, pxPerUnit, ticksX, ticksY, maxValue };
 }
