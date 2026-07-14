@@ -1,0 +1,33 @@
+{
+  "$comment": "Increment-1 game loads: per-shot DISPERSION specs layered on top of the ballistics in validation/loads.json (referenced by baseLoadId, so ballistics stay single-sourced in the oracle fixture). Shared by GameBuild/app/src/game/loads.ts and GameBuild/validation/match-sim-check.mjs so the app and the validation harness use identical numbers. mvSdMps is sourced from Wiki/muzzle-velocity.md; bcSdFraction and rifleAccuracyMoa are PROVISIONAL pending a sourced accuracy-and-dispersion article (see Wiki/_gaps.md). Box values are true in Increment 1. rifleAccuracyMoa is the angular dispersion cone DIAMETER (MOA); consumers convert to radians. scopeCant and all wind SDs are 0 in Increment 1 (mean wind is applied in the deterministic center; gusts arrive in 1.7).",
+  "loads": [
+    {
+      "id": "65cm-140-match",
+      "name": "6.5 Creedmoor 140 gr match (low SD)",
+      "baseLoadId": "65cm-140-match",
+      "dispersion": {
+        "mvSdMps": 2.7,
+        "bcSdFraction": 0.005,
+        "rifleAccuracyMoa": 0.5,
+        "scopeCantRad": 0,
+        "windSpeedSdMps": 0,
+        "headwindSdMps": 0,
+        "updraftSdMps": 0
+      }
+    },
+    {
+      "id": "65cm-140-bulk",
+      "name": "6.5 Creedmoor 140 gr bulk (high SD)",
+      "baseLoadId": "65cm-140-match",
+      "dispersion": {
+        "mvSdMps": 5.2,
+        "bcSdFraction": 0.015,
+        "rifleAccuracyMoa": 1.5,
+        "scopeCantRad": 0,
+        "windSpeedSdMps": 0,
+        "headwindSdMps": 0,
+        "updraftSdMps": 0
+      }
+    }
+  ]
+}

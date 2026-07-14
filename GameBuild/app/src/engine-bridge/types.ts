@@ -69,6 +69,34 @@ export interface ZeroResult {
   windageRad: number;
 }
 
+/** Per-shot dispersion spec fed to the engine's MatchSimulator (the "hit-sim").
+ * All SI. These are the load/rifle sampling parameters — box ballistics live in
+ * `Load`. Wind SDs and cant are 0 in Increment 1 (mean wind is applied in the
+ * deterministic center; gusts arrive in 1.7). */
+export interface Dispersion {
+  /** Muzzle-velocity standard deviation (m/s), Gaussian, 3σ-clipped. */
+  mvSdMps: number;
+  /** BC standard deviation as a FRACTION of nominal BC (e.g. 0.005 = 0.5%). */
+  bcSdFraction: number;
+  /** Rifle/shooter accuracy: angular dispersion cone DIAMETER (rad). */
+  rifleAccuracyRad: number;
+  /** Scope-cant range (rad); random cant uniform in [-x, +x]. */
+  scopeCantRad: number;
+  /** Crosswind speed SD (m/s). */
+  windSpeedSdMps: number;
+  /** Head/tail wind SD (m/s). */
+  headwindSdMps: number;
+  /** Up/down draft SD (m/s). */
+  updraftSdMps: number;
+}
+
+/** A single sampled impact at the target plane, meters about the aim center;
+ * +x = right, +y = up (same axes as world +X/+Y). */
+export interface ScatterShot {
+  x: number;
+  y: number;
+}
+
 // ----------------------------------------------------------------------------
 // Minimal embind surface (only what the bridge uses). Every handle owns native
 // memory and must be `.delete()`d unless returned by reference — that discipline
@@ -139,6 +167,50 @@ export interface DragFunctionValue {
   readonly value: number;
 }
 
+/** A `value_object` result from MatchSimulator.fireShot() — a plain JS object,
+ * NOT a handle (nothing to delete). Impact positions are meters at the target
+ * plane about the aim center; +x right, +y up. */
+export interface ESimulatedShot {
+  impactX: number;
+  impactY: number;
+  score: number;
+  isX: boolean;
+  actualMv: number;
+  actualBc: number;
+  windDownrange: number;
+  windCrossrange: number;
+  windVertical: number;
+  releaseAngleH: number;
+  releaseAngleV: number;
+  impactVelocity: number;
+  scopeCant: number;
+}
+
+/** Statistics over the shots fired so far. `getMatch()` on the simulator returns
+ * a COPIED handle (no reference policy in bindings.cpp) → must `.delete()`. */
+export interface EMatch extends EmbindHandle {
+  /** RMS radius of the group (m). */
+  getMeanRadius(): number;
+  /** Extreme-spread group size (m). */
+  getGroupSize(): number;
+  getRadialStandardDeviation(): number;
+  getHitCount(): number;
+}
+
+/** Opaque target handle. Ring geometry is irrelevant to the game (steel is
+ * hit/miss) — a dummy oversized target is used so scoring never clips. */
+export type ETarget = EmbindHandle;
+
+/** The match "hit-sim": zeros once about the target, then samples per-shot
+ * dispersion (MV SD, BC SD, rifle cone, cant, wind variance) on each fireShot. */
+export interface EMatchSimulator extends EmbindHandle {
+  fireShot(): ESimulatedShot;
+  /** Returns a COPIED Match handle → caller must `.delete()`. */
+  getMatch(): EMatch;
+  clearShots(): void;
+  getShotCount(): number;
+}
+
 export interface BtkModule {
   Vector3D: new (x: number, y: number, z: number) => EVector3D;
   Bullet: new (
@@ -155,7 +227,37 @@ export interface BtkModule {
     pressurePa: number,
   ) => EAtmosphere;
   BallisticsSimulator: new () => ESimulator;
+  /** Target(name, ring10..ring5, xRing, description) — diameters in m. */
+  Target: new (
+    name: string,
+    ring10M: number,
+    ring9M: number,
+    ring8M: number,
+    ring7M: number,
+    ring6M: number,
+    ring5M: number,
+    xRingM: number,
+    description: string,
+  ) => ETarget;
+  MatchSimulator: new (
+    bullet: EBullet,
+    nominalMvMps: number,
+    target: ETarget,
+    targetRangeM: number,
+    atmosphere: EAtmosphere,
+    mvSdMps: number,
+    bcSdFraction: number,
+    windSpeedSdMps: number,
+    headwindSdMps: number,
+    updraftSdMps: number,
+    rifleAccuracyRad: number,
+    scopeCantRad: number,
+    timestepS: number,
+    twistRateM: number,
+  ) => EMatchSimulator;
   DragFunction: { G1: DragFunctionValue; G7: DragFunctionValue };
+  /** Deterministic seed for the global RNG (reproducible groups). */
+  Random: { seed(value: number): void };
 }
 
 /** The Emscripten MODULARIZE factory (default export of the WASM module). */

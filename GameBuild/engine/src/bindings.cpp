@@ -11,6 +11,7 @@
 #include "match/targets.h"
 #include "math/conversions.h"
 #include "math/quaternion.h"
+#include "math/random.h"
 #include "math/simplex_noise.h"
 #include "math/vector.h"
 #include "physics/atmosphere.h"
@@ -321,6 +322,13 @@ EMSCRIPTEN_BINDINGS(ballistics_toolkit)
     .function("noise2D", &btk::math::SimplexNoise::noise2D)
     .function("noise3D", &btk::math::SimplexNoise::noise3D)
     .function("noise4D", &btk::math::SimplexNoise::noise4D);
+
+  // Random: the library's global RNG (std::mt19937). Only the deterministic
+  // seed(uint32_t) overload is exposed so the app / validation harness can make
+  // the MatchSimulator's per-shot sampling reproducible (game leaves it
+  // clock-seeded). Binding an existing seed function cannot alter any computed
+  // solve output — golden vectors stay green (LongRange task 1.4a).
+  class_<btk::math::Random>("Random").class_function("seed", select_overload<void(uint32_t)>(&btk::math::Random::seed));
 
   // Steel Target - Chain Anchor
   value_object<btk::rendering::SteelTarget::ChainAnchor>("ChainAnchor")
