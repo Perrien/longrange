@@ -5,18 +5,22 @@ import { DropTable } from './debug/DropTable';
 import { PersistencePanel } from './debug/PersistencePanel';
 import { AimSpike } from './spike/AimSpike';
 import { RangeView } from './range/RangeView';
+import { ScopeView } from './scope/ScopeView';
 
-type View = 'range' | 'aim' | 'debug';
+type View = 'range' | 'scope' | 'aim' | 'debug';
 
 export function App() {
-  const [view, setView] = useState<View>('range');
-  const fullscreen = view === 'range' || view === 'aim';
+  const [view, setView] = useState<View>('scope');
+  const fullscreen = view === 'range' || view === 'scope' || view === 'aim';
 
   return (
     <div>
       <nav style={{ fontFamily: 'monospace', padding: '0.5rem', display: 'flex', gap: '0.5rem', position: fullscreen ? 'absolute' : 'static', zIndex: 10, right: 0 }}>
         <button onClick={() => setView('range')} disabled={view === 'range'}>
           Range A
+        </button>
+        <button onClick={() => setView('scope')} disabled={view === 'scope'}>
+          Scope
         </button>
         <button onClick={() => setView('aim')} disabled={view === 'aim'}>
           Aim spike
@@ -26,6 +30,7 @@ export function App() {
         </button>
       </nav>
       {view === 'range' && <RangeView />}
+      {view === 'scope' && <ScopeView />}
       {view === 'aim' && <AimSpike />}
       {view === 'debug' && (
         <>
