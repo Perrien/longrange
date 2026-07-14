@@ -65,6 +65,23 @@ attenuated. Audio unlocked on first user gesture (iOS).
 side-by-side); ping delay at 500 yd ≈ 1.3–1.4 s after impact; no audio before
 first tap on iOS.
 
+## 1.5b Bullet trace (in-scope flight visualization) — added 2026-07-15 (owner scoping question)
+Render the fired shot's arc as a brief, fading trace visible through the scope
+— the real-world "watch your trace" self-correction cue. Reuse the trajectory
+the 1.4 solve already returns (no new physics): animate a glow along the sampled
+points over the REAL time of flight (same clock as 1.5's delayed impact ping),
+fading behind the bullet. Salvage reference: fclass-sim
+`rendering/ballistics.js` (glow-sprite trace, live-toggleable). Rules: visible
+primarily at magnification (it's a scope phenomenon); **user-toggleable in
+settings, default ON** (same principle as the wobble setting); rendering only —
+impact timing/position stay 1.4/1.5's. Future tie-in (Inc 4, note only): trace
+visibility could vary with conditions/mirage.
+**Done when:** firing shows an arcing trace through the scope that terminates at
+the 1.4-computed impact point, wall-clock-matching TOF at 500 yd (~0.7 s) within
+a frame or two; toggle OFF removes it with no other behavior change; trace path
+sampled from the SAME TrajectoryTable as the impact solve (assert in a unit test
+that trace endpoint == impact point).
+
 ## 1.6 The loop: wind, HUD, budget, scoring
 Wind controls (speed 0–20 mph, direction 12-clock; constant for now — curl-noise
 field arrives with wind markers in 1.7); HUD: current dial (elev/wind), zoom,
