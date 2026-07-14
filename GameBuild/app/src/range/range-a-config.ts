@@ -1,15 +1,27 @@
 // Range A layout config (task 1.2; build-plan §5 Increment 1).
 //
-// Pure, SI-unit description of the known-distance steel range: one rack every
-// 50 yd from 50 → 500. Plates are sized PHYSICALLY, per BTK's steel-sim ladder
-// (owner decision 2026-07-14 REVISED 2026-07-15: the earlier constant-MOA
-// scheme made near plates coin-sized — a 1 MOA plate at 50 yd is ½″; no real
-// range hangs that). BTK's design (web/steel-sim/config.js): fixed inch sizes
-// per rack, spanning roughly ~6 MOA (confidence) down to ~1 MOA (challenge) at
-// each distance, with a 2″ physical floor. Where BTK defines our distance we
-// take a 3-plate subset of its exact set; between, we interpolate in the same
-// spirit. MOA is carried as DERIVED metadata (HUD/scoring, Increment 2 ranging
-// uses the known physical size). No hidden truth: these are true target sizes.
+// AUTHORED-INPUTS model, restructured 2026-07-14 to mirror BallisticsToolkit's
+// steel-sim (web/steel-sim/config.js TARGET_RACKS_CONFIG + steel-sim.js berm
+// build). BTK's design has THREE independent authored inputs per rack —
+//   (1) a fixed rack frame size (width/height, in whole yards),
+//   (2) an explicit list of plate sizes (inches), and
+//   (3) distance/position —
+// and derives ONLY the catch berm from the frame. Nothing computes plate size
+// from the rack, or rack size from the plates. This module now follows that:
+// `PLATE_INCHES` and `RACK_WIDTH_YARDS` are hand-authored per rack; the berm is
+// derived from the (authored) rack frame; MOA is DERIVED metadata (HUD/scoring;
+// Increment 2 ranging uses the known physical size). No hidden truth — these are
+// true target sizes.
+//
+// (Supersedes the 2026-07-15 scheme where rackWidth/beam/berm were all COMPUTED
+// from the largest plate — that coupled rack+berm size to the plate ladder, the
+// opposite of BTK's model.)
+//
+// Every rack carries 5 plates (matching BTK's near racks). Plate SIZES match BTK
+// where BTK defines the distance (100/200 = {6,5,4,3,2}) and grow near → far in
+// the same spirit elsewhere (biggest plate 6″ out to 300, then 7/8/10/12″), each
+// rack largest-first down to a 2″/3″ tail. Physical floor: nothing smaller than
+// 2″ (BTK's smallest chip).
 //
 // This module does NO Three.js and NO DOM work, so it is unit-tested directly
 // (RangeScene consumes it to build geometry). All lengths are metres; all unit
@@ -37,15 +49,16 @@ export interface RackSpec {
   distanceM: number;
   /** Lateral offset of the rack centre from the firing line, metres (+ = right). */
   xOffsetM: number;
-  /** Overall rack width the plates are spread across, metres. */
+  /** Overall rack width the plates are spread across, metres (AUTHORED frame). */
   rackWidthM: number;
-  /** Height of the top beam above ground, metres (posts run ground → beam). */
+  /** Height of the top beam above ground, metres (AUTHORED frame; posts run
+   *  ground → beam). Also drives the berm height. */
   beamHeightM: number;
   /** Height of every plate's centre above ground, metres. */
   plateCenterYM: number;
-  /** Plates, left → right, largest first. */
+  /** Plates, left → right, largest first (AUTHORED list). */
   plates: PlateSpec[];
-  /** Catch berm behind the rack. */
+  /** Catch berm behind the rack (DERIVED from the rack frame, BTK-style). */
   berm: BermSpec;
 }
 
@@ -63,53 +76,72 @@ export interface BermSpec {
   behindM: number;
 }
 
-/** Physical plate ladder, inches, largest → smallest per rack — BTK steel-sim
- *  sizing (config.js TARGET_RACKS_CONFIG). Where BTK defines the distance we
- *  use a subset of its exact set (100: 6,5,4,3,2 · 200: 6,5,4,3,2 · 250:
- *  6,5,4,3 · 300: 6,4,3,2 · 400: 8,6,4,3 · 500: 12,10,8,6,4,2); 50/150/350/450
- *  are interpolated in the same spirit. Floor: nothing smaller than 2″ (BTK's
- *  smallest chip anywhere). Angular difficulty tightens near → far, roughly
- *  ~7→2 MOA on the big plate and ~4→1 MOA on the small one. */
+/** AUTHORED plate ladder, inches, largest → smallest per rack (mirrors BTK's
+ *  steel-sim config.js `targets` arrays). Five plates on every rack; sizes are
+ *  BTK-exact where BTK defines the distance (100/200), and grow near → far in the
+ *  same spirit elsewhere. Floor: nothing smaller than 2″. */
 const PLATE_INCHES: Record<number, readonly number[]> = {
-  50: [4, 3, 2],
-  100: [6, 4, 2],
-  150: [6, 4, 3],
-  200: [6, 5, 3],
-  250: [6, 5, 4],
-  300: [6, 4, 3],
-  350: [8, 6, 4],
-  400: [8, 6, 4],
-  450: [10, 8, 6],
-  500: [12, 8, 6],
+  50: [6, 5, 4, 3, 2], //  BTK's near set
+  100: [6, 5, 4, 3, 2], // = BTK 100 yd
+  150: [6, 5, 4, 3, 2],
+  200: [6, 5, 4, 3, 2], // = BTK 200 yd
+  250: [6, 5, 4, 3, 2],
+  300: [6, 5, 4, 3, 2],
+  350: [7, 6, 5, 4, 3],
+  400: [8, 6, 5, 4, 3], // BTK 400 yd tops at 8″
+  450: [10, 8, 6, 5, 4],
+  500: [12, 10, 8, 6, 4], // ⊂ BTK 500 yd {12,10,8,6,4,2}
 };
+
+/** AUTHORED rack frame width, whole yards (BTK's fixed ladder: 1.5 yd out to
+ *  300, 2 yd at 400, 3 yd at 500; 350/450 interpolated). Independent of plate
+ *  size — the berm is derived from this, per BTK's model. */
+const RACK_WIDTH_YARDS: Record<number, number> = {
+  50: 1.5,
+  100: 1.5,
+  150: 1.5,
+  200: 1.5,
+  250: 1.5,
+  300: 1.5,
+  350: 1.75,
+  400: 2,
+  450: 2.5,
+  500: 3,
+};
+
+/** AUTHORED rack frame height (top beam), yards — constant across racks, as in
+ *  BTK. Kept a touch above BTK's 1 yd so a chest-height plate ladder clears the
+ *  beam; it also sets the (low, wide) berm height at ×1.1. */
+const RACK_HEIGHT_YARDS = 1.2;
 
 /** The ten rack distances, yards. */
 const DISTANCES_YARDS = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500] as const;
 
-// Lateral fan (yards, + = right). SOLVED offline (greedy, capped to a realistic
-// lane) so that no rack's plate row is occluded by any nearer berm as seen from
-// the 1.6 m firing-eye, AND every far plate row clears the nearest berm crest by
-// ≥ 0.3 m (so racks read as distinct, not stacked on a crest). Guarded by the
-// occlusion test in range-a-config.test.ts — change the berm/plate sizing and
-// that test forces these to be re-solved.
+// Lateral fan (yards, + = right). RE-SOLVED offline 2026-07-14 for the authored
+// geometry with the dropped (0.5× beam) plate height, via /tmp/solve-fan.mjs —
+// global min-max by bounded backtracking (max |offset| = 6.5 yd). Lowering the
+// plates steepens the eye→plate rays, so nearly every far row must clear nearer
+// berms laterally rather than over the crest; the backtracker packs all ten rows
+// clear within ±6.5 yd of centre. Guarded by the occlusion test in
+// range-a-config.test.ts — change the berm/plate/rack sizing or the plate height
+// and that test forces these to be re-solved.
 const X_OFFSET_YARDS: Record<number, number> = {
-  50: 0,
-  100: 4,
-  150: -5,
-  200: -9.5,
-  250: 0,
-  300: 2.5,
-  350: -3,
-  400: -6,
-  450: 7,
-  500: 11.5, // re-solved 2026-07-15: 12″ top plate widened the rack; at 10.5 its left edge grazed the 450-yd berm
+  50: 3.5,
+  100: -6,
+  150: -5.5,
+  200: 6.5,
+  250: -5.5,
+  300: 6.5,
+  350: 1.5,
+  400: -1.5,
+  450: -5.5,
+  500: 6.5,
 };
 
-/** Plate centre height above ground, metres (~chest height on the stand). */
-const PLATE_CENTER_Y_M = 0.9;
-
-const clamp = (v: number, lo: number, hi: number): number =>
-  v < lo ? lo : v > hi ? hi : v;
+/** Plate centre height as a fraction of the beam height — plates hang at ~half
+ *  the rack frame (dropped 2026-07-14 from ~0.73× on owner note; sits well below
+ *  the beam so the frame clears the tallest plate). */
+const PLATE_CENTER_FRACTION = 0.5;
 
 function buildRack(yards: number): RackSpec {
   const distanceM = yardsToMeters(yards);
@@ -121,18 +153,16 @@ function buildRack(yards: number): RackSpec {
       moa: radToMoa(diameterM / distanceM), // small-angle: plate ⌀ over range
     };
   });
-  const maxD = Math.max(...plates.map((p) => p.diameterM));
 
-  // Rack scales with its plates (so a 1 MOA near rack isn't a giant empty frame)
-  // but is floored wide enough that its catch berm still reads as a broad mound.
-  const rackWidthM = clamp(maxD * 5.5, 1.2, yardsToMeters(3));
+  // AUTHORED rack frame (BTK model): width + beam height are fixed inputs, NOT
+  // derived from the plates.
+  const rackWidthM = yardsToMeters(RACK_WIDTH_YARDS[yards]);
+  const beamHeightM = yardsToMeters(RACK_HEIGHT_YARDS);
+  const plateCenterYM = beamHeightM * PLATE_CENTER_FRACTION;
 
-  // Beam sits just above the tallest plate; posts run ground → beam.
-  const beamHeightM = PLATE_CENTER_Y_M + maxD / 2 + 0.12;
-
-  // Low, wide catch berm (steel-sim Berm.js proportions): base ≈ 2× rack width
-  // (baseHalfWidth = 1.1× rack width → base spans ±1.1× about centre), height
-  // ≈ 1.1× the rack height. A broad mound, deliberately NOT a wall.
+  // Catch berm DERIVED from the rack frame (steel-sim.js): flat top = rack width
+  // (baseHalfWidth = 1.1× rack width → base ≈ 2× rack width), height ≈ 1.1× the
+  // rack height, 3 yd deep, centred 2 yd behind the rack. A broad low mound.
   const berm: BermSpec = {
     baseHalfWidthM: rackWidthM * 1.1,
     heightM: beamHeightM * 1.1,
@@ -147,7 +177,7 @@ function buildRack(yards: number): RackSpec {
     xOffsetM: yardsToMeters(X_OFFSET_YARDS[yards]),
     rackWidthM,
     beamHeightM,
-    plateCenterYM: PLATE_CENTER_Y_M,
+    plateCenterYM,
     plates,
     berm,
   };

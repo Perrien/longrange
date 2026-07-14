@@ -26,43 +26,68 @@ describe('Range A rack ladder', () => {
     expect(r250.distanceM).toBeCloseTo(228.6, 6);
   });
 
-  it('every rack carries at least two plates, largest-first', () => {
+  it('every rack carries its plates largest-first, no smaller than 2″', () => {
     for (const r of RANGE_A_RACKS) {
       expect(r.plates.length).toBeGreaterThanOrEqual(2);
       for (let i = 1; i < r.plates.length; i++) {
         expect(r.plates[i].diameterM).toBeLessThan(r.plates[i - 1].diameterM);
       }
+      for (const p of r.plates) {
+        // BTK's physical floor: no plate smaller than 2″ anywhere (no coins).
+        expect(p.inches).toBeGreaterThanOrEqual(2);
+      }
     }
   });
 
-  it('sizes plates PHYSICALLY per the BTK steel-sim ladder (2026-07-15 revision)', () => {
+  it('carries 5 plates on every rack (matching BTK near racks)', () => {
+    for (const r of RANGE_A_RACKS) expect(r.plates.length).toBe(5);
+  });
+
+  it('sizes plates from the AUTHORED BTK steel-sim ladder', () => {
     for (const r of RANGE_A_RACKS) {
       for (const p of r.plates) {
         // diameter comes from the nominal inch size…
         expect(p.diameterM).toBeCloseTo(inchesToMeters(p.inches), 9);
         // …and MOA is derived metadata (plate ⌀ over range).
         expect(p.moa).toBeCloseTo(radToMoa(p.diameterM / r.distanceM), 9);
-        // BTK's physical floor: no plate smaller than 2″ anywhere (no coins).
-        expect(p.inches).toBeGreaterThanOrEqual(2);
       }
-      // Angular band sanity: every plate between ~0.9 MOA (hard) and ~8 MOA (easy).
+      // Angular band sanity: every plate between ~0.6 MOA (hard, far) and ~12
+      // MOA (easy, near) — wider than the old scheme now that a close 50-yd rack
+      // (big MOA) and sub-MOA far plates (BTK 300 yd carries a 2″) both exist.
       for (const p of r.plates) {
-        expect(p.moa).toBeGreaterThan(0.9);
-        expect(p.moa).toBeLessThan(8);
+        expect(p.moa).toBeGreaterThan(0.6);
+        expect(p.moa).toBeLessThan(12);
       }
     }
-    // BTK-exact subsets where BTK defines the distance:
+    // BTK-exact sets where BTK defines the distance; grown ladders elsewhere:
     const inchesAt = (yd: number) =>
       RANGE_A_RACKS.find((r) => r.distanceYards === yd)!.plates.map((p) => p.inches);
-    expect(inchesAt(100)).toEqual([6, 4, 2]); // ⊂ BTK 100 yd {6,5,4,3,2}
-    expect(inchesAt(400)).toEqual([8, 6, 4]); // ⊂ BTK 400 yd {8,6,4,3}
-    expect(inchesAt(500)).toEqual([12, 8, 6]); // ⊂ BTK 500 yd {12,10,8,6,4,2}
+    expect(inchesAt(100)).toEqual([6, 5, 4, 3, 2]); // = BTK 100 yd
+    expect(inchesAt(200)).toEqual([6, 5, 4, 3, 2]); // = BTK 200 yd
+    expect(inchesAt(400)).toEqual([8, 6, 5, 4, 3]); // BTK 400 yd tops at 8″
+    expect(inchesAt(500)).toEqual([12, 10, 8, 6, 4]); // ⊂ BTK 500 yd {12,10,8,6,4,2}
     // Physical size still grows near → far (BTK's "chips near, gongs far").
     const near = RANGE_A_RACKS[0];
     const far = RANGE_A_RACKS[RANGE_A_RACKS.length - 1];
     expect(maxPlate(far)).toBeGreaterThan(maxPlate(near));
     // And the near rack is human-scale, not coins: smallest plate ≥ 2″ (~5 cm).
     expect(Math.min(...near.plates.map((p) => p.diameterM))).toBeGreaterThanOrEqual(0.0508);
+  });
+
+  it('rack frame is AUTHORED, independent of plate size (BTK model)', () => {
+    // Fixed rack width ladder in yards (1.5 → 3), NOT derived from the plates.
+    const widthYd = (yd: number) =>
+      RANGE_A_RACKS.find((r) => r.distanceYards === yd)!.rackWidthM / yardsToMeters(1);
+    expect(widthYd(100)).toBeCloseTo(1.5, 9);
+    expect(widthYd(400)).toBeCloseTo(2, 9);
+    expect(widthYd(500)).toBeCloseTo(3, 9);
+    // Beam height is a constant authored frame (same for every rack).
+    const beams = RANGE_A_RACKS.map((r) => r.beamHeightM);
+    for (const b of beams) expect(b).toBeCloseTo(beams[0], 9);
+    // Plates hang at ~half the beam height (dropped from ~0.73×).
+    for (const r of RANGE_A_RACKS) {
+      expect(r.plateCenterYM / r.beamHeightM).toBeCloseTo(0.5, 9);
+    }
   });
 
   it('beam clears the tallest plate; berm is a low, WIDE mound (not a wall)', () => {
