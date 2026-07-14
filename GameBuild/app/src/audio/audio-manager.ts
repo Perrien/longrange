@@ -77,7 +77,11 @@ export class AudioManager {
       this.ctx = new Ctor();
     }
     // resume() is kicked off synchronously here (in the gesture) before any await.
-    if (this.ctx.state === 'suspended') {
+    // Recover from ANY non-running state, not just 'suspended': iOS also parks the
+    // context as the non-standard 'interrupted' (after a background/phone-call/audio
+    // interruption or a long main-thread stall), and a plain 'suspended' check would
+    // never revive it. resume() inside the FIRE gesture brings it back to 'running'.
+    if (this.ctx.state !== 'running') {
       try {
         await this.ctx.resume();
       } catch {
@@ -129,9 +133,21 @@ export class AudioManager {
 
   /** Steel ping on a HIT — delayed by sound travel, scaled by distance + impact
    * energy. Call only for hits; a miss plays no impact sound. */
-  ping(distanceM: number, speedOfSoundMps: number, energyJ: number, refEnergyJ?: number): void {
+  ping(
+    distanceM: number,
+    speedOfSoundMps: number,
+    energyJ: number,
+    refEnergyJ?: number,
+    extraDelaySeconds = 0,
+  ): void {
     const p = impactSoundParams(distanceM, speedOfSoundMps, energyJ, refEnergyJ);
-    this.play('ping', { volume: p.volume, delaySeconds: p.delaySeconds, playbackRate: p.playbackRate });
+    // `extraDelaySeconds` is the bullet's time of flight: the impact sound isn't
+    // created until the round arrives, so it precedes the sound-travel delay.
+    this.play('ping', {
+      volume: p.volume,
+      delaySeconds: Math.max(0, extraDelaySeconds) + p.delaySeconds,
+      playbackRate: p.playbackRate,
+    });
   }
 
   dispose(): void {

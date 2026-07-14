@@ -31,7 +31,15 @@ import { loadBtkModule } from '../engine-bridge/wasm-module';
 import { createScatterSimulator, type ScatterSimulator } from '../engine-bridge/match-sim';
 import { createSteelReaction, type SteelReaction } from '../engine-bridge/steel-target';
 import { initImpactFx, emitImpact, updateImpactFx, disposeImpactFx } from './impact-fx';
-import type { BtkModule } from '../engine-bridge/types';
+import {
+  initBulletTrace,
+  launchBulletTrace,
+  updateBulletTrace,
+  hideBulletTrace,
+  disposeBulletTrace,
+} from './BulletTrace';
+import { buildTracePath } from '../game/trace-path';
+import type { BtkModule, TrajectoryTable } from '../engine-bridge/types';
 import { resolveShot, type ShotPlate } from '../game/shot';
 import { windToVec } from '../game/firing-solution';
 import { getGameLoad, DEFAULT_GAME_LOAD_ID, SCOPE_ZERO_RANGE_M } from '../game/loads';
@@ -42,6 +50,9 @@ const EYE_HEIGHT_M = 1.6; // matches the Range A look-around
 // where the round actually lands by projecting the sight ray onto the grass.
 const GROUND_Y_M = 0; // RangeScene grass lane height
 const GROUND_PUFF_LIFT_M = 0.12; // sit the dust just above the grass, not half-buried
+
+/** Fine trajectory sampling for the bullet-trace arc (task 1.5b). */
+const TRACE_SAMPLES = 32;
 
 /** Fixed ISA atmosphere for Increment 1 (matches validation/loads.json conditions). */
 const ISA_ATMOSPHERE: AtmosphereInput = { temperatureK: 288.15, altitudeM: 0, humidity: 0.5, pressurePa: 0 };
@@ -71,6 +82,8 @@ export function ScopeView() {
   const unitsPrimary = useGameStore((s) => s.settings.unitsPrimary);
   const setUnitsPrimary = useGameStore((s) => s.setUnitsPrimary);
   const setSensitivity = useGameStore((s) => s.setSensitivity);
+  const traceEnabled = useGameStore((s) => s.settings.traceEnabled);
+  const setTraceEnabled = useGameStore((s) => s.setTraceEnabled);
 
   // Local feel control (wobble amplitude is not a persisted setting yet — see
   // PROGRESS deferred obs; owner-tuned default 0.75 from the 0.9 spike).
@@ -93,6 +106,8 @@ export function ScopeView() {
     const range = new RangeScene(scene);
     // Impact marks + hit/miss dust pools (task 1.5c) live in the same scene.
     initImpactFx(scene);
+    // In-scope bullet trace (task 1.5b): a tracer comet flown per shot.
+    initBulletTrace(scene);
 
     const camera = new THREE.PerspectiveCamera(SCOPE_BASE_FOV_DEG / magnification, 1, 0.5, 3000);
     camera.position.set(0, EYE_HEIGHT_M, 0);
@@ -119,14 +134,20 @@ export function ScopeView() {
     // the sound-travel delay, scaled by distance + impact energy (audio-model).
     const audio = new AudioManager();
     void audio.preload();
-    function playShotAudio(hit: boolean, soundDistanceM: number, impactEnergyJ: number) {
+    function playShotAudio(hit: boolean, soundDistanceM: number, impactEnergyJ: number, timeOfFlightS: number) {
       void audio.unlock().then(() => {
-        audio.report(); // muzzle blast — every shot
-        if (hit) audio.ping(soundDistanceM, speedOfSoundMps, impactEnergyJ); // hits only
+        audio.report(); // muzzle blast — every shot, at the trigger pull
+        // The steel ring is created when the bullet arrives (after the time of
+        // flight) and then travels back to the shooter, so the ping lands at
+        // TOF + sound-travel — after the visible impact, never before it.
+        if (hit) audio.ping(soundDistanceM, speedOfSoundMps, impactEnergyJ, undefined, timeOfFlightS); // hits only
       });
     }
-    const solveCache = new Map<string, { dropM: number; windageM: number; velocityMps: number }>();
+    const solveCache = new Map<string, { dropM: number; windageM: number; velocityMps: number; timeOfFlightS: number }>();
     const simCache = new Map<number, ScatterSimulator>();
+    // Fine per-shot trajectory sampling for the bullet trace (task 1.5b); its last
+    // row matches solveAt's, so the trace arc and the impact agree at the target.
+    const traceTableCache = new Map<string, TrajectoryTable>();
     // Live reactive-steel physics for currently-swinging plates (task 1.5a). One
     // C++ SteelTarget per struck plate instance, reused for repeat hits, deleted
     // when it settles. `rest` is the plate's static instance matrix (restored on
@@ -135,21 +156,24 @@ export function ScopeView() {
       number,
       { reaction: SteelReaction; rest: THREE.Matrix4; baseQuat: THREE.Quaternion; scale: THREE.Vector3 }
     >();
+    // Impacts land at the target only after the bullet's time of flight. The plate
+    // swing + dust puff are queued here at FIRE and run when the loop clock reaches
+    // their due time, so they coincide with the tracer arriving (not the trigger
+    // pull). Drained in the render loop.
+    const pendingImpacts: { dueAt: number; run: () => void }[] = [];
 
     function solveAt(rangeM: number, wind: { speedMps: number; directionDeg: number }) {
       const key = `${rangeM}|${wind.speedMps}|${wind.directionDeg}`;
       let s = solveCache.get(key);
       if (!s) {
-        const windVec = windToVec(wind.speedMps, wind.directionDeg);
-        const table = solveTrajectory(engineModule!, solveLoad, ISA_ATMOSPHERE, windVec, {
-          zeroRangeM: SCOPE_ZERO_RANGE_M,
-          maxRangeM: rangeM,
-          stepM: rangeM,
-        });
+        // Read the last row of the fine trace table (shared, cached) rather than a
+        // second solve — one trajectory simulate per engagement keeps the FIRE
+        // gesture light (a long main-thread stall can interrupt iOS audio).
+        const table = traceTableAt(rangeM, wind);
         const row = table[table.length - 1];
         s = row
-          ? { dropM: row.dropM, windageM: row.windageM, velocityMps: row.velocityMps }
-          : { dropM: 0, windageM: 0, velocityMps: 0 };
+          ? { dropM: row.dropM, windageM: row.windageM, velocityMps: row.velocityMps, timeOfFlightS: row.timeOfFlightS }
+          : { dropM: 0, windageM: 0, velocityMps: 0, timeOfFlightS: 0 };
         solveCache.set(key, s);
       }
       return s;
@@ -161,6 +185,20 @@ export function ScopeView() {
         simCache.set(rangeM, sim);
       }
       return sim;
+    }
+    function traceTableAt(rangeM: number, wind: { speedMps: number; directionDeg: number }): TrajectoryTable {
+      const key = `${rangeM}|${wind.speedMps}|${wind.directionDeg}`;
+      let table = traceTableCache.get(key);
+      if (!table) {
+        const windVec = windToVec(wind.speedMps, wind.directionDeg);
+        table = solveTrajectory(engineModule!, solveLoad, ISA_ATMOSPHERE, windVec, {
+          zeroRangeM: SCOPE_ZERO_RANGE_M,
+          maxRangeM: rangeM,
+          stepM: rangeM / TRACE_SAMPLES,
+        });
+        traceTableCache.set(key, table);
+      }
+      return table;
     }
 
     // Loop-visible aim state (React state is HUD-only).
@@ -315,6 +353,16 @@ export function ScopeView() {
           store().recordShot(result);
           store().decrementBudget();
 
+          // Everything that happens *at the target* — the plate swing, the dust
+          // puff, the steel ring — is created only when the bullet arrives, i.e.
+          // after its time of flight. Capture the fire-time eye and schedule those
+          // effects at st.t + TOF so they land with the tracer, not at the trigger
+          // pull. The muzzle report (below) is the one thing that fires now.
+          const timeOfFlightS = Math.max(0, solved.timeOfFlightS);
+          const eyeX = camera.position.x;
+          const eyeY = camera.position.y;
+          const eyeZ = camera.position.z;
+
           // Reactive steel (task 1.5a): a hit swings/rotates the struck plate.
           if (result.hitPlateId != null) {
             const hitPlate = range.plates.find((pl) => pl.instanceId === result.hitPlateId);
@@ -323,63 +371,84 @@ export function ScopeView() {
               // Bullet velocity at impact ≈ the shooter→impact ray at the load's
               // remaining speed (mostly downrange, a little drop). Good enough for
               // the impulse; the plate hangs facing the shooter.
-              const dx = impactWorld.x - camera.position.x;
-              const dy = impactWorld.y - camera.position.y;
-              const dz = impactWorld.z - camera.position.z;
+              const dx = impactWorld.x - eyeX;
+              const dy = impactWorld.y - eyeY;
+              const dz = impactWorld.z - eyeZ;
               const dlen = Math.hypot(dx, dy, dz) || 1;
               const spd = solved.velocityMps || solveLoad.muzzleVelocityMps;
               const impactVel = { x: (dx / dlen) * spd, y: (dy / dlen) * spd, z: (dz / dlen) * spd };
-
-              let entry = reactions.get(hitPlate.instanceId);
-              if (!entry) {
-                const reaction = createSteelReaction(engineModule, {
-                  diameterM: hitPlate.diameterM,
-                  thicknessM: PLATE_THICKNESS_M,
-                  position: { x: hitPlate.position.x, y: hitPlate.position.y, z: hitPlate.position.z },
-                  beamHeightM: hitPlate.beamHeightM,
-                });
-                const rest = new THREE.Matrix4();
-                range.plateMesh.getMatrixAt(hitPlate.instanceId, rest);
-                const baseQuat = new THREE.Quaternion();
-                const scale = new THREE.Vector3();
-                rest.decompose(new THREE.Vector3(), baseQuat, scale);
-                entry = { reaction, rest: rest.clone(), baseQuat, scale };
-                reactions.set(hitPlate.instanceId, entry);
-              }
-              entry.reaction.strike(impactWorld, impactVel, gameLoad.load.massKg, gameLoad.load.diameterM);
+              pendingImpacts.push({
+                dueAt: st.t + timeOfFlightS,
+                run: () => {
+                  let entry = reactions.get(hitPlate.instanceId);
+                  if (!entry) {
+                    const reaction = createSteelReaction(engineModule, {
+                      diameterM: hitPlate.diameterM,
+                      thicknessM: PLATE_THICKNESS_M,
+                      position: { x: hitPlate.position.x, y: hitPlate.position.y, z: hitPlate.position.z },
+                      beamHeightM: hitPlate.beamHeightM,
+                    });
+                    const rest = new THREE.Matrix4();
+                    range.plateMesh.getMatrixAt(hitPlate.instanceId, rest);
+                    const baseQuat = new THREE.Quaternion();
+                    const scale = new THREE.Vector3();
+                    rest.decompose(new THREE.Vector3(), baseQuat, scale);
+                    entry = { reaction, rest: rest.clone(), baseQuat, scale };
+                    reactions.set(hitPlate.instanceId, entry);
+                  }
+                  entry.reaction.strike(impactWorld, impactVel, gameLoad.load.massKg, gameLoad.load.diameterM);
+                },
+              });
             }
           }
 
-          // Audio (task 1.5d): report now; on a hit, the steel ping is delayed by
-          // the sound travel from the impact point back to the shooter, scaled by
+          // Audio (task 1.5d): report now; on a hit, the steel ping lands at
+          // TOF + sound-travel from the impact point back to the shooter, scaled by
           // distance + impact energy (½·m·v²). A miss makes no impact sound.
           const impactZ = -rangeM;
           const soundDistanceM = Math.hypot(
-            result.impact.x - camera.position.x,
-            result.impact.y - camera.position.y,
-            impactZ - camera.position.z,
+            result.impact.x - eyeX,
+            result.impact.y - eyeY,
+            impactZ - eyeZ,
           );
           const impactEnergyJ = 0.5 * gameLoad.load.massKg * solved.velocityMps * solved.velocityMps;
-          playShotAudio(result.hitPlateId != null, soundDistanceM, impactEnergyJ);
+          playShotAudio(result.hitPlateId != null, soundDistanceM, impactEnergyJ, timeOfFlightS);
 
           // Impact FX (task 1.5c): a dust puff on every shot — metallic on a
           // steel hit, brown on a miss. A low miss resolves BELOW the ground on
           // the far target plane (underground → occluded by the grass), so
           // project it down the sight ray onto the grass in front, where the
-          // round actually kicks up dirt.
+          // round actually kicks up dirt. Deferred to arrival like the steel swing.
           let fxX = result.impact.x;
           let fxY = result.impact.y;
           let fxZ = impactZ;
           if (result.hitPlateId == null && fxY < GROUND_Y_M) {
-            const t = (GROUND_Y_M - camera.position.y) / (fxY - camera.position.y);
-            fxX = camera.position.x + t * (fxX - camera.position.x);
-            fxZ = camera.position.z + t * (fxZ - camera.position.z);
+            const t = (GROUND_Y_M - eyeY) / (fxY - eyeY);
+            fxX = eyeX + t * (fxX - eyeX);
+            fxZ = eyeZ + t * (fxZ - eyeZ);
             fxY = GROUND_Y_M + GROUND_PUFF_LIFT_M;
           }
-          emitImpact({
-            impactWorld: new THREE.Vector3(fxX, fxY, fxZ),
-            hit: result.hitPlateId != null,
+          const puffHit = result.hitPlateId != null;
+          pendingImpacts.push({
+            dueAt: st.t + timeOfFlightS,
+            run: () => {
+              emitImpact({ impactWorld: new THREE.Vector3(fxX, fxY, fxZ), hit: puffHit });
+            },
           });
+
+          // Bullet trace (task 1.5b): fly a tracer along the fine trajectory to
+          // the resolved impact (endpoint pinned to it). Toggle-gated (store-only).
+          // It launches now and walks its own TOF, arriving exactly when the queued
+          // impact above fires.
+          if (store().settings.traceEnabled) {
+            const path = buildTracePath(
+              traceTableAt(rangeM, wind),
+              { x: eyeX, y: eyeY, z: eyeZ },
+              result.impact,
+              rangeM,
+            );
+            launchBulletTrace(path, st.t);
+          }
         }
       }
       // Recoil kick + POA residual (feel; ported verbatim from 0.9).
@@ -486,6 +555,18 @@ export function ScopeView() {
         st.dist.vp += (Math.random() * 2 - 1) * k;
         st.nextJerkAt = st.t + 3 + Math.random() * 4;
       }
+      // Fire any impacts whose bullet has now arrived (dueAt = fire time + TOF).
+      // The queue isn't strictly ordered by dueAt — a later shot at a nearer rack
+      // can arrive before an earlier long shot — so scan the whole (tiny) array,
+      // run the ready ones, and keep the rest.
+      if (pendingImpacts.length > 0) {
+        for (let i = pendingImpacts.length - 1; i >= 0; i--) {
+          if (pendingImpacts[i].dueAt <= st.t) {
+            pendingImpacts[i].run();
+            pendingImpacts.splice(i, 1);
+          }
+        }
+      }
       // Reactive steel (task 1.5a): advance each swinging plate's C++ physics and
       // mirror its pose into the shared plate InstancedMesh; retire on settle.
       if (reactions.size > 0) {
@@ -517,6 +598,9 @@ export function ScopeView() {
       }
       // Impact FX (task 1.5c): grow/fade dust puffs and recycle finished ones.
       updateImpactFx(dt);
+      // Bullet trace (task 1.5b): advance the tracer, or hide it if toggled off.
+      if (store().settings.traceEnabled) updateBulletTrace(st.t);
+      else hideBulletTrace();
       camera.fov = SCOPE_BASE_FOV_DEG / store().session.scope.magnification;
       camera.updateProjectionMatrix();
       camera.quaternion.copy(aimQuaternion(st.t));
@@ -534,9 +618,11 @@ export function ScopeView() {
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
       canvas.removeEventListener('wheel', onWheel);
+      pendingImpacts.length = 0;
       for (const entry of reactions.values()) entry.reaction.delete();
       reactions.clear();
       disposeImpactFx();
+      disposeBulletTrace();
       audio.dispose();
       range.dispose();
       renderer.dispose();
@@ -613,6 +699,9 @@ export function ScopeView() {
         </label>
         <button onClick={() => setUnitsPrimary(unitsPrimary === 'MIL' ? 'MOA' : 'MIL')} style={{ marginTop: 4 }}>
           reticle: {unitsPrimary} → {unitsPrimary === 'MIL' ? 'MOA' : 'MIL'}
+        </button>
+        <button onClick={() => setTraceEnabled(!traceEnabled)} style={{ marginTop: 4, marginLeft: 4 }}>
+          trace: {traceEnabled ? 'on' : 'off'}
         </button>
       </div>
       {/* HOLD (breath) — left thumb */}

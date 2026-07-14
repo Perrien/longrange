@@ -129,7 +129,7 @@ describe('target select / reset', () => {
 
 describe('settings persistence round-trip', () => {
   it('maps settings → SaveData → settings (unitsPrimary persisted)', () => {
-    const settings = { unitsPrimary: 'MOA' as const, sensitivity: 1.5 };
+    const settings = { unitsPrimary: 'MOA' as const, sensitivity: 1.5, traceEnabled: true };
     const save = settingsToSave(settings);
     expect(save.settings.unitsPrimary).toBe('MOA');
     const back = saveToSettings(save, defaultSettings());
@@ -152,8 +152,9 @@ describe('settings persistence round-trip', () => {
     expect(useGameStore.getState().settings.unitsPrimary).toBe('MOA');
   });
 
-  it('sensitivity is intentionally NOT persisted under schema v1', () => {
-    const save = settingsToSave({ unitsPrimary: 'MIL', sensitivity: 2.0 });
+  it('sensitivity and traceEnabled are intentionally NOT persisted under schema v1', () => {
+    const save = settingsToSave({ unitsPrimary: 'MIL', sensitivity: 2.0, traceEnabled: false });
     expect('sensitivity' in save.settings).toBe(false);
+    expect('traceEnabled' in save.settings).toBe(false);
   });
 });

@@ -59,6 +59,9 @@ export interface SettingsState {
   unitsPrimary: UnitsPrimary;
   /** Aim sensitivity multiplier (carried from the task-0.9 aim spike; default 1.0). */
   sensitivity: number;
+  /** Show the in-scope bullet trace on each shot (task 1.5b). Store-only for now
+   *  (not in save schema v1 — like `sensitivity`; see persist-settings.ts). */
+  traceEnabled: boolean;
 }
 
 // --- Constants / defaults ---------------------------------------------------
@@ -93,6 +96,7 @@ export const defaultSession = (): SessionState => ({
 export const defaultSettings = (): SettingsState => ({
   unitsPrimary: 'MIL',
   sensitivity: 1.0,
+  traceEnabled: true,
 });
 
 // --- Store ------------------------------------------------------------------
@@ -131,6 +135,7 @@ export interface GameStore {
   // Settings
   setUnitsPrimary(u: UnitsPrimary): void;
   setSensitivity(s: number): void;
+  setTraceEnabled(enabled: boolean): void;
   /** Merge a partial settings patch (used by persistence hydration). */
   applySettings(patch: Partial<SettingsState>): void;
 }
@@ -214,6 +219,9 @@ export const useGameStore = create<GameStore>()((set) => ({
 
   setSensitivity: (sensitivity) =>
     set((s) => ({ settings: { ...s.settings, sensitivity } })),
+
+  setTraceEnabled: (traceEnabled) =>
+    set((s) => ({ settings: { ...s.settings, traceEnabled } })),
 
   applySettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 }));
