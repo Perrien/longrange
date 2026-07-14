@@ -25,8 +25,18 @@ import { RangeScene } from '../range/RangeScene';
 import { useGameStore, ZOOM_MIN, ZOOM_MAX } from '../state/store';
 import { SCOPE_BASE_FOV_DEG, fovRadForMag } from './scope-projection';
 import { buildReticle, MAJOR_HALF_PX } from './reticle';
+import { solveTrajectory, spinRateFromTwist, type AtmosphereInput, type Load } from '../engine-bridge';
+import { loadBtkModule } from '../engine-bridge/wasm-module';
+import { createScatterSimulator, type ScatterSimulator } from '../engine-bridge/match-sim';
+import type { BtkModule } from '../engine-bridge/types';
+import { resolveShot, type ShotPlate } from '../game/shot';
+import { windToVec } from '../game/firing-solution';
+import { getGameLoad, DEFAULT_GAME_LOAD_ID, SCOPE_ZERO_RANGE_M } from '../game/loads';
 
 const EYE_HEIGHT_M = 1.6; // matches the Range A look-around
+
+/** Fixed ISA atmosphere for Increment 1 (matches validation/loads.json conditions). */
+const ISA_ATMOSPHERE: AtmosphereInput = { temperatureK: 288.15, altitudeM: 0, humidity: 0.5, pressurePa: 0 };
 
 // --- feel model constants (ported verbatim from task-0.9 AimSpike) ----------
 const WOBBLE_RAD = 0.00015; // slow-sway amplitude
@@ -76,6 +86,45 @@ export function ScopeView() {
 
     const camera = new THREE.PerspectiveCamera(SCOPE_BASE_FOV_DEG / magnification, 1, 0.5, 3000);
     camera.position.set(0, EYE_HEIGHT_M, 0);
+
+    // --- firing solution plumbing (task 1.4c) --------------------------------
+    // Load the engine once; until it resolves, FIRE just recoils. The per-shot
+    // scatter hit-sim (engine) and the deterministic-center solve are cached per
+    // engagement (target range × wind). One fixed match load for Increment 1.
+    const gameLoad = getGameLoad(DEFAULT_GAME_LOAD_ID);
+    const solveLoad: Load = {
+      ...gameLoad.load,
+      spinRateRadPerSec: spinRateFromTwist(gameLoad.load.muzzleVelocityMps, gameLoad.twistM),
+    };
+    let engineModule: BtkModule | null = null;
+    loadBtkModule().then((m) => (engineModule = m));
+    const solveCache = new Map<string, { dropM: number; windageM: number }>();
+    const simCache = new Map<number, ScatterSimulator>();
+
+    function solveAt(rangeM: number, wind: { speedMps: number; directionDeg: number }) {
+      const key = `${rangeM}|${wind.speedMps}|${wind.directionDeg}`;
+      let s = solveCache.get(key);
+      if (!s) {
+        const windVec = windToVec(wind.speedMps, wind.directionDeg);
+        const table = solveTrajectory(engineModule!, solveLoad, ISA_ATMOSPHERE, windVec, {
+          zeroRangeM: SCOPE_ZERO_RANGE_M,
+          maxRangeM: rangeM,
+          stepM: rangeM,
+        });
+        const row = table[table.length - 1];
+        s = row ? { dropM: row.dropM, windageM: row.windageM } : { dropM: 0, windageM: 0 };
+        solveCache.set(key, s);
+      }
+      return s;
+    }
+    function simAt(rangeM: number): ScatterSimulator {
+      let sim = simCache.get(rangeM);
+      if (!sim) {
+        sim = createScatterSimulator(engineModule!, gameLoad.load, gameLoad.dispersion, rangeM, ISA_ATMOSPHERE, gameLoad.twistM);
+        simCache.set(rangeM, sim);
+      }
+      return sim;
+    }
 
     // Loop-visible aim state (React state is HUD-only).
     const st = {
@@ -183,8 +232,53 @@ export function ScopeView() {
       );
     }
 
-    // FIRE — feel only (recoil kick + POA residual); no ballistics/impact yet.
+    // FIRE — resolve the shot from the aim, then recoil.
     fireRef.current = () => {
+      // Sample the aim BEFORE this shot's recoil kick (0.9: the bullet leaves as
+      // the trigger breaks). Wobble is part of the aim; the kick below is the
+      // consequence, applied after the shot is resolved.
+      if (engineModule && range.plates.length > 0) {
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(aimQuaternion(st.t));
+        if (dir.z < -1e-3) {
+          // Aimed plate across all racks: the plate the sight line passes closest
+          // to at that plate's own plane. Its rack distance is the engagement.
+          let aimed = range.plates[0];
+          let aimedD = Infinity;
+          for (const plate of range.plates) {
+            const tt = -plate.distanceM / dir.z;
+            const ax = camera.position.x + dir.x * tt;
+            const ay = camera.position.y + dir.y * tt;
+            const d = Math.hypot(ax - plate.position.x, ay - plate.position.y);
+            if (d < aimedD) {
+              aimedD = d;
+              aimed = plate;
+            }
+          }
+          const rangeM = aimed.distanceM;
+          const wind = store().session.wind;
+          const scope = store().session.scope;
+          const rackPlates: ShotPlate[] = range.plates
+            .filter((pl) => pl.distanceM === rangeM)
+            .map((pl) => ({
+              instanceId: pl.instanceId,
+              position: { x: pl.position.x, y: pl.position.y },
+              diameterM: pl.diameterM,
+            }));
+          const result = resolveShot({
+            eye: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+            aimDir: { x: dir.x, y: dir.y, z: dir.z },
+            dial: { elevRad: scope.elevationRad, windRad: scope.windageRad },
+            solve: solveAt(rangeM, wind),
+            distanceM: rangeM,
+            scatter: simAt(rangeM).fire(),
+            plates: rackPlates,
+            bulletDiameterM: gameLoad.load.diameterM,
+          });
+          store().recordShot(result);
+          store().decrementBudget();
+        }
+      }
+      // Recoil kick + POA residual (feel; ported verbatim from 0.9).
       st.dist.vp -= RECOIL_PITCH_VEL; // muzzle rise (view kicks up through the negated Euler)
       st.dist.vy += (Math.random() * 2 - 1) * RECOIL_YAW_VEL;
       st.pitch += (Math.random() * 2 - 1) * RESIDUAL_SHIFT_RAD;
@@ -302,6 +396,7 @@ export function ScopeView() {
       canvas.removeEventListener('wheel', onWheel);
       range.dispose();
       renderer.dispose();
+      for (const sim of simCache.values()) sim.delete();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

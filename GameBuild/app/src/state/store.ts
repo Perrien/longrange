@@ -16,6 +16,7 @@
 import { create } from 'zustand';
 import { milToRad, moaToRad } from '../units';
 import { yardsToMeters } from '../units';
+import type { ShotResult } from '../game/shot';
 
 export type UnitsPrimary = 'MIL' | 'MOA';
 
@@ -49,6 +50,8 @@ export interface SessionState {
   /** Shots remaining on the current target. */
   shotBudget: number;
   scope: ScopeState;
+  /** Resolved shots this engagement (task 1.4c); cleared on target switch. */
+  lastShots: ShotResult[];
 }
 
 export interface SettingsState {
@@ -84,6 +87,7 @@ export const defaultSession = (): SessionState => ({
     clickRad: MIL_CLICK_RAD,
     magnification: DEFAULT_MAGNIFICATION,
   },
+  lastShots: [],
 });
 
 export const defaultSettings = (): SettingsState => ({
@@ -117,6 +121,8 @@ export interface GameStore {
   // Budget / target
   /** Decrement the shot budget by one, floored at zero. */
   decrementBudget(): void;
+  /** Record a resolved shot's result (task 1.4c). */
+  recordShot(result: ShotResult): void;
   /** Switch to a target: sets distance, resets dials to zero, refills budget. */
   selectTarget(distanceM: number, budget?: number): void;
   /** Reset the whole session to defaults (settings untouched). */
@@ -186,6 +192,11 @@ export const useGameStore = create<GameStore>()((set) => ({
       session: { ...s.session, shotBudget: Math.max(0, s.session.shotBudget - 1) },
     })),
 
+  recordShot: (result) =>
+    set((s) => ({
+      session: { ...s.session, lastShots: [...s.session.lastShots, result] },
+    })),
+
   selectTarget: (distanceM, budget = DEFAULT_SHOT_BUDGET) =>
     set((s) => ({
       session: {
@@ -193,6 +204,7 @@ export const useGameStore = create<GameStore>()((set) => ({
         targetDistanceM: distanceM,
         shotBudget: budget,
         scope: { ...s.session.scope, elevationRad: 0, windageRad: 0 },
+        lastShots: [],
       },
     })),
 

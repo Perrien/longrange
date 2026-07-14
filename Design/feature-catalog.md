@@ -124,6 +124,13 @@ The moment the whole game orbits.
 - **Supporting UI:** DOPE chart viewer, wind indicators (flags / socks / mirage),
   rangefinder or reticle-ranging overlay, angle readout, dial/hold HUD showing current
   values, shot result, and remaining shots in the budget.
+- **[CANDIDATE / deferred — not scheduled]** In-reticle **bullet-flight trace** (watch
+  the projectile arc through the scope, spotter/observation aid). Owner decision
+  2026-07-14: log now, schedule in a later increment. Intended fidelity: **per-shot
+  true path** (the trace follows that shot's sampled MV/dispersion so the visible arc
+  matches the actual impact) — not a nominal cue. Caveat: the engine's `MatchSimulator`
+  returns only the impact point, so this needs an engine/bridge call that returns the
+  *sampled* per-shot trajectory; task 1.4 does not build or preserve it.
 
 ## C. Gear systems
 
