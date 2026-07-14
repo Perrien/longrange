@@ -32,6 +32,15 @@ const SPRING_C = 9; // slightly underdamped — visible overshoot on recoil
 const RECOIL_PITCH_VEL = 0.05; // rad/s impulse ≈ 3 mrad peak muzzle rise
 const RECOIL_YAW_VEL = 0.012; // max random sideways component
 const RESIDUAL_SHIFT_RAD = 0.0001; // ±0.1 mrad POA shift after recoil (follow-through)
+// Breath hold (owner idea, iter 4): press-and-hold steadies the wobble hard for
+// a limited window — the respiratory pause. Physiology-honest: ~10 s of air;
+// comfortable steadiness for ~the first 70%, then oxygen debt makes the hold
+// WORSE than baseline until released; breath recovers in ~5 s.
+const HOLD_STEADY_FACTOR = 0.15; // wobble multiplier during a good hold
+const BREATH_DEPLETE_S = 10; // full breath → empty while holding
+const BREATH_RECOVER_S = 5; // empty → full while released
+const BREATH_COMFORT = 0.3; // below this remaining fraction, the hold degrades
+const BREATH_DEBT_FACTOR = 1.5; // wobble multiplier when fully out of air
 
 interface ShotResult {
   hit: boolean;
@@ -60,12 +69,16 @@ export function AimSpike() {
     // spring-damper disturbance channel (recoil + micro-jerks)
     dist: { y: 0, p: 0, vy: 0, vp: 0 },
     nextJerkAt: 2,
+    // breath hold
+    holding: false,
+    breath: 1,
   });
   stateRef.current.mag = mag;
   stateRef.current.sens = sens;
   stateRef.current.wobbleAmp = wobbleAmp;
 
   const fireRef = useRef<() => void>(() => {});
+  const breathBarRef = useRef<HTMLDivElement>(null); // updated imperatively in the frame loop
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -183,8 +196,17 @@ export function AimSpike() {
     // Three layers, all scaled by the amplitude slider (0 disables everything):
     // slow sway (ride-able), muscle tremor (fast, small), and micro-jerks
     // (random kicks through the spring-damper — see frame()).
+    // Breath-hold steadiness multiplier: hard steady while air lasts, degrading
+    // past the comfort threshold to worse-than-baseline (oxygen debt).
+    function steadyFactor(): number {
+      if (!st.holding) return 1;
+      if (st.breath >= BREATH_COMFORT) return HOLD_STEADY_FACTOR;
+      const debt = 1 - st.breath / BREATH_COMFORT; // 0 at comfort edge → 1 empty
+      return HOLD_STEADY_FACTOR + debt * (BREATH_DEBT_FACTOR - HOLD_STEADY_FACTOR);
+    }
+
     function wobble(t: number): { yaw: number; pitch: number } {
-      const a = st.wobbleAmp;
+      const a = st.wobbleAmp * steadyFactor();
       if (a === 0) return { yaw: 0, pitch: 0 };
       const swayY = WOBBLE_RAD * (Math.sin(0.31 * t) + 0.5 * Math.sin(0.83 * t + 1.7));
       const swayP =
@@ -251,11 +273,22 @@ export function AimSpike() {
       st.dist.vp += (-SPRING_K * st.dist.p - SPRING_C * st.dist.vp) * dt;
       st.dist.y += st.dist.vy * dt;
       st.dist.p += st.dist.vp * dt;
+      // Breath dynamics.
+      st.breath = st.holding
+        ? Math.max(0, st.breath - dt / BREATH_DEPLETE_S)
+        : Math.min(1, st.breath + dt / BREATH_RECOVER_S);
+      if (breathBarRef.current) {
+        breathBarRef.current.style.width = `${(st.breath * 100).toFixed(0)}%`;
+        breathBarRef.current.style.background =
+          st.holding && st.breath < BREATH_COMFORT ? '#c33' : '#4a9';
+      }
       // Random micro-jerks (the "erratic" layer) — every 3–7 s, half the iter-2
-      // strength (owner: iter 2 read "manic"); scaled by the wobble slider.
+      // strength (owner: iter 2 read "manic"); scaled by the wobble slider and
+      // suppressed/amplified by the breath-hold factor like the rest.
       if (st.wobbleAmp > 0 && st.t >= st.nextJerkAt) {
-        st.dist.vy += (Math.random() * 2 - 1) * 0.002 * st.wobbleAmp;
-        st.dist.vp += (Math.random() * 2 - 1) * 0.002 * st.wobbleAmp;
+        const k = 0.002 * st.wobbleAmp * steadyFactor();
+        st.dist.vy += (Math.random() * 2 - 1) * k;
+        st.dist.vp += (Math.random() * 2 - 1) * k;
         st.nextJerkAt = st.t + 3 + Math.random() * 4;
       }
       camera.fov = BASE_FOV_DEG / st.mag;
@@ -320,6 +353,44 @@ export function AimSpike() {
           <input type="range" min={0} max={2} step={0.05} value={wobbleAmp} onChange={(e) => setWobbleAmp(Number(e.target.value))} />
           {wobbleAmp === 0 ? ' (off)' : ''}
         </label>
+      </div>
+      {/* HOLD (breath) — left thumb; press and hold to steady, watch your air */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 'calc(24px + env(safe-area-inset-left))',
+          bottom: 'calc(24px + env(safe-area-inset-bottom))',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          alignItems: 'center',
+        }}
+      >
+        <div style={{ width: 84, height: 8, background: 'rgba(26,34,44,0.8)', borderRadius: 4, overflow: 'hidden' }}>
+          <div ref={breathBarRef} style={{ height: '100%', width: '100%', background: '#4a9' }} />
+        </div>
+        <button
+          onPointerDown={() => (stateRef.current.holding = true)}
+          onPointerUp={() => (stateRef.current.holding = false)}
+          onPointerLeave={() => (stateRef.current.holding = false)}
+          onPointerCancel={() => (stateRef.current.holding = false)}
+          onContextMenu={(e) => e.preventDefault()}
+          style={{
+            width: 84,
+            height: 84,
+            borderRadius: '50%',
+            border: '3px solid #e8eef4',
+            background: 'rgba(40,110,170,0.85)',
+            color: '#fff',
+            fontFamily: 'monospace',
+            fontSize: 15,
+            touchAction: 'none',
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+          }}
+        >
+          HOLD
+        </button>
       </div>
       <button
         onClick={() => fireRef.current()}
