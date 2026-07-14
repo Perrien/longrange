@@ -43,6 +43,20 @@ function dragValue(module: BtkModule, model: Load['dragModel']): DragFunctionVal
   return model === 'G1' ? module.DragFunction.G1 : module.DragFunction.G7;
 }
 
+/** Speed of sound (m/s) for an atmosphere — used to delay the steel ping by
+ * sound-travel time (task 1.5d). Builds and releases a throwaway Atmosphere. */
+export function speedOfSound(module: BtkModule, atmosphere: AtmosphereInput): number {
+  const atmos = new module.Atmosphere(
+    atmosphere.temperatureK,
+    atmosphere.altitudeM,
+    atmosphere.humidity,
+    atmosphere.pressurePa ?? 0,
+  );
+  const c = atmos.getSpeedOfSound();
+  atmos.delete();
+  return c;
+}
+
 /**
  * Configure a simulator with the load/atmosphere/wind and solve the zeroed
  * launch state for `zeroRangeM`. Returns the simulator (caller must delete it

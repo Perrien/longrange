@@ -27,8 +27,11 @@ export interface GameLoad {
 
 export const DEFAULT_GAME_LOAD_ID = '65cm-140-match';
 
-/** Fixed scope zero for Increment 1 ("given a provided zero"; build-plan §5.1). */
-export const SCOPE_ZERO_RANGE_M = 100;
+/** Fixed scope zero for Increment 1 ("given a provided zero"; build-plan §5.1).
+ * Set to 300 yd for testing (owner, 2026-07-14): a rack sits exactly at the zero,
+ * so nearer racks need hold-under and farther racks need hold-over — exercising
+ * corrections in both directions. Note the constant is SI metres. */
+export const SCOPE_ZERO_RANGE_M = 300 * 0.9144; // 300 yd = 274.32 m
 
 function asDragModel(value: string): Load['dragModel'] {
   if (value !== 'G1' && value !== 'G7') {

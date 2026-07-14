@@ -20,7 +20,9 @@ const BERM_COLOR = 0xd8b483; // sand
 const GRASS_COLOR = 0x7d9450;
 const DIRT_COLOR = 0xb89d6f;
 
-const PLATE_THICKNESS_M = 0.0127; // 1/2"
+/** Plate thickness (1/2"). Exported so the reactive-steel physics (task 1.5a)
+ * sizes its C++ target from the same source as the rendered plate. */
+export const PLATE_THICKNESS_M = 0.0127;
 const POST_RADIUS_M = 0.0254; // 2" diameter posts
 const BEAM_RADIUS_M = 0.0254; // 2" diameter beam
 
@@ -32,6 +34,9 @@ export interface PlateInstance {
   diameterM: number;
   /** World-space centre of the plate face. */
   position: THREE.Vector3;
+  /** World Y of the rack beam this plate hangs from (chain-anchor height for the
+   * reactive-steel physics, task 1.5a). */
+  beamHeightM: number;
   /** Index of this plate in the shared plate InstancedMesh. */
   instanceId: number;
 }
@@ -41,6 +46,9 @@ export interface PlateInstance {
  */
 export class RangeScene {
   readonly plates: PlateInstance[] = [];
+  /** The shared InstancedMesh holding every plate. The reactive-steel loop
+   * (task 1.5a) writes per-plate matrices here via `setMatrixAt(instanceId,…)`. */
+  plateMesh!: THREE.InstancedMesh;
   private readonly scene: THREE.Scene;
   private readonly disposables: Array<{ dispose(): void }> = [];
   private readonly objects: THREE.Object3D[] = [];
@@ -198,12 +206,14 @@ export class RangeScene {
           distanceYards: rack.distanceYards,
           diameterM: plate.diameterM,
           position: p.clone(),
+          beamHeightM: rack.beamHeightM,
           instanceId: id,
         });
         id++;
       });
     }
     mesh.instanceMatrix.needsUpdate = true;
+    this.plateMesh = mesh;
     this.add(mesh);
   }
 

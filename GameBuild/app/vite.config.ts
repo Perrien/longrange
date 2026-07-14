@@ -50,7 +50,9 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,png,svg,woff2,webmanifest}'],
+        // mp3 added for the shot/ping/ricochet SFX (task 1.5d) so audio works
+        // offline; clips live in public/audio/ (~96 KB total).
+        globPatterns: ['**/*.{js,css,html,png,svg,woff2,webmanifest,mp3}'],
         // The WASM-embedding JS bundle exceeds Workbox's 2 MiB default.
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
       },

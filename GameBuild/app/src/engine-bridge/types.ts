@@ -36,6 +36,21 @@ export interface WindVec {
   z: number;
 }
 
+/** A plain 3-vector of numbers (world SI meters/mps), no native handle. */
+export interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** A plain quaternion of numbers, no native handle. */
+export interface Quat {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+}
+
 export interface SolveOptions {
   /** Range (m) the rifle is zeroed at. */
   zeroRangeM: number;
@@ -113,6 +128,13 @@ export interface EVector3D extends EmbindHandle {
   z: number;
 }
 
+export interface EQuaternion extends EmbindHandle {
+  w: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface EBullet extends EmbindHandle {
   getPosition(): EVector3D;
   getVelocity(): EVector3D;
@@ -160,6 +182,25 @@ export interface ESimulator extends EmbindHandle {
   /** Returns a COPIED Bullet handle (no reference policy) → must delete. */
   getInitialBullet(): EBullet;
   resetToInitial(): void;
+}
+
+/** The C++ rigid-body steel target (btk::rendering::SteelTarget). Used by the
+ * reactive-steel bridge (task 1.5a) to swing/rotate a struck plate from the
+ * bullet's impact impulse. Getters that return math types return COPIES (no
+ * embind reference policy in bindings.cpp) → their handles must be `.delete()`d.
+ * The texture/impact-painting surface is intentionally unused (the game draws
+ * its own marks — see increment-1.5-plan D2). */
+export interface ESteelTarget extends EmbindHandle {
+  addChainAnchor(localAttachment: EVector3D, worldFixed: EVector3D): void;
+  hit(bullet: EBullet): void;
+  timeStep(dt: number): void;
+  /** COPY → delete. */
+  getCenterOfMass(): EVector3D;
+  /** COPY → delete. */
+  getOrientation(): EQuaternion;
+  /** COPY → delete. */
+  localToWorld(local: EVector3D): EVector3D;
+  isMoving(): boolean;
 }
 
 /** Opaque embind enum value (e.g. DragFunction.G7). */
@@ -213,13 +254,19 @@ export interface EMatchSimulator extends EmbindHandle {
 
 export interface BtkModule {
   Vector3D: new (x: number, y: number, z: number) => EVector3D;
-  Bullet: new (
-    weightKg: number,
-    diameterM: number,
-    lengthM: number,
-    bc: number,
-    drag: DragFunctionValue,
-  ) => EBullet;
+  Bullet: {
+    /** Box bullet (no flight state). */
+    new (
+      weightKg: number,
+      diameterM: number,
+      lengthM: number,
+      bc: number,
+      drag: DragFunctionValue,
+    ): EBullet;
+    /** Flight-state bullet: copies `base` and sets world position/velocity/spin.
+     * Used to hand the C++ steel target an impact bullet (task 1.5a). */
+    new (base: EBullet, position: EVector3D, velocity: EVector3D, spinRateRadPerSec: number): EBullet;
+  };
   Atmosphere: new (
     temperatureK: number,
     altitudeM: number,
@@ -258,6 +305,16 @@ export interface BtkModule {
   DragFunction: { G1: DragFunctionValue; G7: DragFunctionValue };
   /** Deterministic seed for the global RNG (reproducible groups). */
   Random: { seed(value: number): void };
+  /** SteelTarget(width, height, thickness, isOval, position, normal, textureSize). */
+  SteelTarget: new (
+    widthM: number,
+    heightM: number,
+    thicknessM: number,
+    isOval: boolean,
+    position: EVector3D,
+    normal: EVector3D,
+    textureSize: number,
+  ) => ESteelTarget;
 }
 
 /** The Emscripten MODULARIZE factory (default export of the WASM module). */

@@ -21,13 +21,16 @@
 
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { RangeScene } from '../range/RangeScene';
+import { RangeScene, PLATE_THICKNESS_M } from '../range/RangeScene';
 import { useGameStore, ZOOM_MIN, ZOOM_MAX } from '../state/store';
 import { SCOPE_BASE_FOV_DEG, fovRadForMag } from './scope-projection';
 import { buildReticle, MAJOR_HALF_PX } from './reticle';
-import { solveTrajectory, spinRateFromTwist, type AtmosphereInput, type Load } from '../engine-bridge';
+import { solveTrajectory, spinRateFromTwist, speedOfSound, type AtmosphereInput, type Load } from '../engine-bridge';
+import { AudioManager } from '../audio/audio-manager';
 import { loadBtkModule } from '../engine-bridge/wasm-module';
 import { createScatterSimulator, type ScatterSimulator } from '../engine-bridge/match-sim';
+import { createSteelReaction, type SteelReaction } from '../engine-bridge/steel-target';
+import { initImpactFx, emitImpact, updateImpactFx, disposeImpactFx } from './impact-fx';
 import type { BtkModule } from '../engine-bridge/types';
 import { resolveShot, type ShotPlate } from '../game/shot';
 import { windToVec } from '../game/firing-solution';
@@ -83,6 +86,8 @@ export function ScopeView() {
 
     const scene = new THREE.Scene();
     const range = new RangeScene(scene);
+    // Impact marks + hit/miss dust pools (task 1.5c) live in the same scene.
+    initImpactFx(scene);
 
     const camera = new THREE.PerspectiveCamera(SCOPE_BASE_FOV_DEG / magnification, 1, 0.5, 3000);
     camera.position.set(0, EYE_HEIGHT_M, 0);
@@ -97,9 +102,34 @@ export function ScopeView() {
       spinRateRadPerSec: spinRateFromTwist(gameLoad.load.muzzleVelocityMps, gameLoad.twistM),
     };
     let engineModule: BtkModule | null = null;
-    loadBtkModule().then((m) => (engineModule = m));
-    const solveCache = new Map<string, { dropM: number; windageM: number }>();
+    let speedOfSoundMps = 340.3; // ISA default until the engine reports it
+    loadBtkModule().then((m) => {
+      engineModule = m;
+      speedOfSoundMps = speedOfSound(m, ISA_ATMOSPHERE);
+    });
+
+    // Audio (task 1.5d): fetch the clips now (no context, no sound); the first
+    // FIRE tap unlocks (iOS gesture) and then plays. `playShotAudio` fires the
+    // muzzle report every shot and, on a HIT only, schedules the steel ping after
+    // the sound-travel delay, scaled by distance + impact energy (audio-model).
+    const audio = new AudioManager();
+    void audio.preload();
+    function playShotAudio(hit: boolean, soundDistanceM: number, impactEnergyJ: number) {
+      void audio.unlock().then(() => {
+        audio.report(); // muzzle blast — every shot
+        if (hit) audio.ping(soundDistanceM, speedOfSoundMps, impactEnergyJ); // hits only
+      });
+    }
+    const solveCache = new Map<string, { dropM: number; windageM: number; velocityMps: number }>();
     const simCache = new Map<number, ScatterSimulator>();
+    // Live reactive-steel physics for currently-swinging plates (task 1.5a). One
+    // C++ SteelTarget per struck plate instance, reused for repeat hits, deleted
+    // when it settles. `rest` is the plate's static instance matrix (restored on
+    // settle); `baseQuat`/`scale` are its face-the-shooter rotation + size.
+    const reactions = new Map<
+      number,
+      { reaction: SteelReaction; rest: THREE.Matrix4; baseQuat: THREE.Quaternion; scale: THREE.Vector3 }
+    >();
 
     function solveAt(rangeM: number, wind: { speedMps: number; directionDeg: number }) {
       const key = `${rangeM}|${wind.speedMps}|${wind.directionDeg}`;
@@ -112,7 +142,9 @@ export function ScopeView() {
           stepM: rangeM,
         });
         const row = table[table.length - 1];
-        s = row ? { dropM: row.dropM, windageM: row.windageM } : { dropM: 0, windageM: 0 };
+        s = row
+          ? { dropM: row.dropM, windageM: row.windageM, velocityMps: row.velocityMps }
+          : { dropM: 0, windageM: 0, velocityMps: 0 };
         solveCache.set(key, s);
       }
       return s;
@@ -257,6 +289,7 @@ export function ScopeView() {
           const rangeM = aimed.distanceM;
           const wind = store().session.wind;
           const scope = store().session.scope;
+          const solved = solveAt(rangeM, wind);
           const rackPlates: ShotPlate[] = range.plates
             .filter((pl) => pl.distanceM === rangeM)
             .map((pl) => ({
@@ -268,7 +301,7 @@ export function ScopeView() {
             eye: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
             aimDir: { x: dir.x, y: dir.y, z: dir.z },
             dial: { elevRad: scope.elevationRad, windRad: scope.windageRad },
-            solve: solveAt(rangeM, wind),
+            solve: solved,
             distanceM: rangeM,
             scatter: simAt(rangeM).fire(),
             plates: rackPlates,
@@ -276,6 +309,60 @@ export function ScopeView() {
           });
           store().recordShot(result);
           store().decrementBudget();
+
+          // Reactive steel (task 1.5a): a hit swings/rotates the struck plate.
+          if (result.hitPlateId != null) {
+            const hitPlate = range.plates.find((pl) => pl.instanceId === result.hitPlateId);
+            if (hitPlate) {
+              const impactWorld = { x: result.impact.x, y: result.impact.y, z: hitPlate.position.z };
+              // Bullet velocity at impact ≈ the shooter→impact ray at the load's
+              // remaining speed (mostly downrange, a little drop). Good enough for
+              // the impulse; the plate hangs facing the shooter.
+              const dx = impactWorld.x - camera.position.x;
+              const dy = impactWorld.y - camera.position.y;
+              const dz = impactWorld.z - camera.position.z;
+              const dlen = Math.hypot(dx, dy, dz) || 1;
+              const spd = solved.velocityMps || solveLoad.muzzleVelocityMps;
+              const impactVel = { x: (dx / dlen) * spd, y: (dy / dlen) * spd, z: (dz / dlen) * spd };
+
+              let entry = reactions.get(hitPlate.instanceId);
+              if (!entry) {
+                const reaction = createSteelReaction(engineModule, {
+                  diameterM: hitPlate.diameterM,
+                  thicknessM: PLATE_THICKNESS_M,
+                  position: { x: hitPlate.position.x, y: hitPlate.position.y, z: hitPlate.position.z },
+                  beamHeightM: hitPlate.beamHeightM,
+                });
+                const rest = new THREE.Matrix4();
+                range.plateMesh.getMatrixAt(hitPlate.instanceId, rest);
+                const baseQuat = new THREE.Quaternion();
+                const scale = new THREE.Vector3();
+                rest.decompose(new THREE.Vector3(), baseQuat, scale);
+                entry = { reaction, rest: rest.clone(), baseQuat, scale };
+                reactions.set(hitPlate.instanceId, entry);
+              }
+              entry.reaction.strike(impactWorld, impactVel, gameLoad.load.massKg, gameLoad.load.diameterM);
+            }
+          }
+
+          // Audio (task 1.5d): report now; on a hit, the steel ping is delayed by
+          // the sound travel from the impact point back to the shooter, scaled by
+          // distance + impact energy (½·m·v²). A miss makes no impact sound.
+          const impactZ = -rangeM;
+          const soundDistanceM = Math.hypot(
+            result.impact.x - camera.position.x,
+            result.impact.y - camera.position.y,
+            impactZ - camera.position.z,
+          );
+          const impactEnergyJ = 0.5 * gameLoad.load.massKg * solved.velocityMps * solved.velocityMps;
+          playShotAudio(result.hitPlateId != null, soundDistanceM, impactEnergyJ);
+
+          // Impact FX (task 1.5c): a dust puff always (metallic on a steel hit,
+          // brown on a berm/ground miss), plus a persistent scuff mark on a hit.
+          emitImpact({
+            impactWorld: new THREE.Vector3(result.impact.x, result.impact.y, impactZ),
+            hit: result.hitPlateId != null,
+          });
         }
       }
       // Recoil kick + POA residual (feel; ported verbatim from 0.9).
@@ -350,6 +437,11 @@ export function ScopeView() {
     }
 
     // ---- render loop --------------------------------------------------------
+    // Reused scratch for the reactive-steel pose→matrix composition (no per-frame
+    // allocation).
+    const reactionMat = new THREE.Matrix4();
+    const reactionQuat = new THREE.Quaternion();
+    const reactionPos = new THREE.Vector3();
     let raf = 0;
     let last = performance.now();
     function frame(now: number) {
@@ -377,6 +469,28 @@ export function ScopeView() {
         st.dist.vp += (Math.random() * 2 - 1) * k;
         st.nextJerkAt = st.t + 3 + Math.random() * 4;
       }
+      // Reactive steel (task 1.5a): advance each swinging plate's C++ physics and
+      // mirror its pose into the shared plate InstancedMesh; retire on settle.
+      if (reactions.size > 0) {
+        for (const [id, entry] of reactions) {
+          entry.reaction.step(dt);
+          const pose = entry.reaction.getPose();
+          reactionPos.set(pose.position.x, pose.position.y, pose.position.z);
+          // Steel orientation (relative to the world-aligned rest frame) composed
+          // onto the plate's face-the-shooter rotation, at the plate's scale.
+          reactionQuat.set(pose.quaternion.x, pose.quaternion.y, pose.quaternion.z, pose.quaternion.w).multiply(entry.baseQuat);
+          reactionMat.compose(reactionPos, reactionQuat, entry.scale);
+          range.plateMesh.setMatrixAt(id, reactionMat);
+          if (!entry.reaction.isMoving()) {
+            range.plateMesh.setMatrixAt(id, entry.rest); // snap back to rest
+            entry.reaction.delete();
+            reactions.delete(id);
+          }
+        }
+        range.plateMesh.instanceMatrix.needsUpdate = true;
+      }
+      // Impact FX (task 1.5c): grow/fade dust puffs and recycle finished ones.
+      updateImpactFx(dt);
       camera.fov = SCOPE_BASE_FOV_DEG / store().session.scope.magnification;
       camera.updateProjectionMatrix();
       camera.quaternion.copy(aimQuaternion(st.t));
@@ -394,6 +508,10 @@ export function ScopeView() {
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
       canvas.removeEventListener('wheel', onWheel);
+      for (const entry of reactions.values()) entry.reaction.delete();
+      reactions.clear();
+      disposeImpactFx();
+      audio.dispose();
       range.dispose();
       renderer.dispose();
       for (const sim of simCache.values()) sim.delete();

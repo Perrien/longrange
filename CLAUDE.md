@@ -36,7 +36,7 @@ learning resource; explanations build from first principles. The Wiki is now a
 **demand-driven support layer** (see Working agreement), no longer a precondition
 to building.
 
-**Progress (updated 2026-07-13):**
+**Progress (updated 2026-07-14):**
 - **Wiki:** groups **A (Foundations)** and **B (the projectile)** drafted (articles
   1–10), plus **range-estimation** and **mil-dots-subtensions** pulled forward from
   §4 to support the ranging mechanic (12 articles total). Every claim source-cited
@@ -48,6 +48,18 @@ to building.
   architecture, stack, reuse strategy, and sequencing**, with session-sized execution
   task docs under `Design/execution/`. Superseded docs (earlier M0–M5 plan, game-design
   vision, the build-plan prompt) are archived in `Design/archive/`.
+- **Build execution** (live state in `Design/execution/PROGRESS.md` — authoritative):
+  **Increment 0 COMPLETE** (offline PWA on iPad, durable saves, oracle-gated engine in
+  CI, native tests, touch-aim feel; tagged `inc0-complete`). **Increment 1 in progress**
+  — 1.1 game-state, 1.2 Range A scene, 1.3 scope pipeline (FFP MIL/MOA reticle), 1.4
+  firing-solution + hit-sim all DONE and owner-signed on device; **1.5 (reactive steel +
+  audio)** underway per `Design/execution/increment-1.5-plan.md`: **1.5a** (steel swing/
+  rotate via the C++ SteelTarget) and **1.5d** (distance-delayed audio: report always,
+  hit-only steel ping, energy-scaled, no miss sound) built + **owner-confirmed on device**;
+  **1.5c** (impact marks + dust + reactive chains) in progress — **Commit 1 (pooled sprite
+  marks + GPU dust puffs, colour-keyed by hit/miss) built + gates green**, reactive chains
+  are Commit 2; **1.5b** (in-scope bullet trace) still TODO. Test scope zero currently 300 yd
+  (owner, for hold over/under testing).
 
 ## Design decisions locked in
 
