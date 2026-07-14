@@ -27,8 +27,30 @@ import type { BtkModule, ESteelTarget, EVector3D, Vec3, Quat } from './types';
 const TEXTURE_SIZE = 8;
 
 /** Chain anchor sits a hair proud of the plate face so the target hangs just in
- * front of the beam line, as in steel-sim (outwardOffset). */
-const OUTWARD_OFFSET_M = 0.05;
+ * front of the beam line, as in steel-sim (outwardOffset). Exported so the scene
+ * draws its rest chains from the same geometry the reaction uses (task 1.5c). */
+export const CHAIN_OUTWARD_OFFSET_M = 0.05;
+/** Near-top chain attach angle off vertical (rad), ≈ steel-sim's round-plate rig. */
+export const CHAIN_ANCHOR_ANGLE_RAD = 0.6;
+/** Outward splay of the DRAWN chains: the beam end sits this fraction of the
+ * attach offset further out than the plate end, so the pair forms a shallow
+ * trapezoid (wider at the beam) instead of dead-vertical. Visual only. */
+export const CHAIN_SPLAY_FRACTION = 0.5;
+
+/** Plate-local offset of a chain's plate-side attach point (before the ±X mirror):
+ * near the top edge, a hair behind the face. Pure geometry — shared by the scene's
+ * rest chains and the reaction's live `getChains()` so they line up exactly. */
+export function chainAnchorLocalOffset(
+  diameterM: number,
+  thicknessM: number,
+): { ax: number; ay: number; az: number } {
+  const radius = diameterM / 2;
+  return {
+    ax: radius * Math.sin(CHAIN_ANCHOR_ANGLE_RAD),
+    ay: radius * Math.cos(CHAIN_ANCHOR_ANGLE_RAD),
+    az: -thicknessM / 2,
+  };
+}
 
 export interface SteelReactionSpec {
   /** Round-plate diameter (m). */
@@ -54,6 +76,10 @@ export interface SteelReaction {
   /** Current pose: COM (world) + orientation quaternion (relative to the rest
    * frame, which equals the world frame). */
   getPose(): { position: Vec3; quaternion: Quat };
+  /** Current world endpoints of each hanging chain: `attach` (plate-side, tracks
+   * the swing via localToWorld) and `fixed` (the beam-side fixed anchor). Used to
+   * draw the chains so they follow the plate (task 1.5c). */
+  getChains(): { attach: Vec3; fixed: Vec3 }[];
   /** True while the plate is still moving (C++ settle detection). */
   isMoving(): boolean;
   /** Release the native handle. Idempotent. */
@@ -89,17 +115,23 @@ export function createSteelReaction(module: BtkModule, spec: SteelReactionSpec):
 
   // Two chains from near the top edge (steel-sim geometry). Oval attach point is
   // at ~35° off vertical on the rim, mirrored left/right.
-  const radius = spec.diameterM / 2;
-  const angle = 0.6; // rad, ≈ steel-sim's near-top attach for round plates
-  const ax = radius * Math.sin(angle);
-  const ay = radius * Math.cos(angle);
-  const az = -spec.thicknessM / 2;
+  const { ax, ay, az } = chainAnchorLocalOffset(spec.diameterM, spec.thicknessM);
+  // Keep the plate-side local attach handles alive: getChains() re-projects them
+  // through localToWorld every frame so the drawn chains track the swing. The
+  // fixed beam anchors don't move, so store them as plain numbers.
+  const chainLocals: EVector3D[] = [];
+  const chainFixed: Vec3[] = [];
   for (const sx of [-1, 1] as const) {
     const localAttach = v3(module, sx * ax, ay, az);
     const worldAttach = st.localToWorld(localAttach); // COPY → delete
-    const worldFixed = v3(module, worldAttach.x - sx * OUTWARD_OFFSET_M, spec.beamHeightM, worldAttach.z);
-    st.addChainAnchor(localAttach, worldFixed);
-    localAttach.delete();
+    const worldFixed = v3(module, worldAttach.x - sx * CHAIN_OUTWARD_OFFSET_M, spec.beamHeightM, worldAttach.z);
+    st.addChainAnchor(localAttach, worldFixed); // C++ copies both by value
+    chainLocals.push(localAttach); // kept alive → deleted in delete()
+    // Drawn beam-end splays OUTWARD of the rest attach (shallow trapezoid), NOT
+    // at the physics anchor — that anchor is nudged inward in X (steel-sim's
+    // "outward offset" ported onto X), which reads as crossed chains. The physics
+    // (swing, task 1.5a) keeps its anchor untouched; only the drawn chain differs.
+    chainFixed.push({ x: worldAttach.x + sx * ax * CHAIN_SPLAY_FRACTION, y: spec.beamHeightM, z: worldAttach.z });
     worldAttach.delete();
     worldFixed.delete();
   }
@@ -133,12 +165,22 @@ export function createSteelReaction(module: BtkModule, spec: SteelReactionSpec):
       q.delete();
       return pose;
     },
+    getChains(): { attach: Vec3; fixed: Vec3 }[] {
+      const chains: { attach: Vec3; fixed: Vec3 }[] = [];
+      for (let i = 0; i < chainLocals.length; i++) {
+        const w = st.localToWorld(chainLocals[i]); // COPY → delete
+        chains.push({ attach: { x: w.x, y: w.y, z: w.z }, fixed: chainFixed[i] });
+        w.delete();
+      }
+      return chains;
+    },
     isMoving(): boolean {
       return st.isMoving();
     },
     delete(): void {
       if (deleted) return;
       deleted = true;
+      for (const h of chainLocals) h.delete();
       st.delete();
     },
   };

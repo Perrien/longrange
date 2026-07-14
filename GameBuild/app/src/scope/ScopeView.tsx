@@ -21,7 +21,7 @@
 
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { RangeScene, PLATE_THICKNESS_M } from '../range/RangeScene';
+import { RangeScene, PLATE_THICKNESS_M, setChainInstance } from '../range/RangeScene';
 import { useGameStore, ZOOM_MIN, ZOOM_MAX } from '../state/store';
 import { SCOPE_BASE_FOV_DEG, fovRadForMag } from './scope-projection';
 import { buildReticle, MAJOR_HALF_PX } from './reticle';
@@ -498,13 +498,22 @@ export function ScopeView() {
           reactionQuat.set(pose.quaternion.x, pose.quaternion.y, pose.quaternion.z, pose.quaternion.w).multiply(entry.baseQuat);
           reactionMat.compose(reactionPos, reactionQuat, entry.scale);
           range.plateMesh.setMatrixAt(id, reactionMat);
+          // Redraw this plate's two chains so they track the swing (task 1.5c).
+          const chains = entry.reaction.getChains();
+          for (let ci = 0; ci < chains.length; ci++) {
+            setChainInstance(range.chainMesh, id * 2 + ci, chains[ci].attach, chains[ci].fixed);
+          }
           if (!entry.reaction.isMoving()) {
             range.plateMesh.setMatrixAt(id, entry.rest); // snap back to rest
+            for (let ci = 0; ci < 2; ci++) {
+              range.chainMesh.setMatrixAt(id * 2 + ci, range.chainRest[id * 2 + ci]);
+            }
             entry.reaction.delete();
             reactions.delete(id);
           }
         }
         range.plateMesh.instanceMatrix.needsUpdate = true;
+        range.chainMesh.instanceMatrix.needsUpdate = true;
       }
       // Impact FX (task 1.5c): grow/fade dust puffs and recycle finished ones.
       updateImpactFx(dt);

@@ -93,6 +93,36 @@ describe('steel-target/createSteelReaction', () => {
     expect(Math.sign(edgePlus.signedY)).toBe(1);
     expect(Math.sign(edgeMinus.signedY)).toBe(-1);
   });
+
+  it('exposes two hanging chains whose plate-side ends track the swing (task 1.5c)', () => {
+    const r = createSteelReaction(module, SPEC);
+    try {
+      const rest = r.getChains();
+      expect(rest.length).toBe(2);
+      for (const ch of rest) {
+        // Fixed end hangs from the beam; plate end sits below it, above the centre.
+        expect(ch.fixed.y).toBeCloseTo(SPEC.beamHeightM, 3);
+        expect(ch.attach.y).toBeLessThan(ch.fixed.y);
+        expect(ch.attach.y).toBeGreaterThan(SPEC.position.y);
+        // Beam end splays OUTWARD of the attach (wider at the beam → no cross).
+        expect(Math.abs(ch.fixed.x)).toBeGreaterThan(Math.abs(ch.attach.x));
+        expect(Math.sign(ch.fixed.x)).toBe(Math.sign(ch.attach.x));
+        expect(ch.fixed.z).toBeCloseTo(ch.attach.z, 6);
+      }
+      // Left/right symmetric about the plate centre at rest.
+      expect(rest[0].attach.x).toBeCloseTo(-rest[1].attach.x, 6);
+
+      // After a hit + a few steps, the plate-side end has moved with the swing.
+      const before = r.getChains()[0].attach;
+      r.strike(SPEC.position, VEL, MASS_KG, DIA_M);
+      for (let i = 0; i < 20; i++) r.step(0.01);
+      const after = r.getChains()[0].attach;
+      const moved = Math.hypot(after.x - before.x, after.y - before.y, after.z - before.z);
+      expect(moved).toBeGreaterThan(0.001);
+    } finally {
+      r.delete();
+    }
+  });
 });
 
 /** Strike a plate `offXFrac` of the radius off-centre in X, step briefly, and

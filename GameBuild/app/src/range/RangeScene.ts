@@ -12,6 +12,7 @@
 
 import * as THREE from 'three';
 import { RANGE_A_RACKS, RANGE_A_GROUND, type RackSpec } from './range-a-config';
+import { chainAnchorLocalOffset, CHAIN_SPLAY_FRACTION } from '../engine-bridge/steel-target';
 
 const SKY_COLOR = 0x9fc4e8;
 const PLATE_COLOR = 0xf0f0ea; // bright steel
@@ -19,6 +20,8 @@ const FRAME_COLOR = 0xaaaaaa; // galvanised posts/beams
 const BERM_COLOR = 0xd8b483; // sand
 const GRASS_COLOR = 0x7d9450;
 const DIRT_COLOR = 0xb89d6f;
+const CHAIN_COLOR = 0x4a4a4a; // dark galvanised chain
+const CHAIN_RADIUS_M = 0.006; // ~1/2" visual link rod
 
 /** Plate thickness (1/2"). Exported so the reactive-steel physics (task 1.5a)
  * sizes its C++ target from the same source as the rendered plate. */
@@ -49,6 +52,13 @@ export class RangeScene {
   /** The shared InstancedMesh holding every plate. The reactive-steel loop
    * (task 1.5a) writes per-plate matrices here via `setMatrixAt(instanceId,…)`. */
   plateMesh!: THREE.InstancedMesh;
+  /** The shared InstancedMesh holding every plate's two hanging chains (task
+   * 1.5c). Chain instances for plate `instanceId` are `instanceId*2` and
+   * `instanceId*2+1`; the reactive-steel loop rewrites a struck plate's pair to
+   * track its swing and restores `chainRest` on settle. */
+  chainMesh!: THREE.InstancedMesh;
+  /** Per-chain-instance rest transform, for snapping back once a plate settles. */
+  readonly chainRest: THREE.Matrix4[] = [];
   private readonly scene: THREE.Scene;
   private readonly disposables: Array<{ dispose(): void }> = [];
   private readonly objects: THREE.Object3D[] = [];
@@ -65,6 +75,7 @@ export class RangeScene {
     this.addBerms();
     this.addFrames();
     this.addPlates();
+    this.addChains();
     this.addSigns();
   }
 
@@ -217,6 +228,49 @@ export class RangeScene {
     this.add(mesh);
   }
 
+  // --- hanging chains (two per plate, all racks share one InstancedMesh) -----
+  // Drawn at rest for every plate so the steel visibly hangs; the reactive-steel
+  // loop (task 1.5c) rewrites a struck plate's pair each frame to track its swing
+  // and restores the rest transform on settle. Endpoints come from the SAME
+  // anchor geometry the reaction uses (chainAnchorLocalOffset), so live and rest
+  // chains line up exactly.
+  private addChains(): void {
+    const geo = this.track(new THREE.CylinderGeometry(1, 1, 1, 6));
+    const mat = this.track(
+      new THREE.MeshStandardMaterial({ color: CHAIN_COLOR, metalness: 0.7, roughness: 0.5 }),
+    );
+    const mesh = new THREE.InstancedMesh(geo, mat, this.plates.length * 2);
+
+    const attach = { x: 0, y: 0, z: 0 };
+    const fixed = { x: 0, y: 0, z: 0 };
+    const rm = new THREE.Matrix4();
+    for (const plate of this.plates) {
+      const { ax, ay, az } = chainAnchorLocalOffset(plate.diameterM, PLATE_THICKNESS_M);
+      const c = plate.position;
+      const sides = [-1, 1];
+      for (let j = 0; j < sides.length; j++) {
+        const sx = sides[j];
+        // Rest attach = plate centre + local offset (rest orientation = world);
+        // the beam end splays a bit OUTWARD (shallow trapezoid, no cross). When a
+        // plate swings, the reaction re-projects the attach and the chain tilts
+        // from this fixed beam point.
+        attach.x = c.x + sx * ax;
+        attach.y = c.y + ay;
+        attach.z = c.z + az;
+        fixed.x = attach.x + sx * ax * CHAIN_SPLAY_FRACTION;
+        fixed.y = plate.beamHeightM;
+        fixed.z = attach.z;
+        const idx = plate.instanceId * 2 + j;
+        setChainInstance(mesh, idx, attach, fixed);
+        mesh.getMatrixAt(idx, rm);
+        this.chainRest[idx] = rm.clone();
+      }
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    this.chainMesh = mesh;
+    this.add(mesh);
+  }
+
   // --- range signs (one per rack, just right of the plates) -----------------
   private addSigns(): void {
     for (const rack of RANGE_A_RACKS) {
@@ -273,6 +327,37 @@ export class RangeScene {
 }
 
 // --- geometry / texture helpers ---------------------------------------------
+
+// Reused scratch for chain-instance composition (no per-frame allocation).
+const CHAIN_UP = new THREE.Vector3(0, 1, 0);
+const _cAttach = new THREE.Vector3();
+const _cFixed = new THREE.Vector3();
+const _cDir = new THREE.Vector3();
+const _cPos = new THREE.Vector3();
+const _cQuat = new THREE.Quaternion();
+const _cScale = new THREE.Vector3();
+const _cMat = new THREE.Matrix4();
+
+/** Write chain instance `index` as a thin cylinder spanning `fixed`→`attach`
+ * (world metres). Shared by the scene's rest chains and the reactive-steel loop
+ * so a swinging plate's chains follow it (task 1.5c). */
+export function setChainInstance(
+  mesh: THREE.InstancedMesh,
+  index: number,
+  attach: { x: number; y: number; z: number },
+  fixed: { x: number; y: number; z: number },
+): void {
+  _cAttach.set(attach.x, attach.y, attach.z);
+  _cFixed.set(fixed.x, fixed.y, fixed.z);
+  _cDir.subVectors(_cAttach, _cFixed);
+  const len = _cDir.length() || 1e-6;
+  _cDir.divideScalar(len);
+  _cQuat.setFromUnitVectors(CHAIN_UP, _cDir);
+  _cPos.addVectors(_cAttach, _cFixed).multiplyScalar(0.5);
+  _cScale.set(CHAIN_RADIUS_M, len, CHAIN_RADIUS_M);
+  _cMat.compose(_cPos, _cQuat, _cScale);
+  mesh.setMatrixAt(index, _cMat);
+}
 
 /** Flat-topped berm mound as a unit shape (ported from steel-sim Berm.js). */
 function makeUnitBermGeometry(): THREE.BufferGeometry {
