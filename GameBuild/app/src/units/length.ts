@@ -20,6 +20,7 @@ export const metersToYards = (m: number): number => m / M_PER_YARD;
 export const metersToFeet = (m: number): number => m / M_PER_FOOT;
 export const metersToInches = (m: number): number => m / M_PER_INCH;
 export const metersToCentimeters = (m: number): number => m * 100;
+export const metersToMillimeters = (m: number): number => m * 1000;
 
 /** Both linear representations of a distance expressed in meters. */
 export interface MetricImperialLength {

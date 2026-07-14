@@ -30,7 +30,7 @@
 
 | Task | Status | Date | Commit | Note |
 |---|---|---|---|---|
-| 1.1 | TODO | | | game-state skeleton (Zustand session/settings, dial math tests) |
+| 1.1 | DONE (commit owner-side) | 2026-07-14 | (owner commits) | **Mac gates GREEN 2026-07-14: `npm run typecheck` + `npm test` pass; `npm run build` succeeds** (two benign warnings — `node:module` externalized from the emscripten WASM glue, and >500 kB chunk from the embedded WASM — both pre-existing, not from 1.1). Commit staged but must be made Mac-side (Linux sandbox lacks git identity + `.git/objects` write perm). Game-state skeleton built: `src/state/store.ts` (Zustand v5 — `session`: rangeId/targetDistanceM/wind/shotBudget/scope{elevationRad,windageRad,clickRad,magnification}; `settings`: unitsPrimary/sensitivity; pure actions: dial clicks, setZoom clamp 4.5–35×, setWind, decrementBudget floor-0, selectTarget resets dials+refills budget, resetSession, settings setters), `src/units/subtension.ts` (angular→linear mil-relation, keeps dial math out of components per §4.4) + `metersToMillimeters`, `src/state/persist-settings.ts` (settingsToSave/saveToSettings + load/subscribe wiring), `src/state/state.test.ts` (16 cases: dial math MIL+MOA, budget, reset, persistence round-trip). **Verified HERE (Linux sandbox, portable):** independent toolchain-free numeric check of all done-when values + reducer arithmetic — ALL PASS (0.1 mrad@100m=10mm; 1/4 MOA@100yd=0.26180in≈0.262; 1 mil@1000m=1m; dial/clamp/budget arithmetic). TS reviewed by eye vs tsconfig (strict/noUnusedLocals/isolatedModules — clean; zustand 5.0.14 curried `create`). **OWNER CHECK (Mac): `npm run typecheck && npm test` (expect prior 21 + 16 new green) and `npm run build`** — TS7/vitest4 native binaries can't run in this Linux sandbox (deferred-obs 0.4d). No commit until owner confirms Mac green. |
 | 1.2 | TODO | | | Range A scene (berms 50→500 yd, plate ladder, 60 fps iPad) |
 | 1.3 | TODO | | | scope pipeline v1 (FFP MIL+MOA reticle, exact subtensions; carry 0.9 aiming + breath-hold) |
 | 1.4 | TODO | | | firing solution plumbing (dispersion ON; hit-sim mean-radius match ≤10%) |
@@ -116,6 +116,16 @@ omits (e.g. DigiCert Global Root G2). Regenerating that bundle to be complete wo
 fix this environment-wide for all Node tools without the per-tool `cafile` workaround.
 
 ## Deferred observations
+- (1.1) **`settings.sensitivity` is store-only, NOT persisted.** Save schema v1
+  (`persistence/schema.ts`) has only `unitsPrimary`; adding `sensitivity` to the save
+  requires a `schemaVersion` bump + migration + fixture (guardrail §4.6), and the
+  schema.ts note reserves **v2 for Increment 2** (rifles/lots/DOPE). So 1.1 persists
+  only `unitsPrimary`; `sensitivity` resets to its default (1.0) on reload. Fold
+  `sensitivity` into the Increment-2 v2 bump. `persist-settings.ts` documents this;
+  a test asserts the intentional omission.
+- (1.1) Store **not yet wired into `App.tsx`** (no scene/UI to drive it until 1.2/1.6).
+  App-shell hydration = `loadSettingsInto` on start + `persistSettingsOnChange`
+  subscription; hook them up when the Range A UI lands.
 - (0.9, owner requirement) **Hold wobble must be a user-adjustable setting in the
   real game** (amplitude control + off). Candidate future tie-in: position/support
   quality (catalog §5 human factors, currently deferred) could drive the default.

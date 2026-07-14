@@ -24,9 +24,16 @@ SD; all **derived deterministically from a stored RNG seed + catalog ranges**
 only into engine-bridge calls, never to UI/logs (protocol §4.8). Schema v2:
 `rifles[]` (instances), `ammoLots[]`, seeds; migration v1→v2 + fixture save in the
 corpus.
+**Carry-over from 1.1:** also add **`settings.sensitivity`** (aim control gain) to
+the v2 `SaveSettings` in this bump. It exists in the Zustand store today
+(default 1.0) but is store-only under schema v1 — deliberately deferred here rather
+than spend a schema bump on one field. Update `settingsToSave`/`saveToSettings` in
+`GameBuild/app/src/state/persist-settings.ts` to persist it, and the v1→v2 migration
+must default `sensitivity` to 1.0 for old saves.
 **Done when:** vitest — same seed → same truth; distinct instances differ within
-catalog ranges; migration green; grep-style check that no UI/HUD module imports
-hidden-truth internals.
+catalog ranges; migration green (incl. `sensitivity` defaulted on v1 saves);
+`settings.sensitivity` round-trips through persistence; grep-style check that no
+UI/HUD module imports hidden-truth internals.
 
 ## 2.2 Gear catalog + inventory
 Catalog data (`GameBuild/app/src/game/catalog.ts`): rifles .22 LR, .223, 6.5 CM, .308 with
