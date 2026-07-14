@@ -25,7 +25,7 @@ const BASE_FOV_DEG = 24; // "1x" vertical FOV; scope FOV = BASE/mag
 const MAG_MIN = 4.5;
 const MAG_MAX = 35;
 const WOBBLE_RAD = 0.00015; // slow-sway component amplitude (~1 MOA-class total at 1×)
-const TREMOR_RAD = 0.00004; // muscle-tremor layer amplitude
+const TREMOR_RAD = 0.00002; // muscle-tremor layer amplitude (halved in iter 3 — iter 2 read "manic")
 // Disturbance spring-damper (shared by recoil + micro-jerks): x'' = -K·x − C·x'
 const SPRING_K = 64; // ω≈8 rad/s → settles in ~0.5 s
 const SPRING_C = 9; // slightly underdamped — visible overshoot on recoil
@@ -251,12 +251,12 @@ export function AimSpike() {
       st.dist.vp += (-SPRING_K * st.dist.p - SPRING_C * st.dist.vp) * dt;
       st.dist.y += st.dist.vy * dt;
       st.dist.p += st.dist.vp * dt;
-      // Random micro-jerks (the "erratic" layer) — scheduled every 1.5–3.5 s,
-      // scaled by the wobble slider; silent at 0.
+      // Random micro-jerks (the "erratic" layer) — every 3–7 s, half the iter-2
+      // strength (owner: iter 2 read "manic"); scaled by the wobble slider.
       if (st.wobbleAmp > 0 && st.t >= st.nextJerkAt) {
-        st.dist.vy += (Math.random() * 2 - 1) * 0.004 * st.wobbleAmp;
-        st.dist.vp += (Math.random() * 2 - 1) * 0.004 * st.wobbleAmp;
-        st.nextJerkAt = st.t + 1.5 + Math.random() * 2;
+        st.dist.vy += (Math.random() * 2 - 1) * 0.002 * st.wobbleAmp;
+        st.dist.vp += (Math.random() * 2 - 1) * 0.002 * st.wobbleAmp;
+        st.nextJerkAt = st.t + 3 + Math.random() * 4;
       }
       camera.fov = BASE_FOV_DEG / st.mag;
       camera.updateProjectionMatrix();
