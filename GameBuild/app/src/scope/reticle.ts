@@ -24,23 +24,44 @@ interface CadenceBand {
   readonly step: number;
 }
 
-/** Tick cadence per unit. A labelled major falls on every `majorEvery` units.
- *  MIL: 1-mil hashes all the way, label every 5. MOA: 1-MOA hashes to 15, then
- *  every 5 to 50, then every 10 beyond (owner-tuned — a flat 1-MOA cadence was
- *  too noisy at low zoom); label every 5. */
-const CADENCE: Record<ReticleUnit, { bands: readonly CadenceBand[]; majorEvery: number }> = {
-  MIL: { bands: [{ until: Infinity, step: 1 }], majorEvery: 5 },
+/** Tolerance for float-grid comparisons (steps like 0.2 don't sum exactly). */
+const TICK_EPS = 1e-6;
+
+/** True when `value` sits on a `step` grid, within `TICK_EPS`. */
+function isMultipleOf(value: number, step: number): boolean {
+  const q = value / step;
+  return Math.abs(q - Math.round(q)) < TICK_EPS;
+}
+
+/** Tick cadence per unit: the hash `bands` (step per subtension range) plus which
+ *  values get a longer, labelled major tick.
+ *  MIL (owner 2026-07-14): fine 0.2-mil hashes with a label every 1 mil inside the
+ *  first 5 mil; 0.5-mil hashes from 5–20; 1-mil hashes beyond; labelled every 5
+ *  outside the first 5. MOA: 1-MOA hashes to 15, then every 5 to 50, then every 10
+ *  beyond (owner-tuned — a flat 1-MOA cadence was too noisy at low zoom); label
+ *  every 5. */
+const CADENCE: Record<ReticleUnit, { bands: readonly CadenceBand[]; isMajor: (v: number) => boolean }> = {
+  MIL: {
+    bands: [
+      { until: 5, step: 0.2 },
+      { until: 20, step: 0.5 },
+      { until: Infinity, step: 1 },
+    ],
+    isMajor: (v) => (v <= 5 + TICK_EPS && isMultipleOf(v, 1)) || isMultipleOf(v, 5),
+  },
   MOA: {
     bands: [
       { until: 15, step: 1 },
       { until: 50, step: 5 },
       { until: Infinity, step: 10 },
     ],
-    majorEvery: 5,
+    isMajor: (v) => isMultipleOf(v, 5),
   },
 };
 
-/** Half-length (px, perpendicular to the axis) of a minor / major tick. */
+/** Half-length (px, perpendicular to the axis) of a sub-minor / minor / major
+ *  tick. Sub-minors are the fine graduations finer than one whole unit. */
+export const SUBMINOR_HALF_PX = 3;
 export const MINOR_HALF_PX = 5;
 export const MAJOR_HALF_PX = 11;
 
@@ -72,13 +93,14 @@ export interface ReticleGeometry {
 }
 
 /** Positive tick subtension values in increasing order, walking the cadence
- *  bands, stopping once a tick would fall outside the scope circle. */
+ *  bands, stopping once a tick would fall outside the scope circle. Accumulated
+ *  values are snapped to a 1e-4 grid so fractional steps (0.2, 0.5) stay exact. */
 function axisValues(bands: readonly CadenceBand[], maxValue: number): number[] {
   const out: number[] = [];
   let v = 0;
   for (const band of bands) {
-    while (v + band.step <= band.until + 1e-9) {
-      v += band.step;
+    while (v + band.step <= band.until + TICK_EPS) {
+      v = Math.round((v + band.step) * 1e4) / 1e4;
       if (v > maxValue) return out;
       out.push(v);
     }
@@ -90,22 +112,23 @@ function buildAxis(
   pxPerUnit: number,
   maxOffsetPx: number,
   bands: readonly CadenceBand[],
-  majorEvery: number,
+  isMajor: (v: number) => boolean,
 ): Tick[] {
   const ticks: Tick[] = [];
   const maxValue = maxOffsetPx / pxPerUnit;
   // Positive values from the cadence; mirror each to the negative side (skip 0 —
   // the centre is the crosshair, drawn separately).
   for (const value of axisValues(bands, maxValue)) {
-    const major = value % majorEvery === 0;
-    const half = major ? MAJOR_HALF_PX : MINOR_HALF_PX;
+    const major = isMajor(value);
+    // Whole-unit hashes are minor; finer graduations (0.2 / 0.5) are shorter still.
+    const half = major ? MAJOR_HALF_PX : isMultipleOf(value, 1) ? MINOR_HALF_PX : SUBMINOR_HALF_PX;
     for (const sign of [1, -1] as const) {
       ticks.push({
         value: sign * value,
         offsetPx: sign * value * pxPerUnit,
         major,
         halfLengthPx: half,
-        label: major ? String(value) : undefined,
+        label: major ? String(Math.round(value)) : undefined,
       });
     }
   }
@@ -125,9 +148,9 @@ export function buildReticle(
   const pxPerUnit = unit === 'MIL'
     ? pixelsPerMil(fovRad, viewportHeightPx)
     : pixelsPerMoa(fovRad, viewportHeightPx);
-  const { bands, majorEvery } = CADENCE[unit];
-  const ticksX = buildAxis(pxPerUnit, maxOffsetPx, bands, majorEvery);
-  const ticksY = buildAxis(pxPerUnit, maxOffsetPx, bands, majorEvery);
+  const { bands, isMajor } = CADENCE[unit];
+  const ticksX = buildAxis(pxPerUnit, maxOffsetPx, bands, isMajor);
+  const ticksY = buildAxis(pxPerUnit, maxOffsetPx, bands, isMajor);
   const maxValue = ticksX.reduce((m, t) => Math.max(m, Math.abs(t.value)), 0);
   return { unit, pxPerUnit, ticksX, ticksY, maxValue };
 }

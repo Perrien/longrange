@@ -304,6 +304,12 @@ fix this environment-wide for all Node tools without the per-tool `cafile` worka
 - 2026-07-13: **Owner rule — update `PROGRESS.md` at the end of every task**, whatever
   the outcome (DONE/BLOCKED/AWAITING/IN PROGRESS), before stopping. Encoded in
   `execution-protocol.md` §2.6.
+- 2026-07-14: **MIL reticle cadence revised (owner, task 1.3a).** Was 1-mil hashes
+  labelled every 5. Now: **0–5 mil** hashes every **0.2** (labelled every 1), **5–20 mil**
+  hashes every **0.5**, **>20 mil** hashes every 1 (labelled every 5 outside the first
+  5). Three tick lengths (major/minor/sub-minor 3 px) so the fine graduations read as
+  sub-divisions. MOA reticle unchanged. `reticle.ts` cadence generalized to a per-unit
+  `isMajor` predicate + float-safe grid; `reticle.test.ts` updated (still 112 suite).
 - 2026-07-14: **Range A target sizing = MOA-based (owner choice, task 1.2).**
   Every rack carries the same angular set (2 / 1.5 / 1 MOA) → constant difficulty
   with range; physical plate size grows with distance. Chosen over "bigger visible

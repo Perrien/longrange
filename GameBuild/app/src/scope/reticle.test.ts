@@ -3,7 +3,7 @@
 // symmetric, and nothing is drawn past the scope-circle radius.
 
 import { describe, it, expect } from 'vitest';
-import { buildReticle, MINOR_HALF_PX, MAJOR_HALF_PX, type ReticleUnit } from './reticle';
+import { buildReticle, SUBMINOR_HALF_PX, MINOR_HALF_PX, MAJOR_HALF_PX, type ReticleUnit } from './reticle';
 import { fovRadForMag, pixelsPerMil, pixelsPerMoa } from './scope-projection';
 
 const H = 900;
@@ -24,16 +24,39 @@ describe('buildReticle', () => {
     expect(buildReticle('MOA', fov, H, RADIUS).pxPerUnit).toBeCloseTo(pixelsPerMoa(fov, H), 12);
   });
 
-  it('labels a major (longer) tick every 5 units and leaves minors unlabelled', () => {
-    const r = buildReticle('MIL', fovRadForMag(10), H, RADIUS);
-    const five = r.ticksY.find((t) => t.value === 5)!;
-    const three = r.ticksY.find((t) => t.value === 3)!;
-    expect(five.major).toBe(true);
-    expect(five.label).toBe('5');
-    expect(five.halfLengthPx).toBe(MAJOR_HALF_PX);
-    expect(three.major).toBe(false);
-    expect(three.label).toBeUndefined();
-    expect(three.halfLengthPx).toBe(MINOR_HALF_PX);
+  it('MIL cadence: 0.2 hashes labelled every 1 to 5 mil, 0.5 hashes to 20, then 1 mil', () => {
+    // Low zoom → wide MIL span (~37 mil here) so all three bands appear.
+    const r = buildReticle('MIL', fovRadForMag(4.5), H, RADIUS);
+    const at = (v: number) => r.ticksY.find((t) => Math.abs(t.value - v) < 1e-9);
+    const pos = r.ticksX.filter((t) => t.value > 0).map((t) => t.value);
+    const has = (v: number) => pos.some((p) => Math.abs(p - v) < 1e-9);
+
+    // 0–5: labelled majors every whole mil, fine 0.2 sub-hashes between them.
+    for (const v of [1, 2, 3, 4, 5]) {
+      const t = at(v)!;
+      expect(t.major).toBe(true);
+      expect(t.label).toBe(String(v));
+      expect(t.halfLengthPx).toBe(MAJOR_HALF_PX);
+    }
+    for (const v of [0.2, 0.4, 2.6, 4.8]) expect(has(v)).toBe(true); // 0.2 grid
+    expect(has(0.1)).toBe(false); // finer than 0.2
+    const fine = at(0.2)!;
+    expect(fine.major).toBe(false);
+    expect(fine.label).toBeUndefined();
+    expect(fine.halfLengthPx).toBe(SUBMINOR_HALF_PX);
+
+    // 5–20: hashes every 0.5, labelled only every 5.
+    for (const v of [5.5, 6, 6.5, 19.5]) expect(has(v)).toBe(true);
+    for (const v of [5.2, 6.3]) expect(has(v)).toBe(false); // off the 0.5 grid
+    expect(at(6)!.major).toBe(false); // whole mil, but not a multiple of 5
+    expect(at(6)!.halfLengthPx).toBe(MINOR_HALF_PX);
+    expect(at(6)!.label).toBeUndefined();
+    expect(at(6.5)!.halfLengthPx).toBe(SUBMINOR_HALF_PX);
+    expect(at(10)!.label).toBe('10');
+
+    // Beyond 20: 1-mil hashes, still labelled every 5.
+    for (const v of [21, 22]) expect(has(v)).toBe(true);
+    expect(has(20.5)).toBe(false);
   });
 
   it('is symmetric about centre with no zero tick', () => {
