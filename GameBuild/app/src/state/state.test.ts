@@ -10,10 +10,12 @@ import {
   yardsToMeters,
 } from '../units';
 import { MemorySaveStore } from '../persistence';
+import type { ShotResult } from '../game/shot';
 import {
   useGameStore,
   defaultSession,
   defaultSettings,
+  defaultScore,
   MIL_CLICK_RAD,
   MOA_CLICK_RAD,
   ZOOM_MIN,
@@ -24,9 +26,21 @@ import {
   persistSettingsOnChange,
 } from './index';
 
+/** Build a minimal ShotResult for scoring tests (impact geometry doesn't matter here). */
+const shotResult = (hitPlateId: number | null): ShotResult => ({
+  impact: { x: 0, y: 0 },
+  distanceM: 300,
+  hitPlateId,
+  aimedPlateId: hitPlateId,
+});
+
 // Reset the singleton store before each test.
 beforeEach(() => {
-  useGameStore.setState({ session: defaultSession(), settings: defaultSettings() });
+  useGameStore.setState({
+    session: defaultSession(),
+    settings: defaultSettings(),
+    score: defaultScore(),
+  });
 });
 
 describe('dial math — angular click → linear subtension at range', () => {
@@ -124,6 +138,77 @@ describe('target select / reset', () => {
     expect(state.session.scope.elevationRad).toBe(0);
     expect(state.session.wind.speedMps).toBe(0);
     expect(state.settings.unitsPrimary).toBe('MOA'); // settings untouched
+  });
+});
+
+describe('scoring & engagement (task 1.6b, D2)', () => {
+  it('commitTarget sets currentTarget, resets shot count, refills budget, bumps targetsEngaged', () => {
+    const st = useGameStore.getState();
+    st.dialElevationClicks(4);
+    st.decrementBudget();
+    st.commitTarget(7, yardsToMeters(300));
+    const s = useGameStore.getState().session;
+    expect(s.currentTarget).toEqual({ plateInstanceId: 7, distanceM: yardsToMeters(300) });
+    expect(s.shotsAtCurrentTarget).toBe(0);
+    expect(s.shotBudget).toBe(3);
+    expect(s.scope.elevationRad).toBe(0);
+    expect(s.lastShots).toEqual([]);
+    expect(useGameStore.getState().score.targetsEngaged).toBe(1);
+  });
+
+  it('a hit on the first shot after commit counts as a first-round hit', () => {
+    const st = useGameStore.getState();
+    st.commitTarget(7, yardsToMeters(300));
+    st.recordShot(shotResult(7));
+    const score = useGameStore.getState().score;
+    expect(score.hits).toBe(1);
+    expect(score.firstRoundHits).toBe(1);
+    expect(score.shotsFired).toBe(1);
+  });
+
+  it('a miss then a hit counts the hit but not as a first-round hit', () => {
+    const st = useGameStore.getState();
+    st.commitTarget(7, yardsToMeters(300));
+    st.recordShot(shotResult(null)); // miss
+    st.recordShot(shotResult(7)); // hit on shot 2
+    const score = useGameStore.getState().score;
+    expect(score.hits).toBe(1);
+    expect(score.firstRoundHits).toBe(0);
+    expect(score.shotsFired).toBe(2);
+  });
+
+  it('hitting a different plate than the committed one does not count as a hit', () => {
+    const st = useGameStore.getState();
+    st.commitTarget(7, yardsToMeters(300));
+    st.recordShot(shotResult(9)); // hit some other plate
+    const score = useGameStore.getState().score;
+    expect(score.hits).toBe(0);
+    expect(score.firstRoundHits).toBe(0);
+    expect(score.shotsFired).toBe(1);
+  });
+
+  it('counters aggregate across two committed targets', () => {
+    const st = useGameStore.getState();
+    st.commitTarget(1, yardsToMeters(100));
+    st.recordShot(shotResult(1)); // first-round hit
+    st.commitTarget(2, yardsToMeters(300));
+    st.recordShot(shotResult(null)); // miss
+    st.recordShot(shotResult(2)); // hit on shot 2 (not first-round)
+    const score = useGameStore.getState().score;
+    expect(score.targetsEngaged).toBe(2);
+    expect(score.shotsFired).toBe(3);
+    expect(score.hits).toBe(2);
+    expect(score.firstRoundHits).toBe(1);
+  });
+
+  it('resetScore zeroes the score slice without touching session', () => {
+    const st = useGameStore.getState();
+    st.commitTarget(1, yardsToMeters(100));
+    st.recordShot(shotResult(1));
+    st.resetScore();
+    const state = useGameStore.getState();
+    expect(state.score).toEqual(defaultScore());
+    expect(state.session.currentTarget).toEqual({ plateInstanceId: 1, distanceM: yardsToMeters(100) });
   });
 });
 

@@ -3,6 +3,7 @@ export {
   useGameStore,
   defaultSession,
   defaultSettings,
+  defaultScore,
   MIL_CLICK_RAD,
   MOA_CLICK_RAD,
   ZOOM_MIN,
@@ -17,6 +18,8 @@ export type {
   ScopeState,
   WindState,
   UnitsPrimary,
+  CommittedTarget,
+  ScoreState,
 } from './store';
 export {
   settingsToSave,

@@ -41,6 +41,15 @@ export interface ScopeState {
   magnification: number;
 }
 
+/** The specific plate the player has committed to engaging (task 1.6b, D2).
+ *  `null` before the player has committed to any plate this session. */
+export interface CommittedTarget {
+  /** The plate's instance id (matches `PlateInstance.instanceId` / `ShotResult.hitPlateId`). */
+  plateInstanceId: number;
+  /** Distance to the committed plate, metres. */
+  distanceM: number;
+}
+
 export interface SessionState {
   /** Active range id (Range A this increment). */
   rangeId: string;
@@ -52,6 +61,23 @@ export interface SessionState {
   scope: ScopeState;
   /** Resolved shots this engagement (task 1.4c); cleared on target switch. */
   lastShots: ShotResult[];
+  /** The plate committed to via `commitTarget` (D2); null until the player commits. */
+  currentTarget: CommittedTarget | null;
+  /** Shots fired at `currentTarget` since the last commit. */
+  shotsAtCurrentTarget: number;
+}
+
+/** Session-scoped scoring counters (D2). Session-only for Increment 1 — not
+ *  persisted (folds into the save at the Increment-2 schema-v2 bump). */
+export interface ScoreState {
+  /** Shots that struck the committed plate. */
+  hits: number;
+  /** Total shots fired (any outcome). */
+  shotsFired: number;
+  /** Hits that were the first shot fired after committing to their plate. */
+  firstRoundHits: number;
+  /** Number of `commitTarget` calls this session. */
+  targetsEngaged: number;
 }
 
 export interface SettingsState {
@@ -91,6 +117,8 @@ export const defaultSession = (): SessionState => ({
     magnification: DEFAULT_MAGNIFICATION,
   },
   lastShots: [],
+  currentTarget: null,
+  shotsAtCurrentTarget: 0,
 });
 
 export const defaultSettings = (): SettingsState => ({
@@ -99,11 +127,19 @@ export const defaultSettings = (): SettingsState => ({
   traceEnabled: true,
 });
 
+export const defaultScore = (): ScoreState => ({
+  hits: 0,
+  shotsFired: 0,
+  firstRoundHits: 0,
+  targetsEngaged: 0,
+});
+
 // --- Store ------------------------------------------------------------------
 
 export interface GameStore {
   session: SessionState;
   settings: SettingsState;
+  score: ScoreState;
 
   // Scope / turret
   /** Dial elevation by N detents (can be negative). */
@@ -125,12 +161,19 @@ export interface GameStore {
   // Budget / target
   /** Decrement the shot budget by one, floored at zero. */
   decrementBudget(): void;
-  /** Record a resolved shot's result (task 1.4c). */
+  /** Record a resolved shot's result (task 1.4c); also scores it against
+   *  `currentTarget` (task 1.6b, D2). */
   recordShot(result: ShotResult): void;
   /** Switch to a target: sets distance, resets dials to zero, refills budget. */
   selectTarget(distanceM: number, budget?: number): void;
-  /** Reset the whole session to defaults (settings untouched). */
+  /** Commit to engaging a specific plate (D2): sets `currentTarget`, resets the
+   *  per-target shot count + dials, refills the shot budget, clears `lastShots`,
+   *  and bumps `score.targetsEngaged`. This is the "new target" boundary. */
+  commitTarget(plateInstanceId: number, distanceM: number, budget?: number): void;
+  /** Reset the whole session to defaults (settings untouched); also resets score. */
   resetSession(): void;
+  /** Reset just the scoring counters. */
+  resetScore(): void;
 
   // Settings
   setUnitsPrimary(u: UnitsPrimary): void;
@@ -143,6 +186,7 @@ export interface GameStore {
 export const useGameStore = create<GameStore>()((set) => ({
   session: defaultSession(),
   settings: defaultSettings(),
+  score: defaultScore(),
 
   dialElevationClicks: (clicks) =>
     set((s) => ({
@@ -198,9 +242,26 @@ export const useGameStore = create<GameStore>()((set) => ({
     })),
 
   recordShot: (result) =>
-    set((s) => ({
-      session: { ...s.session, lastShots: [...s.session.lastShots, result] },
-    })),
+    set((s) => {
+      const shotsAtCurrentTarget = s.session.shotsAtCurrentTarget + 1;
+      const isHit =
+        s.session.currentTarget != null &&
+        result.hitPlateId === s.session.currentTarget.plateInstanceId;
+      const isFirstRoundAtTarget = shotsAtCurrentTarget === 1;
+      return {
+        session: {
+          ...s.session,
+          lastShots: [...s.session.lastShots, result],
+          shotsAtCurrentTarget,
+        },
+        score: {
+          ...s.score,
+          shotsFired: s.score.shotsFired + 1,
+          hits: s.score.hits + (isHit ? 1 : 0),
+          firstRoundHits: s.score.firstRoundHits + (isHit && isFirstRoundAtTarget ? 1 : 0),
+        },
+      };
+    }),
 
   selectTarget: (distanceM, budget = DEFAULT_SHOT_BUDGET) =>
     set((s) => ({
@@ -213,7 +274,23 @@ export const useGameStore = create<GameStore>()((set) => ({
       },
     })),
 
-  resetSession: () => set({ session: defaultSession() }),
+  commitTarget: (plateInstanceId, distanceM, budget = DEFAULT_SHOT_BUDGET) =>
+    set((s) => ({
+      session: {
+        ...s.session,
+        targetDistanceM: distanceM,
+        currentTarget: { plateInstanceId, distanceM },
+        shotsAtCurrentTarget: 0,
+        shotBudget: budget,
+        scope: { ...s.session.scope, elevationRad: 0, windageRad: 0 },
+        lastShots: [],
+      },
+      score: { ...s.score, targetsEngaged: s.score.targetsEngaged + 1 },
+    })),
+
+  resetSession: () => set({ session: defaultSession(), score: defaultScore() }),
+
+  resetScore: () => set({ score: defaultScore() }),
 
   setUnitsPrimary: (u) => set((s) => ({ settings: { ...s.settings, unitsPrimary: u } })),
 

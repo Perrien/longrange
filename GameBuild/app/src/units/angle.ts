@@ -37,3 +37,21 @@ export const asMilMoa = (rad: number): MilMoa => ({
   mil: radToMil(rad),
   moa: radToMoa(rad),
 });
+
+// --- clock face <-> degrees (task 1.6b, D6 wind direction dial) ------------
+// Clock convention: 12 o'clock = 0° (downrange), clockwise positive, matching
+// `WindState.directionDeg` (degrees clockwise from downrange, 0 = 12 o'clock).
+// Each hour is 30°; 12 wraps to 0.
+
+/** Clock position (1–12, fractional allowed) → degrees clockwise from 12. */
+export const clockToDeg = (clock: number): number => {
+  const deg = (clock % 12) * 30;
+  return deg < 0 ? deg + 360 : deg;
+};
+
+/** Degrees clockwise from 12 → clock position (0–12, 12 not 0). */
+export const degToClock = (deg: number): number => {
+  const normalizedDeg = ((deg % 360) + 360) % 360;
+  const clock = normalizedDeg / 30;
+  return clock === 0 ? 12 : clock;
+};

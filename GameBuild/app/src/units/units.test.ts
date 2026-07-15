@@ -7,6 +7,8 @@ import {
   milToMoa,
   moaToMil,
   asMilMoa,
+  clockToDeg,
+  degToClock,
   yardsToMeters,
   metersToYards,
   inchesToMeters,
@@ -39,6 +41,19 @@ describe('units/angle', () => {
     const c = asMilMoa(0.001); // exactly 1 mrad
     expect(c.mil).toBeCloseTo(1, 9);
     expect(c.moa).toBeCloseTo(3.43774677, 6);
+  });
+
+  it('clockToDeg maps the clock face to degrees clockwise from 12', () => {
+    expect(clockToDeg(12)).toBe(0);
+    expect(clockToDeg(3)).toBe(90);
+    expect(clockToDeg(6)).toBe(180);
+    expect(clockToDeg(9)).toBe(270);
+  });
+
+  it('degToClock ↔ clockToDeg round-trip for every hour', () => {
+    for (let hour = 1; hour <= 12; hour++) {
+      expect(degToClock(clockToDeg(hour))).toBeCloseTo(hour, 9);
+    }
   });
 });
 
