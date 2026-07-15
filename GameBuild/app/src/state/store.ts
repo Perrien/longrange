@@ -118,6 +118,13 @@ export interface SettingsState {
    *  `sensitivity`/`traceEnabled`): a cosmetic session preference, not a
    *  durable one. */
   windMarkerStyle: MarkerStyle;
+  /** Mirage heat-shimmer post-process (task 1.7c). Store-only, like
+   *  `traceEnabled`/`windMarkerStyle`. Defaults OFF (owner feedback,
+   *  2026-07-15, after the direction/color-space fixes: the boil is legible
+   *  but the crosswind DIRECTION still doesn't read clearly at a glance —
+   *  "more frantic at higher wind, but no feel that it's moving up or
+   *  sideways") — parked for a later revisit rather than shipped on. */
+  mirageEnabled: boolean;
 }
 
 // --- Constants / defaults ---------------------------------------------------
@@ -162,6 +169,7 @@ export const defaultSettings = (): SettingsState => ({
   traceEnabled: true,
   windRealism: 'steady',
   windMarkerStyle: 'flag',
+  mirageEnabled: false,
 });
 
 export const defaultScore = (): ScoreState => ({
@@ -224,6 +232,8 @@ export interface GameStore {
   setWindRealism(mode: WindRealism): void;
   /** Flag / sock / both (task 1.7b). Store-only, not persisted. */
   setWindMarkerStyle(style: MarkerStyle): void;
+  /** Mirage on/off (task 1.7c). Store-only, not persisted; defaults off. */
+  setMirageEnabled(enabled: boolean): void;
   /** Merge a partial settings patch (used by persistence hydration). */
   applySettings(patch: Partial<SettingsState>): void;
 }
@@ -353,6 +363,9 @@ export const useGameStore = create<GameStore>()((set) => ({
 
   setWindMarkerStyle: (windMarkerStyle) =>
     set((s) => ({ settings: { ...s.settings, windMarkerStyle } })),
+
+  setMirageEnabled: (mirageEnabled) =>
+    set((s) => ({ settings: { ...s.settings, mirageEnabled } })),
 
   applySettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 }));

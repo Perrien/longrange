@@ -265,6 +265,7 @@ describe('settings persistence round-trip', () => {
       traceEnabled: true,
       windRealism: 'steady' as const,
       windMarkerStyle: 'flag' as const,
+      mirageEnabled: false,
     };
     const save = settingsToSave(settings);
     expect(save.settings.unitsPrimary).toBe('MOA');
@@ -279,6 +280,7 @@ describe('settings persistence round-trip', () => {
       traceEnabled: true,
       windRealism: 'realistic' as const,
       windMarkerStyle: 'flag' as const,
+      mirageEnabled: false,
     };
     const save = settingsToSave(settings);
     expect(save.settings.windRealism).toBe('realistic');
@@ -317,8 +319,29 @@ describe('settings persistence round-trip', () => {
       traceEnabled: false,
       windRealism: 'steady',
       windMarkerStyle: 'flag',
+      mirageEnabled: false,
     });
     expect('sensitivity' in save.settings).toBe(false);
     expect('traceEnabled' in save.settings).toBe(false);
+  });
+});
+
+describe('mirage toggle (task 1.7c/1.7d)', () => {
+  it('defaults to OFF (owner feedback, 2026-07-15: direction not legible yet, parked for later)', () => {
+    expect(useGameStore.getState().settings.mirageEnabled).toBe(false);
+  });
+
+  it('setMirageEnabled updates the setting, is not reset by resetSession, and is not persisted', () => {
+    const st = useGameStore.getState();
+    st.setMirageEnabled(true);
+    expect(useGameStore.getState().settings.mirageEnabled).toBe(true);
+    st.resetSession();
+    expect(useGameStore.getState().settings.mirageEnabled).toBe(true); // settings untouched
+
+    const save = settingsToSave(useGameStore.getState().settings);
+    expect('mirageEnabled' in save.settings).toBe(false);
+
+    st.setMirageEnabled(false);
+    expect(useGameStore.getState().settings.mirageEnabled).toBe(false);
   });
 });

@@ -171,6 +171,10 @@ export function ScopeView() {
   const setWindPreset = useGameStore((s) => s.setWindPreset);
   const windMarkerStyle = useGameStore((s) => s.settings.windMarkerStyle);
   const setWindMarkerStyle = useGameStore((s) => s.setWindMarkerStyle);
+  // Mirage on/off (task 1.7c/1.7d): defaults OFF — owner feedback, 2026-07-15,
+  // parked pending a clearer directional read. Store-only, like traceEnabled.
+  const mirageEnabled = useGameStore((s) => s.settings.mirageEnabled);
+  const setMirageEnabled = useGameStore((s) => s.setMirageEnabled);
   // Raw BTK preset names (task 1.7b, D3): populated once the engine loads (the
   // imperative effect below calls `setAvailablePresets` — a stable setState
   // reference, same pattern as `setLastCall`).
@@ -881,16 +885,25 @@ export function ScopeView() {
       camera.fov = SCOPE_BASE_FOV_DEG / store().session.scope.magnification;
       camera.updateProjectionMatrix();
       camera.quaternion.copy(aimQuaternion(st.t));
-      // Mirage (task 1.7c, D1): renders in BOTH modes, like the flags — Steady
-      // shows the dialed mean's shimmer, Realistic layers the field on top.
-      // Sampled near the reference depth the shimmer's feature size assumes.
-      const mirageWind = currentWindAt({ x: 0, y: EYE_HEIGHT_M, z: -MIRAGE_REFERENCE_DISTANCE_M });
-      renderSceneWithMirage(scene, camera, {
-        dt,
-        fovDeg: camera.fov,
-        baseFovDeg: SCOPE_BASE_FOV_DEG,
-        wind: { x: mirageWind.x, z: mirageWind.z },
-      });
+      // Mirage (task 1.7c, D1; toggle added 1.7d): renders in BOTH modes when
+      // on, like the flags — Steady shows the dialed mean's shimmer,
+      // Realistic layers the field on top. Sampled near the reference depth
+      // the shimmer's feature size assumes. Defaults OFF (owner feedback,
+      // 2026-07-15: the boil reads, but the crosswind DIRECTION doesn't yet)
+      // — when off, skip the two-pass post-process entirely and render
+      // straight to the screen, same as before 1.7c existed (also the
+      // cheaper path, no offscreen pass to pay for while it's parked).
+      if (store().settings.mirageEnabled) {
+        const mirageWind = currentWindAt({ x: 0, y: EYE_HEIGHT_M, z: -MIRAGE_REFERENCE_DISTANCE_M });
+        renderSceneWithMirage(scene, camera, {
+          dt,
+          fovDeg: camera.fov,
+          baseFovDeg: SCOPE_BASE_FOV_DEG,
+          wind: { x: mirageWind.x, z: mirageWind.z },
+        });
+      } else {
+        renderer.render(scene, camera);
+      }
       drawReticle();
       raf = requestAnimationFrame(frame);
     }
@@ -1135,6 +1148,12 @@ export function ScopeView() {
                 {style}
               </button>
             ))}
+          </div>
+
+          {/* Mirage toggle (task 1.7c/1.7d): defaults OFF — parked pending a
+              clearer directional read (owner feedback, 2026-07-15). */}
+          <div style={{ marginTop: 4 }}>
+            <button onClick={() => setMirageEnabled(!mirageEnabled)}>mirage: {mirageEnabled ? 'on' : 'off'}</button>
           </div>
         </div>
 
