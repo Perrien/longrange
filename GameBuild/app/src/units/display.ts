@@ -47,3 +47,22 @@ export const formatDistanceForDisplay = (m: number, units: DisplayUnits): Format
  *  inches under Imperial — finer-grained than `formatDistanceForDisplay`. */
 export const formatOffsetForDisplay = (m: number, units: DisplayUnits): Formatted =>
   units === 'MIL' ? { value: metersToMillimeters(m), label: 'mm' } : { value: metersToInches(m), label: 'in' };
+
+/**
+ * Format a fractional clock position (1–12, e.g. 2.5 from `degToClock`) as
+ * "H:MM" (e.g. "2:30") — the wind-direction display task 1.7b's effective-wind
+ * HUD readout uses ("~7 mph @ 2:30"). Rounds to the nearest minute; a rollover
+ * to :60 carries into the next hour, and hour 12 (never 0) is used at the wrap
+ * — same convention as `degToClock` itself.
+ */
+export const formatClockPosition = (clock: number): string => {
+  let hour = Math.floor(clock);
+  let minute = Math.round((clock - hour) * 60);
+  if (minute === 60) {
+    minute = 0;
+    hour += 1;
+  }
+  if (hour <= 0) hour = 12;
+  if (hour > 12) hour -= 12;
+  return `${hour}:${minute.toString().padStart(2, '0')}`;
+};

@@ -34,3 +34,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Claude Code local session/tooling state — not project source
+.claude/

@@ -39,6 +39,48 @@ export function windToVec(speedMps: number, directionDeg: number): WindVec {
 }
 
 /**
+ * Inverse of `windToVec` (task 1.7a, D6): recover a speed + clock-style
+ * direction (degrees clockwise from downrange, same FROM convention as
+ * `WindState.directionDeg`) from an engine wind vector — e.g. one sampled/
+ * averaged from the live curl-noise field, not the player's dialed mean. The
+ * vertical (y) component is ignored (no vertical wind modeled in Increment 1).
+ * A near-zero vector (calm) returns `{speedMps: 0, directionDeg: 0}` rather
+ * than an undefined direction.
+ */
+export function vecToWind(vec: WindVec): { speedMps: number; directionDeg: number } {
+  const speedMps = Math.hypot(vec.x, vec.z);
+  if (speedMps < 1e-9) return { speedMps: 0, directionDeg: 0 };
+  // windToVec: x = -speed·sin(rad), z = speed·cos(rad)  ⇒  rad = atan2(-x, z).
+  const rad = Math.atan2(-vec.x, vec.z);
+  const directionDeg = ((rad * 180) / Math.PI + 360) % 360;
+  return { speedMps, directionDeg };
+}
+
+/**
+ * The D6 "effective wind" readout: average `meanVec + gustScale × sample` over
+ * a column of field samples (e.g. `sampleFieldColumn`'s output), then convert
+ * back to speed + clock direction via `vecToWind`. Falls back to the mean alone
+ * (Steady mode, or an empty column) rather than dividing by zero.
+ */
+export function averageEffectiveWind(
+  meanVec: WindVec,
+  gustScale: number,
+  gustSamples: WindVec[],
+): { speedMps: number; directionDeg: number } {
+  if (gustSamples.length === 0) return vecToWind(meanVec);
+  let sx = 0;
+  let sy = 0;
+  let sz = 0;
+  for (const g of gustSamples) {
+    sx += meanVec.x + gustScale * g.x;
+    sy += meanVec.y + gustScale * g.y;
+    sz += meanVec.z + gustScale * g.z;
+  }
+  const n = gustSamples.length;
+  return vecToWind({ x: sx / n, y: sy / n, z: sz / n });
+}
+
+/**
  * The correction the player must apply to hit the target center, derived from the
  * trajectory's position relative to the sight line at range R. `dropM` is the
  * bullet's vertical position (negative = below the line of sight); `windageM` is

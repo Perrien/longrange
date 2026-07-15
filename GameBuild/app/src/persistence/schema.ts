@@ -10,6 +10,11 @@ export const CURRENT_SCHEMA_VERSION = 1;
 export interface SaveSettings {
   /** Which angular unit leads in the UI; both are always shown (catalog §0.6). */
   unitsPrimary: 'MIL' | 'MOA';
+  /** Steady vs. Realistic wind (task 1.7a, D1). Optional/additive to keep this
+   *  schema v1-compatible — an older save (or a fixture predating 1.7) simply
+   *  has it absent, and `saveToSettings` defaults it to 'steady'. Bump nothing
+   *  else; this is NOT a v2-schema change. */
+  windRealism?: 'steady' | 'realistic';
 }
 
 export interface SaveData {
@@ -21,7 +26,7 @@ export interface SaveData {
 export const DEFAULT_SAVE: SaveData = {
   schemaVersion: CURRENT_SCHEMA_VERSION,
   updatedAt: new Date(0).toISOString(),
-  settings: { unitsPrimary: 'MIL' },
+  settings: { unitsPrimary: 'MIL', windRealism: 'steady' },
 };
 
 export class SaveValidationError extends Error {}
@@ -47,4 +52,12 @@ export function validateSaveShape(data: unknown): asserts data is SaveData {
   const s = d.settings as Record<string, unknown>;
   if (s.unitsPrimary !== 'MIL' && s.unitsPrimary !== 'MOA')
     fail(`settings.unitsPrimary must be 'MIL' | 'MOA'`);
+  // Additive optional field (task 1.7a): only validated when present, so saves
+  // written before 1.7 (which never had this key) still pass unchanged.
+  if (
+    s.windRealism !== undefined &&
+    s.windRealism !== 'steady' &&
+    s.windRealism !== 'realistic'
+  )
+    fail(`settings.windRealism must be 'steady' | 'realistic' when present`);
 }

@@ -10,6 +10,7 @@ export {
   ZOOM_MAX,
   DEFAULT_MAGNIFICATION,
   DEFAULT_SHOT_BUDGET,
+  DEFAULT_WIND_PRESET,
 } from './store';
 export type {
   GameStore,
@@ -17,6 +18,8 @@ export type {
   SettingsState,
   ScopeState,
   WindState,
+  WindRealism,
+  MarkerStyle,
   UnitsPrimary,
   CommittedTarget,
   ScoreState,

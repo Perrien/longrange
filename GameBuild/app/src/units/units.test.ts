@@ -23,6 +23,7 @@ import {
   formatSpeedForDisplay,
   formatDistanceForDisplay,
   formatOffsetForDisplay,
+  formatClockPosition,
 } from './index';
 
 describe('units/angle', () => {
@@ -134,5 +135,19 @@ describe('units/display (Met/Imp HUD toggle)', () => {
     const imperial = formatOffsetForDisplay(0.0254, 'MOA');
     expect(imperial.value).toBeCloseTo(1, 9);
     expect(imperial.label).toBe('in');
+  });
+
+  it('formatClockPosition: "H:MM", rounds to the nearest minute (task 1.7b)', () => {
+    expect(formatClockPosition(2.5)).toBe('2:30');
+    expect(formatClockPosition(12.0)).toBe('12:00');
+    expect(formatClockPosition(1.0)).toBe('1:00');
+    expect(formatClockPosition(11.75)).toBe('11:45');
+  });
+
+  it('formatClockPosition rolls a :60 rounding into the next hour', () => {
+    // 2 + 59.99/60 rounds to minute=60, which must carry to hour 3, not "2:60".
+    expect(formatClockPosition(2 + 59.99 / 60)).toBe('3:00');
+    // The wrap at the top of the clock still reads "12:00", not "13:00".
+    expect(formatClockPosition(11 + 59.99 / 60)).toBe('12:00');
   });
 });

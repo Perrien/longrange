@@ -20,6 +20,20 @@ import type { ShotResult } from '../game/shot';
 
 export type UnitsPrimary = 'MIL' | 'MOA';
 
+/** Wind realism mode (task 1.7a, D1). 'steady' keeps the bullet flying through
+ *  exactly the dialed mean (byte-identical to 1.6, deterministic — the owner's
+ *  test harness); 'realistic' layers a curl-noise field's deviation on top of
+ *  that mean (D2/D3b), so the dial becomes a guideline the player must read
+ *  off flags/mirage rather than ground truth. */
+export type WindRealism = 'steady' | 'realistic';
+
+/** Wind marker visual style (task 1.7b, plan step 1 — "owner picks flags vs
+ *  socks vs both"). Same literal union as `range/wind-markers-config.ts`'s
+ *  `MarkerStyle` — declared locally (not imported) so `state/` doesn't depend
+ *  on `range/`, matching how `units/display.ts` duplicates `UnitsPrimary`
+ *  rather than importing it from here. */
+export type MarkerStyle = 'flag' | 'sock' | 'both';
+
 /** Wind as the player sets it: a mean speed and the direction it blows FROM.
  *  Constant for Increment 1; the curl-noise field arrives in task 1.7. */
 export interface WindState {
@@ -65,6 +79,13 @@ export interface SessionState {
   currentTarget: CommittedTarget | null;
   /** Shots fired at `currentTarget` since the last commit. */
   shotsAtCurrentTarget: number;
+  /** Raw BTK wind-turbulence preset name (task 1.7a, D3) — one of
+   *  `WindPresets.listPresets()` (e.g. 'Moderate', 'Gusty', 'Switchy'…).
+   *  Session-only (not persisted, unlike `settings.windRealism`): it's a
+   *  per-engagement choice, not a durable player preference. Only meaningful
+   *  in Realistic mode; validated against the live preset list at use-site
+   *  (a bad/stale value must never crash the field build). */
+  windPreset: string;
 }
 
 /** Session-scoped scoring counters (D2). Session-only for Increment 1 — not
@@ -88,6 +109,15 @@ export interface SettingsState {
   /** Show the in-scope bullet trace on each shot (task 1.5b). Store-only for now
    *  (not in save schema v1 — like `sensitivity`; see persist-settings.ts). */
   traceEnabled: boolean;
+  /** Steady vs. Realistic wind (task 1.7a, D1). Persisted — additive optional
+   *  field on save schema v1, defaulting to 'steady' on load (see
+   *  persist-settings.ts / persistence/schema.ts); this is a durable player
+   *  preference, unlike the per-engagement `session.windPreset`. */
+  windRealism: WindRealism;
+  /** Flag / sock / both (task 1.7b). Store-only (not in save schema v1 — like
+   *  `sensitivity`/`traceEnabled`): a cosmetic session preference, not a
+   *  durable one. */
+  windMarkerStyle: MarkerStyle;
 }
 
 // --- Constants / defaults ---------------------------------------------------
@@ -101,6 +131,10 @@ export const ZOOM_MIN = 4.5;
 export const ZOOM_MAX = 35;
 export const DEFAULT_MAGNIFICATION = 10;
 export const DEFAULT_SHOT_BUDGET = 3;
+/** Default raw BTK preset for Realistic mode (task 1.7a, D3) — "a moderate
+ *  preset name" per the plan; 'Moderate' is literally one of the 10 real
+ *  `WindPresets.listPresets()` names (owner-confirmed 2026-07-15). */
+export const DEFAULT_WIND_PRESET = 'Moderate';
 
 const clamp = (v: number, lo: number, hi: number): number =>
   v < lo ? lo : v > hi ? hi : v;
@@ -119,12 +153,15 @@ export const defaultSession = (): SessionState => ({
   lastShots: [],
   currentTarget: null,
   shotsAtCurrentTarget: 0,
+  windPreset: DEFAULT_WIND_PRESET,
 });
 
 export const defaultSettings = (): SettingsState => ({
   unitsPrimary: 'MIL',
   sensitivity: 1.0,
   traceEnabled: true,
+  windRealism: 'steady',
+  windMarkerStyle: 'flag',
 });
 
 export const defaultScore = (): ScoreState => ({
@@ -157,6 +194,10 @@ export interface GameStore {
 
   // Wind
   setWind(partial: Partial<WindState>): void;
+  /** Set the raw BTK turbulence preset name (task 1.7a, D3). Session-only;
+   *  the caller (ScopeView) is responsible for validating against the live
+   *  `listWindPresets()` before building a field from it. */
+  setWindPreset(preset: string): void;
 
   // Budget / target
   /** Decrement the shot budget by one, floored at zero. */
@@ -179,6 +220,10 @@ export interface GameStore {
   setUnitsPrimary(u: UnitsPrimary): void;
   setSensitivity(s: number): void;
   setTraceEnabled(enabled: boolean): void;
+  /** Steady vs. Realistic wind (task 1.7a, D1). Persisted (see persist-settings.ts). */
+  setWindRealism(mode: WindRealism): void;
+  /** Flag / sock / both (task 1.7b). Store-only, not persisted. */
+  setWindMarkerStyle(style: MarkerStyle): void;
   /** Merge a partial settings patch (used by persistence hydration). */
   applySettings(patch: Partial<SettingsState>): void;
 }
@@ -235,6 +280,9 @@ export const useGameStore = create<GameStore>()((set) => ({
 
   setWind: (partial) =>
     set((s) => ({ session: { ...s.session, wind: { ...s.session.wind, ...partial } } })),
+
+  setWindPreset: (preset) =>
+    set((s) => ({ session: { ...s.session, windPreset: preset } })),
 
   decrementBudget: () =>
     set((s) => ({
@@ -299,6 +347,12 @@ export const useGameStore = create<GameStore>()((set) => ({
 
   setTraceEnabled: (traceEnabled) =>
     set((s) => ({ settings: { ...s.settings, traceEnabled } })),
+
+  setWindRealism: (windRealism) =>
+    set((s) => ({ settings: { ...s.settings, windRealism } })),
+
+  setWindMarkerStyle: (windMarkerStyle) =>
+    set((s) => ({ settings: { ...s.settings, windMarkerStyle } })),
 
   applySettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 }));

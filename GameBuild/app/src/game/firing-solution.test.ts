@@ -1,6 +1,14 @@
-// Pure firing-solution math tests (task 1.4b). No WASM — all deterministic.
+// Pure firing-solution math tests (task 1.4b; vecToWind/averageEffectiveWind
+// added task 1.7a). No WASM — all deterministic.
 import { describe, it, expect } from 'vitest';
-import { windToVec, requiredCorrectionRad, centerOffsetM, discHit } from './firing-solution';
+import {
+  windToVec,
+  vecToWind,
+  averageEffectiveWind,
+  requiredCorrectionRad,
+  centerOffsetM,
+  discHit,
+} from './firing-solution';
 import { milToRad, moaToRad } from '../units/angle';
 
 describe('firing-solution/windToVec', () => {
@@ -35,6 +43,72 @@ describe('firing-solution/windToVec', () => {
     const w = windToVec(S, 45);
     expect(w.x).toBeCloseTo(-S * Math.SQRT1_2, 6);
     expect(w.z).toBeCloseTo(S * Math.SQRT1_2, 6);
+  });
+});
+
+describe('firing-solution/vecToWind (task 1.7a, D6 — inverse of windToVec)', () => {
+  const S = 7; // m/s
+
+  it('round-trips windToVec at every cardinal clock direction', () => {
+    for (const clockDeg of [0, 90, 180, 270, 45, 135, 225, 315]) {
+      const back = vecToWind(windToVec(S, clockDeg));
+      expect(back.speedMps).toBeCloseTo(S, 9);
+      // Direction can wrap 0≡360; compare via the shortest angular distance.
+      const diff = Math.abs(((back.directionDeg - clockDeg + 540) % 360) - 180);
+      expect(diff).toBeLessThan(1e-6);
+    }
+  });
+
+  it('a near-zero vector (calm) reports speed 0, direction 0 (no undefined atan2)', () => {
+    const w = vecToWind({ x: 0, y: 0, z: 0 });
+    expect(w.speedMps).toBe(0);
+    expect(w.directionDeg).toBe(0);
+  });
+
+  it('ignores the vertical (y) component', () => {
+    const a = vecToWind({ x: 3, y: 0, z: 4 });
+    const b = vecToWind({ x: 3, y: 999, z: 4 });
+    expect(b.speedMps).toBeCloseTo(a.speedMps, 9);
+    expect(b.directionDeg).toBeCloseTo(a.directionDeg, 9);
+  });
+});
+
+describe('firing-solution/averageEffectiveWind (task 1.7a, D6)', () => {
+  it('falls back to the mean alone when there are no gust samples', () => {
+    const mean = windToVec(6, 90);
+    const eff = averageEffectiveWind(mean, 1, []);
+    expect(eff.speedMps).toBeCloseTo(6, 9);
+    expect(eff.directionDeg).toBeCloseTo(90, 6);
+  });
+
+  it('gustScale=0 collapses to the mean regardless of the samples (Steady identity)', () => {
+    const mean = windToVec(4, 0);
+    const gusts = [
+      { x: 50, y: 0, z: 50 },
+      { x: -50, y: 0, z: -50 },
+    ];
+    const eff = averageEffectiveWind(mean, 0, gusts);
+    expect(eff.speedMps).toBeCloseTo(4, 9);
+    expect(eff.directionDeg).toBeCloseTo(0, 6);
+  });
+
+  it('averages symmetric gusts about the mean back to the mean (they cancel)', () => {
+    const mean = windToVec(5, 0);
+    const gusts = [
+      { x: 2, y: 0, z: 1 },
+      { x: -2, y: 0, z: -1 },
+    ];
+    const eff = averageEffectiveWind(mean, 1, gusts);
+    expect(eff.speedMps).toBeCloseTo(5, 9);
+    expect(eff.directionDeg).toBeCloseTo(0, 6);
+  });
+
+  it('a one-sided gust shifts the effective wind off the dialed mean', () => {
+    const mean = windToVec(5, 0); // headwind, x≈0
+    const gusts = [{ x: 3, y: 0, z: 0 }]; // pure crossrange gust
+    const eff = averageEffectiveWind(mean, 1, gusts);
+    expect(eff.speedMps).toBeGreaterThan(5);
+    expect(eff.directionDeg).not.toBeCloseTo(0, 3);
   });
 });
 

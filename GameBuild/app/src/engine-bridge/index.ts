@@ -63,7 +63,10 @@ export function speedOfSound(module: BtkModule, atmosphere: AtmosphereInput): nu
  * and all handles in `owned`). `computeZero` leaves the simulator reset to the
  * zeroed initial state with a cleared trajectory.
  */
-function setupZeroedSimulator(
+/** Exported (task 1.7a) so wind-field.ts's field solve can share the exact same
+ * zeroing path as the mean solve — the field solve and the mean solve must
+ * start from the same launch state for the superposition (D2) to be meaningful. */
+export function setupZeroedSimulator(
   module: BtkModule,
   load: Load,
   atmosphere: AtmosphereInput,

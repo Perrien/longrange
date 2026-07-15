@@ -22,7 +22,11 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RangeScene, PLATE_THICKNESS_M, setChainInstance } from '../range/RangeScene';
-import { useGameStore, ZOOM_MIN, ZOOM_MAX, MIL_CLICK_RAD, MOA_CLICK_RAD } from '../state/store';
+import { RANGE_A_GROUND } from '../range/range-a-config';
+import { WIND_MARKERS, type MarkerStyle } from '../range/wind-markers-config';
+import { initWindMarkers, updateWindMarkers, disposeWindMarkers } from './WindMarkers';
+import { initMirage, renderSceneWithMirage, disposeMirage, MIRAGE_REFERENCE_DISTANCE_M } from './Mirage';
+import { useGameStore, ZOOM_MIN, ZOOM_MAX, MIL_CLICK_RAD, MOA_CLICK_RAD, DEFAULT_WIND_PRESET } from '../state/store';
 import { SCOPE_BASE_FOV_DEG, fovRadForMag } from './scope-projection';
 import { buildReticle, MAJOR_HALF_PX } from './reticle';
 import { solveTrajectory, spinRateFromTwist, speedOfSound, type AtmosphereInput, type Load } from '../engine-bridge';
@@ -30,6 +34,13 @@ import { AudioManager } from '../audio/audio-manager';
 import { loadBtkModule } from '../engine-bridge/wasm-module';
 import { createScatterSimulator, type ScatterSimulator } from '../engine-bridge/match-sim';
 import { createSteelReaction, type SteelReaction } from '../engine-bridge/steel-target';
+import {
+  createWindField,
+  listWindPresets,
+  solveTrajectoryField,
+  sampleFieldColumn,
+  type WindField,
+} from '../engine-bridge/wind-field';
 import { initImpactFx, emitImpact, updateImpactFx, disposeImpactFx } from './impact-fx';
 import {
   initBulletTrace,
@@ -41,7 +52,9 @@ import {
 import { buildTracePath } from '../game/trace-path';
 import type { BtkModule, TrajectoryTable } from '../engine-bridge/types';
 import { resolveShot, type ShotPlate } from '../game/shot';
-import { windToVec } from '../game/firing-solution';
+import { windToVec, averageEffectiveWind } from '../game/firing-solution';
+import { superposeWind, gustScaleFor } from '../game/wind-superposition';
+import { GUST_REFERENCE_MPS } from '../game/wind-field-config';
 import { callImpact, type ImpactCall } from '../game/impact-call';
 import { getGameLoad, DEFAULT_GAME_LOAD_ID, SCOPE_ZERO_RANGE_M, SIGHT_HEIGHT_M } from '../game/loads';
 import {
@@ -53,6 +66,7 @@ import {
   formatSpeedForDisplay,
   formatDistanceForDisplay,
   formatOffsetForDisplay,
+  formatClockPosition,
 } from '../units';
 import { DopePanel } from './DopePanel';
 
@@ -68,6 +82,32 @@ const TRACE_SAMPLES = 32;
 
 /** Fixed ISA atmosphere for Increment 1 (matches validation/loads.json conditions). */
 const ISA_ATMOSPHERE: AtmosphereInput = { temperatureK: 288.15, altitudeM: 0, humidity: 0.5, pressurePa: 0 };
+
+// --- wind field (task 1.7a, D1/D2/D3b) --------------------------------------
+// Sampling box for the curl-noise field: reuses the Range A ground extents
+// (plan step 4 — "crossrange ±~30 m, vertical 0..~50 m, downrange 0..~500 m")
+// so the field covers every point the bullet or (in 1.7b) the flags can query.
+const WIND_FIELD_MIN = { x: -RANGE_A_GROUND.laneWidthM / 2, y: 0, z: -RANGE_A_GROUND.laneLengthM };
+const WIND_FIELD_MAX = { x: RANGE_A_GROUND.laneWidthM / 2, y: 50, z: 0 };
+/** Points sampled along the eye→target line for the D6 effective-wind readout. */
+const EFFECTIVE_WIND_SAMPLES = 8;
+
+/** `solveAt`'s return shape (task 1.7a): unchanged in Steady mode (no
+ *  `effectiveWind` key — byte-identical object shape to 1.6); Realistic mode
+ *  adds the D6 readout the HUD will display once 1.7b builds it. */
+interface SolveResult {
+  dropM: number;
+  windageM: number;
+  velocityMps: number;
+  timeOfFlightS: number;
+  /** D6 — the wind the bullet actually saw + what it cost in windage. Present
+   *  only in Realistic mode, once the field has loaded. `windOffsetRad` is the
+   *  RAW angular correction (not pre-converted to mil/MOA) so the HUD can
+   *  format it through the same Met/Imp toggle as every other readout
+   *  (task 1.6e); negative = drift was right (hold/dial left), matching
+   *  `firing-solution.ts`'s `requiredCorrectionRad` sign convention. */
+  effectiveWind?: { speedMps: number; directionDeg: number; windOffsetRad: number };
+}
 
 // --- feel model constants (ported verbatim from task-0.9 AimSpike) ----------
 const WOBBLE_RAD = 0.00015; // slow-sway amplitude
@@ -122,9 +162,25 @@ export function ScopeView() {
   const windState = useGameStore((s) => s.session.wind);
   const setWind = useGameStore((s) => s.setWind);
   const currentTarget = useGameStore((s) => s.session.currentTarget);
+
+  // Wind realism (task 1.7a, D1): Steady keeps 1.6's exact deterministic mean;
+  // Realistic layers the curl-noise field on top (D2/D3b).
+  const windRealism = useGameStore((s) => s.settings.windRealism);
+  const setWindRealism = useGameStore((s) => s.setWindRealism);
+  const windPreset = useGameStore((s) => s.session.windPreset);
+  const setWindPreset = useGameStore((s) => s.setWindPreset);
+  const windMarkerStyle = useGameStore((s) => s.settings.windMarkerStyle);
+  const setWindMarkerStyle = useGameStore((s) => s.setWindMarkerStyle);
+  // Raw BTK preset names (task 1.7b, D3): populated once the engine loads (the
+  // imperative effect below calls `setAvailablePresets` — a stable setState
+  // reference, same pattern as `setLastCall`).
+  const [availablePresets, setAvailablePresets] = useState<string[]>([]);
   // Last-shot spotter call (task 1.6c, D3 HUD): hit/miss + clock, set from the
   // imperative FIRE handler below via `setLastCall` (a stable setState ref).
   const [lastCall, setLastCall] = useState<ImpactCall | null>(null);
+  // Last-shot effective-wind readout (task 1.7b, D6): the wind the bullet
+  // actually saw (Realistic mode only) + what it cost in windage.
+  const [lastEffectiveWind, setLastEffectiveWind] = useState<SolveResult['effectiveWind'] | null>(null);
 
   // Local feel control (wobble amplitude is not a persisted setting yet — see
   // PROGRESS deferred obs; owner-tuned default 0.75 from the 0.9 spike).
@@ -155,6 +211,12 @@ export function ScopeView() {
     initImpactFx(scene);
     // In-scope bullet trace (task 1.5b): a tracer comet flown per shot.
     initBulletTrace(scene);
+    // Wind flags/socks (task 1.7b): built once at the store's CURRENT style;
+    // `updateWindMarkers` rebuilds lazily if the player switches style later.
+    initWindMarkers(scene, WIND_MARKERS, store().settings.windMarkerStyle);
+    // Mirage shimmer (task 1.7c): a post-process pass between this world render
+    // and the reticle's separate 2D overlay canvas (untouched by this).
+    initMirage(renderer);
 
     const camera = new THREE.PerspectiveCamera(SCOPE_BASE_FOV_DEG / magnification, 1, 0.5, 3000);
     camera.position.set(0, EYE_HEIGHT_M, 0);
@@ -170,9 +232,14 @@ export function ScopeView() {
     };
     let engineModule: BtkModule | null = null;
     let speedOfSoundMps = 340.3; // ISA default until the engine reports it
+    // Cached once when the engine loads (task 1.7a) — avoids re-querying (and
+    // re-deleting) the embind StringVector every frame in ensureWindField().
+    let validWindPresets: string[] = [];
     loadBtkModule().then((m) => {
       engineModule = m;
       speedOfSoundMps = speedOfSound(m, ISA_ATMOSPHERE);
+      validWindPresets = listWindPresets(m);
+      setAvailablePresets(validWindPresets); // surface the raw preset list to the HUD dropdown (D3)
     });
 
     // Audio (task 1.5d): fetch the clips now (no context, no sound); the first
@@ -196,10 +263,58 @@ export function ScopeView() {
       });
     }
     const solveCache = new Map<string, { dropM: number; windageM: number; velocityMps: number; timeOfFlightS: number }>();
+    // Constant ZERO-wind solve per range (task 1.7a): the no-wind baseline that
+    // still captures spin drift, so "fieldSolve − zeroSolve" isolates the
+    // field's own gust contribution instead of double-counting spin drift (D2).
+    const zeroSolveCache = new Map<number, { dropM: number; windageM: number }>();
     const simCache = new Map<number, ScatterSimulator>();
     // Fine per-shot trajectory sampling for the bullet trace (task 1.5b); its last
     // row matches solveAt's, so the trace arc and the impact agree at the target.
     const traceTableCache = new Map<string, TrajectoryTable>();
+    // Live curl-noise wind field (task 1.7a, Realistic mode only). Built lazily
+    // (once the engine + a valid preset are available) and rebuilt only when the
+    // chosen preset changes — NOT on every Steady⇄Realistic toggle, since the
+    // field is cheap to leave idle and expensive to keep rebuilding. Advanced
+    // once per frame in the render loop below; deleted on preset change/unmount.
+    let windField: WindField | null = null;
+    let windFieldPreset = '';
+    function ensureWindField(): WindField | null {
+      if (!engineModule) return null;
+      const requested = store().session.windPreset;
+      // Validate against the live preset list (D3's store note): a stale/bad
+      // value must never crash the field build.
+      const preset = validWindPresets.includes(requested) ? requested : DEFAULT_WIND_PRESET;
+      if (!windField || windFieldPreset !== preset) {
+        windField?.delete();
+        // Non-null assertion (matches simAt/traceTableAt's `engineModule!`
+        // pattern above): `engineModule` is reassigned in the sibling
+        // `loadBtkModule().then(...)` closure, so TS can't carry the `if
+        // (!engineModule) return null` narrowing past the `store()` call above.
+        windField = createWindField(engineModule!, preset, WIND_FIELD_MIN, WIND_FIELD_MAX);
+        windFieldPreset = preset;
+      }
+      return windField;
+    }
+
+    // The wind at an arbitrary world point (task 1.7b, D2/D3b) — what the wind
+    // markers read each frame: `meanVector + gustScale × field.sample(worldPos)`.
+    // In Steady mode (or before the field/engine is ready) this is just the
+    // dialed mean, so every marker shows the same reading (plan 1.7b step 2).
+    function currentWindAt(worldPos: { x: number; y: number; z: number }) {
+      const wind = store().session.wind;
+      const meanVec = windToVec(wind.speedMps, wind.directionDeg);
+      if (store().settings.windRealism !== 'realistic') return meanVec;
+      const field = ensureWindField();
+      if (!field) return meanVec;
+      const gustScale = gustScaleFor(wind.speedMps, GUST_REFERENCE_MPS);
+      const gust = field.sample(worldPos);
+      return {
+        x: meanVec.x + gustScale * gust.x,
+        y: meanVec.y + gustScale * gust.y,
+        z: meanVec.z + gustScale * gust.z,
+      };
+    }
+
     // Live reactive-steel physics for currently-swinging plates (task 1.5a). One
     // C++ SteelTarget per struck plate instance, reused for repeat hits, deleted
     // when it settles. `rest` is the plate's static instance matrix (restored on
@@ -214,7 +329,9 @@ export function ScopeView() {
     // pull). Drained in the render loop.
     const pendingImpacts: { dueAt: number; run: () => void }[] = [];
 
-    function solveAt(rangeM: number, wind: { speedMps: number; directionDeg: number }) {
+    // The ordinary constant-mean solve — UNCHANGED from 1.6 (cached per
+    // range|speed|dir). This is exactly what `solveAt` returns in Steady mode.
+    function meanSolveAt(rangeM: number, wind: { speedMps: number; directionDeg: number }) {
       const key = `${rangeM}|${wind.speedMps}|${wind.directionDeg}`;
       let s = solveCache.get(key);
       if (!s) {
@@ -229,6 +346,68 @@ export function ScopeView() {
         solveCache.set(key, s);
       }
       return s;
+    }
+
+    // Constant zero-wind solve at a range (task 1.7a) — cached per range only
+    // (no wind axis in the key, since it's always {0,0,0}). The D2 baseline
+    // subtracted from the field solve to isolate the field's own contribution.
+    function zeroWindSolveAt(rangeM: number): { dropM: number; windageM: number } {
+      let s = zeroSolveCache.get(rangeM);
+      if (!s) {
+        const table = solveTrajectory(engineModule!, solveLoad, ISA_ATMOSPHERE, { x: 0, y: 0, z: 0 }, {
+          zeroRangeM: SCOPE_ZERO_RANGE_M,
+          maxRangeM: rangeM,
+          stepM: rangeM,
+          sightHeightM: SIGHT_HEIGHT_M,
+        });
+        const row = table[table.length - 1];
+        s = row ? { dropM: row.dropM, windageM: row.windageM } : { dropM: 0, windageM: 0 };
+        zeroSolveCache.set(rangeM, s);
+      }
+      return s;
+    }
+
+    // The firing solution FIRE actually uses (task 1.7a, D1/D2/D3b/D6). Steady
+    // mode returns `meanSolveAt`'s object UNCHANGED — same reference, same
+    // shape, no `effectiveWind` key — so Steady is byte-identical to 1.6.
+    // Realistic mode superposes the live field's gust contribution (scaled
+    // proportionally to the dialed mean speed) on top of that same mean, and
+    // adds the D6 effective-wind readout.
+    function solveAt(rangeM: number, wind: { speedMps: number; directionDeg: number }): SolveResult {
+      const mean = meanSolveAt(rangeM, wind);
+      if (store().settings.windRealism !== 'realistic') return mean;
+      const field = ensureWindField();
+      if (!field) return mean; // engine/field not ready yet — fall back to the mean
+
+      const zero = zeroWindSolveAt(rangeM);
+      const meanVec = windToVec(wind.speedMps, wind.directionDeg);
+      const fieldTable = solveTrajectoryField(engineModule!, solveLoad, ISA_ATMOSPHERE, meanVec, field, {
+        zeroRangeM: SCOPE_ZERO_RANGE_M,
+        maxRangeM: rangeM,
+        stepM: rangeM,
+        sightHeightM: SIGHT_HEIGHT_M,
+      });
+      const fieldRow = fieldTable[fieldTable.length - 1];
+      const fieldDW = fieldRow ? { dropM: fieldRow.dropM, windageM: fieldRow.windageM } : zero;
+      const gustScale = gustScaleFor(wind.speedMps, GUST_REFERENCE_MPS);
+      const superposed = superposeWind({ mean, zero, field: fieldDW, gustScale });
+
+      // D6 effective-wind readout: sample the field along the eye→target line,
+      // average with the mean (scaled the same as the shot), and report both
+      // the recovered speed/direction and the windage mils the field accounted
+      // for (the exact quantity solveAt just added on top of the mean).
+      const eye = { x: 0, y: EYE_HEIGHT_M, z: 0 };
+      const gustSamples = sampleFieldColumn(field, eye, rangeM, EFFECTIVE_WIND_SAMPLES);
+      const effective = averageEffectiveWind(meanVec, gustScale, gustSamples);
+      const windOffsetRad = Math.atan2(-(gustScale * (fieldDW.windageM - zero.windageM)), rangeM);
+
+      return {
+        dropM: superposed.dropM,
+        windageM: superposed.windageM,
+        velocityMps: mean.velocityMps,
+        timeOfFlightS: mean.timeOfFlightS,
+        effectiveWind: { speedMps: effective.speedMps, directionDeg: effective.directionDeg, windOffsetRad },
+      };
     }
     function simAt(rangeM: number): ScatterSimulator {
       let sim = simCache.get(rangeM);
@@ -406,6 +585,10 @@ export function ScopeView() {
           const wind = store().session.wind;
           const scope = store().session.scope;
           const solved = solveAt(rangeM, wind);
+          // Effective-wind readout (task 1.7b, D6): undefined in Steady mode
+          // (or before the field's loaded), which the HUD reads as "nothing
+          // new to show" and just displays the dialed mean instead.
+          setLastEffectiveWind(solved.effectiveWind ?? null);
           const rackPlates: ShotPlate[] = range.plates
             .filter((pl) => pl.distanceM === rangeM)
             .map((pl) => ({
@@ -679,6 +862,17 @@ export function ScopeView() {
         range.plateMesh.instanceMatrix.needsUpdate = true;
         range.chainMesh.instanceMatrix.needsUpdate = true;
       }
+      // Wind field (task 1.7a): advance the live curl-noise field's clock once
+      // per frame while in Realistic mode (monotonic — never rewound). Built
+      // lazily by `ensureWindField()` the first time it's needed.
+      if (store().settings.windRealism === 'realistic') {
+        const field = ensureWindField();
+        field?.advance(st.t);
+      }
+      // Wind flags/socks (task 1.7b): read the live local wind at each marker
+      // and yaw/droop/flutter accordingly (Steady mode just shows the dialed
+      // mean everywhere, since `currentWindAt` returns it unchanged there).
+      updateWindMarkers(dt, st.t, store().settings.windMarkerStyle, currentWindAt);
       // Impact FX (task 1.5c): grow/fade dust puffs and recycle finished ones.
       updateImpactFx(dt);
       // Bullet trace (task 1.5b): advance the tracer, or hide it if toggled off.
@@ -687,7 +881,16 @@ export function ScopeView() {
       camera.fov = SCOPE_BASE_FOV_DEG / store().session.scope.magnification;
       camera.updateProjectionMatrix();
       camera.quaternion.copy(aimQuaternion(st.t));
-      renderer.render(scene, camera);
+      // Mirage (task 1.7c, D1): renders in BOTH modes, like the flags — Steady
+      // shows the dialed mean's shimmer, Realistic layers the field on top.
+      // Sampled near the reference depth the shimmer's feature size assumes.
+      const mirageWind = currentWindAt({ x: 0, y: EYE_HEIGHT_M, z: -MIRAGE_REFERENCE_DISTANCE_M });
+      renderSceneWithMirage(scene, camera, {
+        dt,
+        fovDeg: camera.fov,
+        baseFovDeg: SCOPE_BASE_FOV_DEG,
+        wind: { x: mirageWind.x, z: mirageWind.z },
+      });
       drawReticle();
       raf = requestAnimationFrame(frame);
     }
@@ -704,6 +907,9 @@ export function ScopeView() {
       pendingImpacts.length = 0;
       for (const entry of reactions.values()) entry.reaction.delete();
       reactions.clear();
+      windField?.delete();
+      disposeWindMarkers();
+      disposeMirage();
       disposeImpactFx();
       disposeBulletTrace();
       audio.dispose();
@@ -894,6 +1100,42 @@ export function ScopeView() {
             onChange={(e) => setWind({ directionDeg: clockToDeg(Number(e.target.value)) })}
             style={{ width: 140 }}
           />
+          {/* Wind realism (task 1.7a D1 toggle; 1.7b D3 adds the raw-preset
+              picker in the same spot). Steady keeps 1.6's exact deterministic
+              mean; Realistic layers the curl-noise field on top and exposes
+              which BTK preset drives it. */}
+          <div style={{ marginTop: 6 }}>
+            <button onClick={() => setWindRealism(windRealism === 'steady' ? 'realistic' : 'steady')}>
+              wind: {windRealism === 'steady' ? 'Steady' : 'Realistic'}
+            </button>
+            {windRealism === 'realistic' && (
+              <select value={windPreset} onChange={(e) => setWindPreset(e.target.value)} style={{ marginLeft: 6 }}>
+                {(availablePresets.length > 0 ? availablePresets : [windPreset]).map((preset) => (
+                  <option key={preset} value={preset}>
+                    {preset}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Wind marker style (task 1.7b step 1): flags/socks/both down the
+              lane — cosmetic only, doesn't touch the ballistics. */}
+          <div style={{ marginTop: 4, display: 'flex', gap: 4, alignItems: 'center' }}>
+            <span style={{ opacity: 0.8 }}>markers:</span>
+            {(['flag', 'sock', 'both'] as MarkerStyle[]).map((style) => (
+              <button
+                key={style}
+                onClick={() => setWindMarkerStyle(style)}
+                style={{
+                  fontWeight: windMarkerStyle === style ? 'bold' : 'normal',
+                  opacity: windMarkerStyle === style ? 1 : 0.6,
+                }}
+              >
+                {style}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Commit / target select (task 1.6c, D2): engage the plate under the
@@ -923,6 +1165,22 @@ export function ScopeView() {
                 })()
               : '—'}
           </div>
+          {/* Effective-wind readout (task 1.7b, D6): what the last shot's
+              bullet actually saw once gusts are in play — the local mean
+              speed/direction sampled along its path, plus what it cost in
+              windage. Realistic mode only; hidden until a shot's been fired. */}
+          {windRealism === 'realistic' && lastEffectiveWind && (
+            <div>
+              wind seen:{' '}
+              {(() => {
+                const spd = formatSpeedForDisplay(lastEffectiveWind.speedMps, unitsPrimary);
+                const clock = formatClockPosition(degToClock(lastEffectiveWind.directionDeg));
+                const off = formatAngleForDisplay(Math.abs(lastEffectiveWind.windOffsetRad), unitsPrimary);
+                const side = lastEffectiveWind.windOffsetRad < 0 ? 'L' : 'R';
+                return `~${spd.value.toFixed(0)} ${spd.label} @ ${clock} → ${off.value.toFixed(unitsPrimary === 'MIL' ? 1 : 2)} ${off.label} ${side}`;
+              })()}
+            </div>
+          )}
           <div>
             first-round: {score.firstRoundHits}/{score.targetsEngaged} · hits: {score.hits}/{score.shotsFired}
           </div>

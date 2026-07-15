@@ -180,11 +180,36 @@ export interface ESimulator extends EmbindHandle {
     spinRate: number,
   ): EBullet;
   simulate(maxDistanceM: number, dt: number, maxTimeS: number): void;
+  /** Field-driven overload (task 1.7a): samples `field` at each integration step
+   * and OVERWRITES the simulator's internal wind — i.e. flies the field only,
+   * ignoring any `setWind` mean (see increment-1.7-plan.md "Backend reality" #4).
+   * Bound in bindings.cpp as `simulateWithWind` (a `simulate` overload in C++). */
+  simulateWithWind(maxDistanceM: number, dt: number, maxTimeS: number, field: EWindField): void;
   /** Returns a REFERENCE (return_value_policy::reference) → must NOT delete. */
   getTrajectory(): ETrajectory;
   /** Returns a COPIED Bullet handle (no reference policy) → must delete. */
   getInitialBullet(): EBullet;
   resetToInitial(): void;
+}
+
+/** The C++ curl-noise wind field (btk::physics::WindGenerator), obtained ONLY via
+ * `WindPresets.getPreset(name, minCorner, maxCorner)` (task 1.7a). It is
+ * ZERO-MEAN turbulence — no direction/mean-speed term — so the mean wind is
+ * superposed in JS (see engine-bridge/wind-field.ts). `sample` returns a COPIED
+ * Vector3D handle → must `.delete()`. */
+export interface EWindField extends EmbindHandle {
+  advanceTime(currentTimeS: number): void;
+  /** COPY → delete. */
+  sample(xM: number, yM: number, zM: number): EVector3D;
+  getCurrentTime(): number;
+}
+
+/** `register_vector<std::string>` wrapper — a heap-allocated embind collection,
+ * NOT a plain array; must `.delete()` after reading (verified live against the
+ * built artifact, task 1.7a pre-step 0). */
+export interface EStringVector extends EmbindHandle {
+  size(): number;
+  get(index: number): string;
 }
 
 /** The C++ rigid-body steel target (btk::rendering::SteelTarget). Used by the
@@ -318,6 +343,18 @@ export interface BtkModule {
     normal: EVector3D,
     textureSize: number,
   ) => ESteelTarget;
+  /** Curl-noise wind field generator (task 1.7a). Only ever obtained via
+   * `WindPresets.getPreset` in practice; the bare constructor (a zero-component,
+   * always-zero field) is unused by the bridge but kept for type completeness. */
+  WindGenerator: new () => EWindField;
+  /** Factory for named turbulence presets — see increment-1.7-plan.md "Backend
+   * reality": every preset is character (gustiness) only, no mean/direction. */
+  WindPresets: {
+    /** @throws if `name` is not one of `listPresets()`. */
+    getPreset(name: string, minCorner: EVector3D, maxCorner: EVector3D): EWindField;
+    listPresets(): EStringVector;
+    hasPreset(name: string): boolean;
+  };
 }
 
 /** The Emscripten MODULARIZE factory (default export of the WASM module). */

@@ -20,6 +20,7 @@ import {
   MOA_CLICK_RAD,
   ZOOM_MIN,
   ZOOM_MAX,
+  DEFAULT_WIND_PRESET,
   settingsToSave,
   saveToSettings,
   loadSettingsInto,
@@ -212,13 +213,85 @@ describe('scoring & engagement (task 1.6b, D2)', () => {
   });
 });
 
+describe('wind field (task 1.7a, D1/D3)', () => {
+  it('defaults to steady realism + the Moderate preset', () => {
+    const s = useGameStore.getState();
+    expect(s.settings.windRealism).toBe('steady');
+    expect(s.session.windPreset).toBe(DEFAULT_WIND_PRESET);
+  });
+
+  it('setWindRealism toggles the persisted setting; setWindPreset sets the session-only preset', () => {
+    const st = useGameStore.getState();
+    st.setWindRealism('realistic');
+    st.setWindPreset('Gusty');
+    const state = useGameStore.getState();
+    expect(state.settings.windRealism).toBe('realistic');
+    expect(state.session.windPreset).toBe('Gusty');
+  });
+
+  it('resetSession restores the default preset but leaves settings.windRealism alone', () => {
+    const st = useGameStore.getState();
+    st.setWindRealism('realistic');
+    st.setWindPreset('Switchy');
+    st.resetSession();
+    const state = useGameStore.getState();
+    expect(state.session.windPreset).toBe(DEFAULT_WIND_PRESET);
+    expect(state.settings.windRealism).toBe('realistic'); // settings untouched
+  });
+});
+
+describe('wind markers (task 1.7b)', () => {
+  it('defaults to the flag style', () => {
+    expect(useGameStore.getState().settings.windMarkerStyle).toBe('flag');
+  });
+
+  it('setWindMarkerStyle updates the setting and is not reset by resetSession', () => {
+    const st = useGameStore.getState();
+    st.setWindMarkerStyle('sock');
+    expect(useGameStore.getState().settings.windMarkerStyle).toBe('sock');
+    st.resetSession();
+    expect(useGameStore.getState().settings.windMarkerStyle).toBe('sock'); // settings untouched
+
+    st.setWindMarkerStyle('both');
+    expect(useGameStore.getState().settings.windMarkerStyle).toBe('both');
+  });
+});
+
 describe('settings persistence round-trip', () => {
   it('maps settings → SaveData → settings (unitsPrimary persisted)', () => {
-    const settings = { unitsPrimary: 'MOA' as const, sensitivity: 1.5, traceEnabled: true };
+    const settings = {
+      unitsPrimary: 'MOA' as const,
+      sensitivity: 1.5,
+      traceEnabled: true,
+      windRealism: 'steady' as const,
+      windMarkerStyle: 'flag' as const,
+    };
     const save = settingsToSave(settings);
     expect(save.settings.unitsPrimary).toBe('MOA');
     const back = saveToSettings(save, defaultSettings());
     expect(back.unitsPrimary).toBe('MOA');
+  });
+
+  it('maps settings → SaveData → settings (windRealism persisted, task 1.7a)', () => {
+    const settings = {
+      unitsPrimary: 'MIL' as const,
+      sensitivity: 1.0,
+      traceEnabled: true,
+      windRealism: 'realistic' as const,
+      windMarkerStyle: 'flag' as const,
+    };
+    const save = settingsToSave(settings);
+    expect(save.settings.windRealism).toBe('realistic');
+    const back = saveToSettings(save, defaultSettings());
+    expect(back.windRealism).toBe('realistic');
+  });
+
+  it('windRealism defaults to steady when absent from an older save', () => {
+    const back = saveToSettings(
+      { schemaVersion: 1, updatedAt: new Date(0).toISOString(), settings: { unitsPrimary: 'MIL' } },
+      defaultSettings(),
+    );
+    expect(back.windRealism).toBe('steady');
   });
 
   it('round-trips through the SaveStore and hydrates the store', async () => {
@@ -238,7 +311,13 @@ describe('settings persistence round-trip', () => {
   });
 
   it('sensitivity and traceEnabled are intentionally NOT persisted under schema v1', () => {
-    const save = settingsToSave({ unitsPrimary: 'MIL', sensitivity: 2.0, traceEnabled: false });
+    const save = settingsToSave({
+      unitsPrimary: 'MIL',
+      sensitivity: 2.0,
+      traceEnabled: false,
+      windRealism: 'steady',
+      windMarkerStyle: 'flag',
+    });
     expect('sensitivity' in save.settings).toBe(false);
     expect('traceEnabled' in save.settings).toBe(false);
   });
