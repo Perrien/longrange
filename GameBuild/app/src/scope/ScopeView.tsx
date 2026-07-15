@@ -22,7 +22,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RangeScene, PLATE_THICKNESS_M, setChainInstance } from '../range/RangeScene';
-import { useGameStore, ZOOM_MIN, ZOOM_MAX } from '../state/store';
+import { useGameStore, ZOOM_MIN, ZOOM_MAX, MIL_CLICK_RAD, MOA_CLICK_RAD } from '../state/store';
 import { SCOPE_BASE_FOV_DEG, fovRadForMag } from './scope-projection';
 import { buildReticle, MAJOR_HALF_PX } from './reticle';
 import { solveTrajectory, spinRateFromTwist, speedOfSound, type AtmosphereInput, type Load } from '../engine-bridge';
@@ -103,8 +103,20 @@ export function ScopeView() {
   const windageRad = useGameStore((s) => s.session.scope.windageRad);
   const dialElevationClicks = useGameStore((s) => s.dialElevationClicks);
   const dialWindageClicks = useGameStore((s) => s.dialWindageClicks);
+  const setClickRad = useGameStore((s) => s.setClickRad);
   const shotBudget = useGameStore((s) => s.session.shotBudget);
   const score = useGameStore((s) => s.score);
+
+  // Turret detent size follows the Met/Imp toggle (owner bug report,
+  // 2026-07-15): `clickRad` used to default to — and stay stuck at — the MIL
+  // detent (0.1 mrad) regardless of `unitsPrimary`, so an "Imperial" click was
+  // really a 0.1-mrad step mislabeled in MOA (≈0.344 MOA, rounding to "0.3"
+  // on screen) instead of a clean 1/4-MOA detent. Keep the store's own
+  // click-size constants paired with the display unit; runs on mount too, so
+  // a reload that hydrates a persisted `unitsPrimary: 'MOA'` self-corrects.
+  useEffect(() => {
+    setClickRad(unitsPrimary === 'MIL' ? MIL_CLICK_RAD : MOA_CLICK_RAD);
+  }, [unitsPrimary, setClickRad]);
 
   // Wind control (task 1.6c, D6) + commit/target-select (D2).
   const windState = useGameStore((s) => s.session.wind);
@@ -800,7 +812,10 @@ export function ScopeView() {
             solution; the sight picture does not move (Option B is a future task). */}
         <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
           <div>
-            ELEV {formatAngleForDisplay(elevationRad, unitsPrimary).value.toFixed(1)}{' '}
+            {/* 1/4-MOA clicks (0.25, 0.75, 1.25…) round unevenly at 1 decimal
+                (0.25 → "0.3" but 0.5 → "0.5"); 2 decimals keeps every click a
+                clean, exact number. MIL's 0.1-mrad clicks are exact at 1. */}
+            ELEV {formatAngleForDisplay(elevationRad, unitsPrimary).value.toFixed(unitsPrimary === 'MIL' ? 1 : 2)}{' '}
             {formatAngleForDisplay(elevationRad, unitsPrimary).label}
           </div>
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -822,7 +837,7 @@ export function ScopeView() {
             </button>
           </div>
           <div style={{ marginTop: 4 }}>
-            WIND {formatAngleForDisplay(windageRad, unitsPrimary).value.toFixed(1)}{' '}
+            WIND {formatAngleForDisplay(windageRad, unitsPrimary).value.toFixed(unitsPrimary === 'MIL' ? 1 : 2)}{' '}
             {formatAngleForDisplay(windageRad, unitsPrimary).label}
           </div>
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>

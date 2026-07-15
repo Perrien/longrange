@@ -91,35 +91,52 @@ export function DopePanel() {
         <div style={{ marginTop: 6, maxHeight: 220, overflowY: 'auto', width: 190 }}>
           {error && <div style={{ color: '#e88' }}>engine error: {error}</div>}
           {!error && !module && <div>loading…</div>}
-          {!error &&
-            module &&
-            rows.map((r) => {
-              const isMetric = unitsPrimary === 'MIL';
-              const range = isMetric ? r.rangeM : r.rangeYd;
-              const rangeLabel = isMetric ? 'm' : 'yd';
-              const drop = isMetric ? r.dropMilMoa.mil : r.dropMilMoa.moa;
-              const dropLabel = isMetric ? 'mil' : 'MOA';
-              const windHold = isMetric ? r.windMilMoa.mil : r.windMilMoa.moa;
-              return (
-                <div key={r.rangeM} style={{ marginBottom: 4, lineHeight: 1.3 }}>
-                  <div>
-                    {fmt(range, 0)} {rangeLabel}
-                  </div>
-                  <div>
-                    {drop >= 0 ? '↑' : '↓'}
-                    {fmt(Math.abs(drop), 1)} {dropLabel}
-                  </div>
-                  {Math.abs(r.windMilMoa.mil) > 1e-3 && (
-                    <div>
-                      {windHold >= 0 ? '→' : '←'}
-                      {fmt(Math.abs(windHold), 1)} {dropLabel} wind
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          {!error && module && rows.length > 0 && (
+            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(232,238,244,0.3)' }}>
+                  <th style={{ textAlign: 'left', fontWeight: 'normal' }}>Range</th>
+                  <th style={{ textAlign: 'right', fontWeight: 'normal' }}>Elev</th>
+                  <th style={{ textAlign: 'right', fontWeight: 'normal' }}>Wind</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const isMetric = unitsPrimary === 'MIL';
+                  const range = isMetric ? r.rangeM : r.rangeYd;
+                  const rangeLabel = isMetric ? 'm' : 'yd';
+                  // Negligibility is judged on the raw MIL value, matching
+                  // MIL's own 1-decimal rounding grid (0.05 mil) — NOT a
+                  // per-unit epsilon (owner bug report, 2026-07-15). MOA is
+                  // numerically ~3.44x mil, so a tiny near-zero residual that
+                  // rounds away to "0.0" in Metric was rounding UP to a
+                  // visible "0.1" in Imperial for the exact same underlying
+                  // (essentially zero) physics. Clamping both to 0 below this
+                  // shared threshold keeps the two unit systems in agreement.
+                  const dropNegligible = Math.abs(r.dropMilMoa.mil) < 0.05;
+                  const windNegligible = Math.abs(r.windMilMoa.mil) < 0.05;
+                  const drop = isMetric ? r.dropMilMoa.mil : r.dropMilMoa.moa;
+                  const windHold = isMetric ? r.windMilMoa.mil : r.windMilMoa.moa;
+                  return (
+                    <tr key={r.rangeM}>
+                      <td style={{ textAlign: 'left', padding: '1px 0' }}>
+                        {fmt(range, 0)} {rangeLabel}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        {dropNegligible ? '0.0' : `${drop >= 0 ? '↑' : '↓'}${fmt(Math.abs(drop), 1)}`}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        {windNegligible ? '—' : `${windHold >= 0 ? '→' : '←'}${fmt(Math.abs(windHold), 1)}`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
           <div style={{ marginTop: 4, color: '#9aa5b1', fontSize: 10 }}>
-            2″ sight-height model applied (task 1.6a) — these are scope come-ups, not bore-line drops.
+            Elev/Wind in {unitsPrimary === 'MIL' ? 'mil' : 'MOA'} · 2″ sight-height model applied (task 1.6a) — scope
+            come-ups, not bore-line drops.
           </div>
         </div>
       )}
