@@ -17,6 +17,12 @@ import {
   fpsToMps,
   mpsToFps,
   mphToMps,
+  mpsToMph,
+  systemLabel,
+  formatAngleForDisplay,
+  formatSpeedForDisplay,
+  formatDistanceForDisplay,
+  formatOffsetForDisplay,
 } from './index';
 
 describe('units/angle', () => {
@@ -84,5 +90,49 @@ describe('units/velocity', () => {
 
   it('mph anchor (10 mph full-value wind)', () => {
     expect(mphToMps(10)).toBeCloseTo(4.4704, 9);
+  });
+});
+
+describe('units/display (Met/Imp HUD toggle)', () => {
+  it('systemLabel: MIL -> Met, MOA -> Imp', () => {
+    expect(systemLabel('MIL')).toBe('Met');
+    expect(systemLabel('MOA')).toBe('Imp');
+  });
+
+  it('formatAngleForDisplay: mil under Metric, MOA under Imperial', () => {
+    const metric = formatAngleForDisplay(0.001, 'MIL'); // exactly 1 mrad
+    expect(metric.value).toBeCloseTo(1, 9);
+    expect(metric.label).toBe('mil');
+    const imperial = formatAngleForDisplay(0.001, 'MOA');
+    expect(imperial.value).toBeCloseTo(3.43774677, 6);
+    expect(imperial.label).toBe('MOA');
+  });
+
+  it('formatSpeedForDisplay: m/s under Metric, mph under Imperial', () => {
+    const metric = formatSpeedForDisplay(10, 'MIL');
+    expect(metric.value).toBe(10);
+    expect(metric.label).toBe('m/s');
+    const imperial = formatSpeedForDisplay(mphToMps(10), 'MOA');
+    expect(imperial.value).toBeCloseTo(10, 9);
+    expect(imperial.label).toBe('mph');
+    expect(mpsToMph(mphToMps(10))).toBeCloseTo(10, 9); // sanity: round-trip used internally
+  });
+
+  it('formatDistanceForDisplay: meters under Metric, yards under Imperial', () => {
+    const metric = formatDistanceForDisplay(91.44, 'MIL');
+    expect(metric.value).toBe(91.44);
+    expect(metric.label).toBe('m');
+    const imperial = formatDistanceForDisplay(91.44, 'MOA');
+    expect(imperial.value).toBeCloseTo(100, 9);
+    expect(imperial.label).toBe('yd');
+  });
+
+  it('formatOffsetForDisplay: mm under Metric, inches under Imperial', () => {
+    const metric = formatOffsetForDisplay(0.0254, 'MIL'); // 1 inch
+    expect(metric.value).toBeCloseTo(25.4, 9);
+    expect(metric.label).toBe('mm');
+    const imperial = formatOffsetForDisplay(0.0254, 'MOA');
+    expect(imperial.value).toBeCloseTo(1, 9);
+    expect(imperial.label).toBe('in');
   });
 });

@@ -44,7 +44,16 @@ import { resolveShot, type ShotPlate } from '../game/shot';
 import { windToVec } from '../game/firing-solution';
 import { callImpact, type ImpactCall } from '../game/impact-call';
 import { getGameLoad, DEFAULT_GAME_LOAD_ID, SCOPE_ZERO_RANGE_M, SIGHT_HEIGHT_M } from '../game/loads';
-import { asMilMoa, mpsToMph, mphToMps, clockToDeg, degToClock, metersToYards } from '../units';
+import {
+  clockToDeg,
+  degToClock,
+  mphToMps,
+  systemLabel,
+  formatAngleForDisplay,
+  formatSpeedForDisplay,
+  formatDistanceForDisplay,
+  formatOffsetForDisplay,
+} from '../units';
 import { DopePanel } from './DopePanel';
 
 const EYE_HEIGHT_M = 1.6; // matches the Range A look-around
@@ -735,8 +744,27 @@ export function ScopeView() {
           overflowY: 'auto',
         }}
       >
+        {/* Met/Imp unit toggle (owner-requested improvement, 2026-07-15): the
+            single source of truth for every readout in this panel + the DOPE
+            panel + the in-scope reticle graduations (unchanged — it already
+            read `unitsPrimary`). MIL/Metric and MOA/Imperial share the same
+            underlying store field; nothing new was added to the store. */}
+        <div style={{ display: 'flex', gap: 2, marginBottom: 6 }}>
+          <button
+            onClick={() => setUnitsPrimary('MIL')}
+            style={{ fontWeight: unitsPrimary === 'MIL' ? 'bold' : 'normal', opacity: unitsPrimary === 'MIL' ? 1 : 0.6 }}
+          >
+            Met
+          </button>
+          <button
+            onClick={() => setUnitsPrimary('MOA')}
+            style={{ fontWeight: unitsPrimary === 'MOA' ? 'bold' : 'normal', opacity: unitsPrimary === 'MOA' ? 1 : 0.6 }}
+          >
+            Imp
+          </button>
+        </div>
         <div>
-          {magnification.toFixed(1)}× · {unitsPrimary} reticle · Range A
+          {magnification.toFixed(1)}× · {systemLabel(unitsPrimary)} · Range A
         </div>
         <label style={{ display: 'block', marginTop: 4 }}>
           zoom ×{magnification.toFixed(1)}{' '}
@@ -764,10 +792,7 @@ export function ScopeView() {
             onChange={(e) => (wobbleAmpRef.current = Number(e.target.value))}
           />
         </label>
-        <button onClick={() => setUnitsPrimary(unitsPrimary === 'MIL' ? 'MOA' : 'MIL')} style={{ marginTop: 4 }}>
-          reticle: {unitsPrimary} → {unitsPrimary === 'MIL' ? 'MOA' : 'MIL'}
-        </button>
-        <button onClick={() => setTraceEnabled(!traceEnabled)} style={{ marginTop: 4, marginLeft: 4 }}>
+        <button onClick={() => setTraceEnabled(!traceEnabled)} style={{ marginTop: 4 }}>
           trace: {traceEnabled ? 'on' : 'off'}
         </button>
 
@@ -775,7 +800,8 @@ export function ScopeView() {
             solution; the sight picture does not move (Option B is a future task). */}
         <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
           <div>
-            ELEV {asMilMoa(elevationRad).mil.toFixed(1)} mil / {asMilMoa(elevationRad).moa.toFixed(1)} MOA
+            ELEV {formatAngleForDisplay(elevationRad, unitsPrimary).value.toFixed(1)}{' '}
+            {formatAngleForDisplay(elevationRad, unitsPrimary).label}
           </div>
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <button
@@ -796,7 +822,8 @@ export function ScopeView() {
             </button>
           </div>
           <div style={{ marginTop: 4 }}>
-            WIND {asMilMoa(windageRad).mil.toFixed(1)} mil / {asMilMoa(windageRad).moa.toFixed(1)} MOA
+            WIND {formatAngleForDisplay(windageRad, unitsPrimary).value.toFixed(1)}{' '}
+            {formatAngleForDisplay(windageRad, unitsPrimary).label}
           </div>
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <button
@@ -823,17 +850,23 @@ export function ScopeView() {
             (WindState convention); the dial shows it as a clock face. */}
         <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
           <div>
-            wind {mpsToMph(windState.speedMps).toFixed(0)} mph / {windState.speedMps.toFixed(1)} m/s
+            wind {formatSpeedForDisplay(windState.speedMps, unitsPrimary).value.toFixed(unitsPrimary === 'MIL' ? 1 : 0)}{' '}
+            {formatSpeedForDisplay(windState.speedMps, unitsPrimary).label}
           </div>
           <input
             type="range"
             min={0}
-            max={20}
-            step={1}
-            value={mpsToMph(windState.speedMps)}
-            onChange={(e) => setWind({ speedMps: mphToMps(Number(e.target.value)) })}
+            max={unitsPrimary === 'MIL' ? mphToMps(20) : 20}
+            step={unitsPrimary === 'MIL' ? 0.5 : 1}
+            value={formatSpeedForDisplay(windState.speedMps, unitsPrimary).value}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setWind({ speedMps: unitsPrimary === 'MIL' ? v : mphToMps(v) });
+            }}
             style={{ width: 140 }}
           />
+          {/* Wind direction stays clock + degrees regardless of Met/Imp — neither
+              is a metric/imperial distinction, so it's not part of the toggle. */}
           <div style={{ marginTop: 4 }}>
             dir {degToClock(windState.directionDeg).toFixed(0)} o'clock / {windState.directionDeg.toFixed(0)}°
           </div>
@@ -854,7 +887,7 @@ export function ScopeView() {
           <div>
             target:{' '}
             {currentTarget
-              ? `#${currentTarget.plateInstanceId} @ ${metersToYards(currentTarget.distanceM).toFixed(0)} yd`
+              ? `#${currentTarget.plateInstanceId} @ ${formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary).value.toFixed(0)} ${formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary).label}`
               : 'none committed'}
           </div>
           <button onClick={() => commitRef.current()} style={{ marginTop: 4 }}>
@@ -868,7 +901,12 @@ export function ScopeView() {
           <div>shots left: {shotBudget}</div>
           <div>
             last call:{' '}
-            {lastCall ? `${lastCall.hit ? 'HIT' : 'MISS'} ${lastCall.clock} o'clock (${lastCall.distanceLabel})` : '—'}
+            {lastCall
+              ? (() => {
+                  const off = formatOffsetForDisplay(lastCall.offsetM, unitsPrimary);
+                  return `${lastCall.hit ? 'HIT' : 'MISS'} ${lastCall.clock} o'clock (${off.value.toFixed(unitsPrimary === 'MIL' ? 0 : 1)} ${off.label})`;
+                })()
+              : '—'}
           </div>
           <div>
             first-round: {score.firstRoundHits}/{score.targetsEngaged} · hits: {score.hits}/{score.shotsFired}

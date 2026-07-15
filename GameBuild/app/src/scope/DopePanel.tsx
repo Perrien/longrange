@@ -9,6 +9,11 @@
 // so they can't drift apart. Unlike DropTable, this panel passes
 // `sightHeightM: SIGHT_HEIGHT_M` (task 1.6a) — these are real scope come-ups,
 // not bore-line drops.
+//
+// Single-unit display (owner-requested improvement, 2026-07-15): rows collapse
+// to whichever system `settings.unitsPrimary` currently selects (the same
+// Met/Imp toggle ScopeView's HUD uses) rather than showing both — `formatDopeRow`
+// already computes both units per row, so this just picks a side, no new math.
 
 import { useEffect, useState } from 'react';
 import { solveTrajectory, spinRateFromTwist, type AtmosphereInput } from '../engine-bridge';
@@ -34,6 +39,7 @@ const fmt = (n: number, digits: number) => n.toFixed(digits);
 export function DopePanel() {
   const [open, setOpen] = useState(false);
   const wind = useGameStore((s) => s.session.wind);
+  const unitsPrimary = useGameStore((s) => s.settings.unitsPrimary);
   const [module, setModule] = useState<BtkModule | null>(null);
   const [rows, setRows] = useState<DopeRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -87,23 +93,31 @@ export function DopePanel() {
           {!error && !module && <div>loading…</div>}
           {!error &&
             module &&
-            rows.map((r) => (
-              <div key={r.rangeM} style={{ marginBottom: 4, lineHeight: 1.3 }}>
-                <div>
-                  {fmt(r.rangeYd, 0)} yd / {fmt(r.rangeM, 0)} m
-                </div>
-                <div>
-                  {r.dropMilMoa.mil >= 0 ? '↑' : '↓'}
-                  {fmt(Math.abs(r.dropMilMoa.mil), 1)} mil / {fmt(Math.abs(r.dropMilMoa.moa), 1)} MOA
-                </div>
-                {(Math.abs(r.windMilMoa.mil) > 1e-3) && (
+            rows.map((r) => {
+              const isMetric = unitsPrimary === 'MIL';
+              const range = isMetric ? r.rangeM : r.rangeYd;
+              const rangeLabel = isMetric ? 'm' : 'yd';
+              const drop = isMetric ? r.dropMilMoa.mil : r.dropMilMoa.moa;
+              const dropLabel = isMetric ? 'mil' : 'MOA';
+              const windHold = isMetric ? r.windMilMoa.mil : r.windMilMoa.moa;
+              return (
+                <div key={r.rangeM} style={{ marginBottom: 4, lineHeight: 1.3 }}>
                   <div>
-                    {r.windMilMoa.mil >= 0 ? '→' : '←'}
-                    {fmt(Math.abs(r.windMilMoa.mil), 1)} mil / {fmt(Math.abs(r.windMilMoa.moa), 1)} MOA wind
+                    {fmt(range, 0)} {rangeLabel}
                   </div>
-                )}
-              </div>
-            ))}
+                  <div>
+                    {drop >= 0 ? '↑' : '↓'}
+                    {fmt(Math.abs(drop), 1)} {dropLabel}
+                  </div>
+                  {Math.abs(r.windMilMoa.mil) > 1e-3 && (
+                    <div>
+                      {windHold >= 0 ? '→' : '←'}
+                      {fmt(Math.abs(windHold), 1)} {dropLabel} wind
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           <div style={{ marginTop: 4, color: '#9aa5b1', fontSize: 10 }}>
             2″ sight-height model applied (task 1.6a) — these are scope come-ups, not bore-line drops.
           </div>

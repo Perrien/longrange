@@ -43,11 +43,9 @@ describe('impact-call (task 1.6c)', () => {
     expect(callImpact(shot(0, 0, 7), CENTER).clock).toBe(12);
   });
 
-  it('distanceLabel reflects the known offset in both units (1 in offset)', () => {
-    // 1 inch = 0.0254 m offset, straight right.
-    const call = callImpact(shot(0.0254, 0, 7), CENTER);
-    expect(call.distanceLabel).toContain('25 mm');
-    expect(call.distanceLabel).toContain('1.0 in');
+  it('offsetM reports the raw linear offset in metres (caller formats it for display)', () => {
+    const call = callImpact(shot(0.03, 0.04, 7), CENTER); // 3-4-5 triangle -> 0.05 m
+    expect(call.offsetM).toBeCloseTo(0.05, 9);
   });
 
   it('a miss still gets a directional call relative to the supplied plate centre', () => {

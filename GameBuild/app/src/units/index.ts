@@ -7,3 +7,4 @@ export * from './angle';
 export * from './length';
 export * from './velocity';
 export * from './subtension';
+export * from './display';

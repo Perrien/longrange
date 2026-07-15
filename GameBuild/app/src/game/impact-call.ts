@@ -9,7 +9,6 @@
 // (the committed target once 1.6c2 lands; the aimed plate in the meantime).
 
 import { radToDeg, degToClock } from '../units/angle';
-import { metersToMillimeters, metersToInches } from '../units/length';
 import type { ShotResult } from './shot';
 import type { PlanePoint } from './firing-solution';
 
@@ -21,8 +20,10 @@ export interface ImpactCall {
   /** Clock position (1–12) of the impact relative to the plate centre, viewed face-on
    *  (12 = up, 3 = right, 6 = down, 9 = left — matches the wind-dial convention in `units/angle`). */
   clock: number;
-  /** Offset from plate centre, formatted for display (both units, e.g. "38 mm / 1.5 in"). */
-  distanceLabel: string;
+  /** Offset from plate centre, metres (raw SI — the caller formats this for display
+   *  via `units/display.ts`'s `formatOffsetForDisplay` so it reacts live to the
+   *  Met/Imp toggle instead of being frozen in whatever unit was active at fire time). */
+  offsetM: number;
 }
 
 /** Round a fractional clock position (0–12) to a whole hour, wrapping 0 to 12. */
@@ -47,9 +48,5 @@ export function callImpact(result: ShotResult, plateCenter: PlanePoint): ImpactC
 
   const clock = offsetM < 1e-6 ? 12 : roundClock(degToClock(radToDeg(Math.atan2(dx, dy))));
 
-  const mm = metersToMillimeters(offsetM);
-  const inch = metersToInches(offsetM);
-  const distanceLabel = `${mm.toFixed(0)} mm / ${inch.toFixed(1)} in`;
-
-  return { hit: result.hitPlateId != null, clock, distanceLabel };
+  return { hit: result.hitPlateId != null, clock, offsetM };
 }
