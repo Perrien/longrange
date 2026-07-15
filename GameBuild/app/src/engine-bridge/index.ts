@@ -70,6 +70,7 @@ function setupZeroedSimulator(
   wind: WindVec,
   zeroRangeM: number,
   dt: number,
+  sightHeightM: number,
 ): { sim: ESimulator; owned: { delete(): void }[] } {
   const bullet = new module.Bullet(
     load.massKg,
@@ -85,7 +86,10 @@ function setupZeroedSimulator(
     atmosphere.pressurePa ?? 0,
   );
   const windVec = new module.Vector3D(wind.x, wind.y, wind.z);
-  const target = new module.Vector3D(0, 0, -zeroRangeM);
+  // Zero to the LINE OF SIGHT (sightHeightM above the muzzle) at the zero range,
+  // not the bore line (task 1.6a). sightHeightM=0 keeps the bore-line behavior
+  // the golden-vector oracle and the 0.4 debug table depend on.
+  const target = new module.Vector3D(0, sightHeightM, -zeroRangeM);
   const sim = new module.BallisticsSimulator();
   const owned = [bullet, atmos, windVec, target, sim];
 
@@ -117,7 +121,8 @@ export function solveTrajectory(
   opts: SolveOptions,
 ): TrajectoryTable {
   const dt = opts.dt ?? DEFAULT_DT;
-  const { sim, owned } = setupZeroedSimulator(module, load, atmosphere, wind, opts.zeroRangeM, dt);
+  const sightHeightM = opts.sightHeightM ?? 0;
+  const { sim, owned } = setupZeroedSimulator(module, load, atmosphere, wind, opts.zeroRangeM, dt, sightHeightM);
 
   try {
     // Simulate a little past the last sample so atDistance can interpolate it.
@@ -132,7 +137,9 @@ export function solveTrajectory(
       const pos = state.getPosition(); // copied Vector3D handle
       rows.push({
         rangeM: point.getDistance(),
-        dropM: pos.y,
+        // Line-of-sight-relative: -sightHeightM at the muzzle (bullet starts below
+        // the crosshair), 0 at the zero range, negative past it (needs come-up).
+        dropM: pos.y - sightHeightM,
         windageM: pos.x,
         velocityMps: point.getVelocity(),
         timeOfFlightS: point.getTime(),
@@ -157,7 +164,7 @@ export function computeZero(
   zeroRangeM: number,
   dt: number = DEFAULT_DT,
 ): ZeroResult {
-  const { sim, owned } = setupZeroedSimulator(module, load, atmosphere, wind, zeroRangeM, dt);
+  const { sim, owned } = setupZeroedSimulator(module, load, atmosphere, wind, zeroRangeM, dt, 0);
   try {
     // The simulator was reset to the zeroed initial bullet; read its launch angles.
     const initial: EBullet = sim.getInitialBullet(); // copied handle → delete

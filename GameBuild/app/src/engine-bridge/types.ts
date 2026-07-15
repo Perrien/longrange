@@ -60,6 +60,9 @@ export interface SolveOptions {
   stepM: number;
   /** Integration time step (s). Default 0.001. */
   dt?: number;
+  /** Scope height above the bore (m). Default 0 (bore-line zero/drop — matches
+   * the golden-vector oracle and the 0.4 debug table, which pass none). Task 1.6a. */
+  sightHeightM?: number;
 }
 
 /** One sampled row of a trajectory, all SI. Angular corrections (MIL/MOA) are

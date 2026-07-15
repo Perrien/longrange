@@ -42,7 +42,7 @@ import { buildTracePath } from '../game/trace-path';
 import type { BtkModule, TrajectoryTable } from '../engine-bridge/types';
 import { resolveShot, type ShotPlate } from '../game/shot';
 import { windToVec } from '../game/firing-solution';
-import { getGameLoad, DEFAULT_GAME_LOAD_ID, SCOPE_ZERO_RANGE_M } from '../game/loads';
+import { getGameLoad, DEFAULT_GAME_LOAD_ID, SCOPE_ZERO_RANGE_M, SIGHT_HEIGHT_M } from '../game/loads';
 
 const EYE_HEIGHT_M = 1.6; // matches the Range A look-around
 
@@ -195,6 +195,7 @@ export function ScopeView() {
           zeroRangeM: SCOPE_ZERO_RANGE_M,
           maxRangeM: rangeM,
           stepM: rangeM / TRACE_SAMPLES,
+          sightHeightM: SIGHT_HEIGHT_M,
         });
         traceTableCache.set(key, table);
       }
@@ -382,7 +383,11 @@ export function ScopeView() {
                 run: () => {
                   let entry = reactions.get(hitPlate.instanceId);
                   if (!entry) {
-                    const reaction = createSteelReaction(engineModule, {
+                    // Non-null assertion (matches simAt's engineModule! above): this
+                    // closure is only queued from inside the `if (engineModule && …)`
+                    // guard, and engineModule is never reset to null once loaded — TS
+                    // just can't carry that narrowing across the deferred closure.
+                    const reaction = createSteelReaction(engineModule!, {
                       diameterM: hitPlate.diameterM,
                       thicknessM: PLATE_THICKNESS_M,
                       position: { x: hitPlate.position.x, y: hitPlate.position.y, z: hitPlate.position.z },

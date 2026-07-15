@@ -11,6 +11,7 @@
 // time from `twistM`.
 import type { Dispersion, Load } from '../engine-bridge/types';
 import { moaToRad } from '../units/angle';
+import { inchesToMeters } from '../units/length';
 import oracle from '../../../validation/loads.json';
 import gameLoadsData from './loads.data.json';
 
@@ -32,6 +33,10 @@ export const DEFAULT_GAME_LOAD_ID = '65cm-140-match';
  * so nearer racks need hold-under and farther racks need hold-over — exercising
  * corrections in both directions. Note the constant is SI metres. */
 export const SCOPE_ZERO_RANGE_M = 300 * 0.9144; // 300 yd = 274.32 m
+
+/** Scope height over bore (task 1.6a, D1): 2" for every game-path solve. Zeros
+ * and reports come-ups against the line of sight instead of the bore line. */
+export const SIGHT_HEIGHT_M = inchesToMeters(2);
 
 function asDragModel(value: string): Load['dragModel'] {
   if (value !== 'G1' && value !== 'G7') {

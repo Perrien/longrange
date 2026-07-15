@@ -4,6 +4,8 @@
 // task 0.4d; here we confirm the wiring, types, and .delete() paths run.
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createEngineBridge, type EngineBridge, type Load, type AtmosphereInput, type WindVec } from './index';
+import { radToMil, yardsToMeters } from '../units';
+import { SCOPE_ZERO_RANGE_M, SIGHT_HEIGHT_M } from '../game/loads';
 
 // 6.5 Creedmoor, 140 gr, 0.264" dia, ~1.30" length, G7 BC 0.310, ~2700 fps.
 const LOAD: Load = {
@@ -61,6 +63,57 @@ describe('engine-bridge/solveTrajectory', () => {
     // Windage grows with range under a steady crosswind.
     expect(table[4].windageM).toBeGreaterThan(Math.abs(table[0].windageM));
     expect(Math.abs(table[4].windageM)).toBeGreaterThan(0.1);
+  });
+});
+
+describe('engine-bridge/solveTrajectory sight height over bore (task 1.6a)', () => {
+  const zeroRangeM = SCOPE_ZERO_RANGE_M; // the game's actual test zero (300 yd)
+
+  it('zeros to the line of sight and starts sightHeightM below it at the muzzle', () => {
+    // At the zero range, the line-of-sight-relative drop is ~0 (on the crosshair).
+    const atZero = bridge.solveTrajectory(LOAD, ATMOSPHERE, NO_WIND, {
+      zeroRangeM,
+      maxRangeM: zeroRangeM,
+      stepM: zeroRangeM,
+      sightHeightM: SIGHT_HEIGHT_M,
+    });
+    expect(atZero[0].dropM).toBeCloseTo(0, 2);
+
+    // A step from the muzzle, drop is negligible vs. a flat 1 m of travel, so the
+    // line-of-sight-relative drop is still ~-sightHeightM (bullet starts below it).
+    const nearMuzzle = bridge.solveTrajectory(LOAD, ATMOSPHERE, NO_WIND, {
+      zeroRangeM,
+      maxRangeM: 1,
+      stepM: 1,
+      sightHeightM: SIGHT_HEIGHT_M,
+    });
+    expect(Math.abs(nearMuzzle[0].dropM - -SIGHT_HEIGHT_M)).toBeLessThan(0.005);
+  });
+
+  it('shifts near-target come-up by ~1 mil and far-target come-up by ~0.1 mil vs. no sight height', () => {
+    // Range A's ladder extremes (50/500 yd) either side of the 300 yd test zero:
+    // 2" over the ~46 m near leg is a big fraction of the range (~1 mil); over the
+    // ~457 m far leg it's a much smaller fraction (~0.1 mil) — see 1.6a-plan §"Why".
+    const nearM = yardsToMeters(50);
+    const farM = yardsToMeters(500);
+
+    function comeUpMil(rangeM: number, sightHeightM: number): number {
+      const table = bridge.solveTrajectory(LOAD, ATMOSPHERE, NO_WIND, {
+        zeroRangeM,
+        maxRangeM: rangeM,
+        stepM: rangeM,
+        sightHeightM,
+      });
+      return radToMil(Math.atan2(-table[0].dropM, rangeM));
+    }
+
+    const nearShiftMil = comeUpMil(nearM, SIGHT_HEIGHT_M) - comeUpMil(nearM, 0);
+    const farShiftMil = comeUpMil(farM, SIGHT_HEIGHT_M) - comeUpMil(farM, 0);
+
+    expect(Math.abs(nearShiftMil)).toBeGreaterThan(0.5);
+    expect(Math.abs(nearShiftMil)).toBeLessThan(1.5);
+    expect(Math.abs(farShiftMil)).toBeGreaterThan(0.03);
+    expect(Math.abs(farShiftMil)).toBeLessThan(0.3);
   });
 });
 
