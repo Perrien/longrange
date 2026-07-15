@@ -1,8 +1,10 @@
-// WebAudio playback (task 1.5d) — a trimmed port of BallisticsToolkit steel-sim's
-// AudioManager. Loads two bundled/precached clips (report, ping; sourced from
-// BTK's MIT assets), plays the muzzle report immediately on every FIRE, and
-// schedules the steel ping after the sound-travel delay with distance- and
-// energy-scaled volume (see ./audio-model). Misses make no impact sound.
+// WebAudio playback (task 1.5d, extended 1.6c) — a trimmed port of
+// BallisticsToolkit steel-sim's AudioManager. Loads three bundled/precached
+// clips (report, ping, click; sourced from BTK's MIT assets), plays the
+// muzzle report immediately on every FIRE, schedules the steel ping after the
+// sound-travel delay with distance- and energy-scaled volume (see
+// ./audio-model), and plays a turret click on every dial ± press. Misses make
+// no impact sound.
 //
 // iOS rule: an AudioContext starts suspended and only resumes inside a user
 // gesture — so nothing is audible until the first FIRE tap calls `unlock()`.
@@ -10,16 +12,18 @@
 
 import { impactSoundParams } from './audio-model';
 
-// Only two clips: the muzzle report (every shot) and the steel ping (hits only).
-// A miss has no impact sound — a bullet into dirt/berm doesn't ring or ricochet
-// (owner 2026-07-14), so the ricochet clip was dropped.
-type SoundId = 'report' | 'ping';
+// Three clips: the muzzle report (every shot), the steel ping (hits only), and
+// the turret click (task 1.6c, D5 — dial feedback). A miss has no impact sound
+// — a bullet into dirt/berm doesn't ring or ricochet (owner 2026-07-14), so the
+// ricochet clip was dropped.
+type SoundId = 'report' | 'ping' | 'click';
 
 /** Clip files live in app/public/audio/ → served at `${BASE_URL}audio/*.mp3` and
  * precached by the PWA (vite.config globPatterns includes mp3). */
 const SOUND_FILES: Record<SoundId, string> = {
   report: 'audio/report.mp3',
   ping: 'audio/ping.mp3',
+  click: 'audio/scope_click.mp3', // BTK MIT asset (task 1.6c, D5)
 };
 
 /** Per-clip loudness normalization (task 1.5d, owner feedback 2026-07-14). BTK's
@@ -30,6 +34,7 @@ const SOUND_FILES: Record<SoundId, string> = {
 const CLIP_BASE_GAIN: Record<SoundId, number> = {
   report: 0.9, // loudest (muzzle blast at the ear); slight headroom off 0 dBFS
   ping: 3.2, // quiet sample boosted up to the impact reference
+  click: 1.0, // a mechanical detent, not scaled by distance/energy — modest and consistent
 };
 
 interface PlayOptions {
@@ -148,6 +153,13 @@ export class AudioManager {
       delaySeconds: Math.max(0, extraDelaySeconds) + p.delaySeconds,
       playbackRate: p.playbackRate,
     });
+  }
+
+  /** Turret detent click — every dial ± press (task 1.6c, D5). Immediate, no
+   *  distance/energy scaling (it's the scope in the shooter's hands, not a
+   *  downrange event). No-ops silently until `unlock()` has run. */
+  click(volume = 1): void {
+    this.play('click', { volume });
   }
 
   dispose(): void {

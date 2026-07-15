@@ -19,7 +19,7 @@
 // settings.unitsPrimary); sensitivity reads/writes settings. World axes match
 // the scene: +X right, +Y up, downrange −Z, shooter at the origin.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RangeScene, PLATE_THICKNESS_M, setChainInstance } from '../range/RangeScene';
 import { useGameStore, ZOOM_MIN, ZOOM_MAX } from '../state/store';
@@ -42,7 +42,9 @@ import { buildTracePath } from '../game/trace-path';
 import type { BtkModule, TrajectoryTable } from '../engine-bridge/types';
 import { resolveShot, type ShotPlate } from '../game/shot';
 import { windToVec } from '../game/firing-solution';
+import { callImpact, type ImpactCall } from '../game/impact-call';
 import { getGameLoad, DEFAULT_GAME_LOAD_ID, SCOPE_ZERO_RANGE_M, SIGHT_HEIGHT_M } from '../game/loads';
+import { asMilMoa } from '../units';
 
 const EYE_HEIGHT_M = 1.6; // matches the Range A look-around
 
@@ -85,6 +87,18 @@ export function ScopeView() {
   const traceEnabled = useGameStore((s) => s.settings.traceEnabled);
   const setTraceEnabled = useGameStore((s) => s.setTraceEnabled);
 
+  // Turret dial (task 1.6c, D4-A solve-only): elevation/windage read for the
+  // HUD readout; the ± buttons below dispatch the store actions directly.
+  const elevationRad = useGameStore((s) => s.session.scope.elevationRad);
+  const windageRad = useGameStore((s) => s.session.scope.windageRad);
+  const dialElevationClicks = useGameStore((s) => s.dialElevationClicks);
+  const dialWindageClicks = useGameStore((s) => s.dialWindageClicks);
+  const shotBudget = useGameStore((s) => s.session.shotBudget);
+  const score = useGameStore((s) => s.score);
+  // Last-shot spotter call (task 1.6c, D3 HUD): hit/miss + clock, set from the
+  // imperative FIRE handler below via `setLastCall` (a stable setState ref).
+  const [lastCall, setLastCall] = useState<ImpactCall | null>(null);
+
   // Local feel control (wobble amplitude is not a persisted setting yet — see
   // PROGRESS deferred obs; owner-tuned default 0.75 from the 0.9 spike).
   const wobbleAmpRef = useRef(0.75);
@@ -92,6 +106,9 @@ export function ScopeView() {
   const holdingRef = useRef(false);
 
   const fireRef = useRef<() => void>(() => {});
+  // Turret click sound (task 1.6c, D5): the ± buttons call this; it reaches
+  // into the imperative `audio` instance created inside the effect below.
+  const clickAudioRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -134,6 +151,11 @@ export function ScopeView() {
     // the sound-travel delay, scaled by distance + impact energy (audio-model).
     const audio = new AudioManager();
     void audio.preload();
+    // Turret click (task 1.6c, D5): a dial ± press is its own user gesture, so
+    // it can unlock audio independently of FIRE (idempotent — same as playShotAudio).
+    clickAudioRef.current = () => {
+      void audio.unlock().then(() => audio.click());
+    };
     function playShotAudio(hit: boolean, soundDistanceM: number, impactEnergyJ: number, timeOfFlightS: number) {
       void audio.unlock().then(() => {
         audio.report(); // muzzle blast — every shot, at the trigger pull
@@ -353,6 +375,12 @@ export function ScopeView() {
           });
           store().recordShot(result);
           store().decrementBudget();
+
+          // Spotter call (task 1.6c, D3 HUD): hit/miss + clock relative to the
+          // engaged plate's centre. Called against the plate the shot was aimed
+          // at (`aimed`) — once 1.6c2 wires commitTarget this will be the same
+          // plate whenever the player commits to the one under the crosshair.
+          setLastCall(callImpact(result, { x: aimed.position.x, y: aimed.position.y }));
 
           // Everything that happens *at the target* — the plate swing, the dust
           // puff, the steel ring — is created only when the bullet arrives, i.e.
@@ -708,6 +736,66 @@ export function ScopeView() {
         <button onClick={() => setTraceEnabled(!traceEnabled)} style={{ marginTop: 4, marginLeft: 4 }}>
           trace: {traceEnabled ? 'on' : 'off'}
         </button>
+
+        {/* Turret dial (task 1.6c, D4-A solve-only): dialing changes the firing
+            solution; the sight picture does not move (Option B is a future task). */}
+        <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
+          <div>
+            ELEV {asMilMoa(elevationRad).mil.toFixed(1)} mil / {asMilMoa(elevationRad).moa.toFixed(1)} MOA
+          </div>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <button
+              onClick={() => {
+                dialElevationClicks(-1);
+                clickAudioRef.current();
+              }}
+            >
+              −
+            </button>
+            <button
+              onClick={() => {
+                dialElevationClicks(1);
+                clickAudioRef.current();
+              }}
+            >
+              +
+            </button>
+          </div>
+          <div style={{ marginTop: 4 }}>
+            WIND {asMilMoa(windageRad).mil.toFixed(1)} mil / {asMilMoa(windageRad).moa.toFixed(1)} MOA
+          </div>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <button
+              onClick={() => {
+                dialWindageClicks(-1);
+                clickAudioRef.current();
+              }}
+            >
+              −
+            </button>
+            <button
+              onClick={() => {
+                dialWindageClicks(1);
+                clickAudioRef.current();
+              }}
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        {/* Engagement HUD (task 1.6c, D2/D3): shots remaining, the last spotter
+            call, and running score. Commit/target-select lands in 1.6c2. */}
+        <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
+          <div>shots left: {shotBudget}</div>
+          <div>
+            last call:{' '}
+            {lastCall ? `${lastCall.hit ? 'HIT' : 'MISS'} ${lastCall.clock} o'clock (${lastCall.distanceLabel})` : '—'}
+          </div>
+          <div>
+            first-round: {score.firstRoundHits}/{score.targetsEngaged} · hits: {score.hits}/{score.shotsFired}
+          </div>
+        </div>
       </div>
       {/* HOLD (breath) — left thumb */}
       <div
