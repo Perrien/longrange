@@ -44,7 +44,8 @@ import { resolveShot, type ShotPlate } from '../game/shot';
 import { windToVec } from '../game/firing-solution';
 import { callImpact, type ImpactCall } from '../game/impact-call';
 import { getGameLoad, DEFAULT_GAME_LOAD_ID, SCOPE_ZERO_RANGE_M, SIGHT_HEIGHT_M } from '../game/loads';
-import { asMilMoa } from '../units';
+import { asMilMoa, mpsToMph, mphToMps, clockToDeg, degToClock, metersToYards } from '../units';
+import { DopePanel } from './DopePanel';
 
 const EYE_HEIGHT_M = 1.6; // matches the Range A look-around
 
@@ -95,6 +96,11 @@ export function ScopeView() {
   const dialWindageClicks = useGameStore((s) => s.dialWindageClicks);
   const shotBudget = useGameStore((s) => s.session.shotBudget);
   const score = useGameStore((s) => s.score);
+
+  // Wind control (task 1.6c, D6) + commit/target-select (D2).
+  const windState = useGameStore((s) => s.session.wind);
+  const setWind = useGameStore((s) => s.setWind);
+  const currentTarget = useGameStore((s) => s.session.currentTarget);
   // Last-shot spotter call (task 1.6c, D3 HUD): hit/miss + clock, set from the
   // imperative FIRE handler below via `setLastCall` (a stable setState ref).
   const [lastCall, setLastCall] = useState<ImpactCall | null>(null);
@@ -109,6 +115,9 @@ export function ScopeView() {
   // Turret click sound (task 1.6c, D5): the ± buttons call this; it reaches
   // into the imperative `audio` instance created inside the effect below.
   const clickAudioRef = useRef<() => void>(() => {});
+  // Commit (task 1.6c, D2): the Commit button calls this; it reaches into the
+  // imperative aim state to find the plate under the crosshair right now.
+  const commitRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -330,28 +339,48 @@ export function ScopeView() {
       );
     }
 
+    // Aimed plate across all racks: the plate the sight line passes closest to
+    // at that plate's own plane. Shared by FIRE and Commit (task 1.6c, D2) so
+    // "commit to the plate under the crosshair" and "the plate that shot just
+    // resolved against" always agree.
+    function findAimed(): { dir: THREE.Vector3; plate: (typeof range.plates)[number] } | null {
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(aimQuaternion(st.t));
+      if (dir.z >= -1e-3 || range.plates.length === 0) return null;
+      let aimed = range.plates[0];
+      let aimedD = Infinity;
+      for (const plate of range.plates) {
+        const tt = -plate.distanceM / dir.z;
+        const ax = camera.position.x + dir.x * tt;
+        const ay = camera.position.y + dir.y * tt;
+        const d = Math.hypot(ax - plate.position.x, ay - plate.position.y);
+        if (d < aimedD) {
+          aimedD = d;
+          aimed = plate;
+        }
+      }
+      return { dir, plate: aimed };
+    }
+
+    // Commit (task 1.6c, D2): read the plate under the crosshair right now and
+    // engage it — refills the shot budget, resets dials + shot count, bumps
+    // score.targetsEngaged (state/store.ts commitTarget).
+    commitRef.current = () => {
+      const found = findAimed();
+      if (found) store().commitTarget(found.plate.instanceId, found.plate.distanceM);
+    };
+
     // FIRE — resolve the shot from the aim, then recoil.
     fireRef.current = () => {
+      // Gate on budget (task 1.6c, D2): ends the 1.4c dry-fire allowance — no
+      // shot, no recoil, once the budget for the current target is spent.
+      if (store().session.shotBudget <= 0) return;
       // Sample the aim BEFORE this shot's recoil kick (0.9: the bullet leaves as
       // the trigger breaks). Wobble is part of the aim; the kick below is the
       // consequence, applied after the shot is resolved.
-      if (engineModule && range.plates.length > 0) {
-        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(aimQuaternion(st.t));
-        if (dir.z < -1e-3) {
-          // Aimed plate across all racks: the plate the sight line passes closest
-          // to at that plate's own plane. Its rack distance is the engagement.
-          let aimed = range.plates[0];
-          let aimedD = Infinity;
-          for (const plate of range.plates) {
-            const tt = -plate.distanceM / dir.z;
-            const ax = camera.position.x + dir.x * tt;
-            const ay = camera.position.y + dir.y * tt;
-            const d = Math.hypot(ax - plate.position.x, ay - plate.position.y);
-            if (d < aimedD) {
-              aimedD = d;
-              aimed = plate;
-            }
-          }
+      if (engineModule) {
+        const found = findAimed();
+        if (found) {
+          const { dir, plate: aimed } = found;
           const rangeM = aimed.distanceM;
           const wind = store().session.wind;
           const scope = store().session.scope;
@@ -699,6 +728,11 @@ export function ScopeView() {
           background: 'rgba(26,34,44,0.75)',
           padding: '6px 10px',
           borderRadius: 6,
+          // Defensive cap (task 1.6d): this column has grown a lot across 1.6c/d
+          // (turret/wind/commit/score + the DOPE panel); scroll internally rather
+          // than push into the HOLD button or off-screen on shorter viewports.
+          maxHeight: 'calc(100dvh - 120px)',
+          overflowY: 'auto',
         }}
       >
         <div>
@@ -784,8 +818,52 @@ export function ScopeView() {
           </div>
         </div>
 
+        {/* Wind control (task 1.6c, D6): 0–20 mph speed slider + 12-o'clock
+            direction dial. `directionDeg` is the direction the wind blows FROM
+            (WindState convention); the dial shows it as a clock face. */}
+        <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
+          <div>
+            wind {mpsToMph(windState.speedMps).toFixed(0)} mph / {windState.speedMps.toFixed(1)} m/s
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={20}
+            step={1}
+            value={mpsToMph(windState.speedMps)}
+            onChange={(e) => setWind({ speedMps: mphToMps(Number(e.target.value)) })}
+            style={{ width: 140 }}
+          />
+          <div style={{ marginTop: 4 }}>
+            dir {degToClock(windState.directionDeg).toFixed(0)} o'clock / {windState.directionDeg.toFixed(0)}°
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={12}
+            step={1}
+            value={degToClock(windState.directionDeg)}
+            onChange={(e) => setWind({ directionDeg: clockToDeg(Number(e.target.value)) })}
+            style={{ width: 140 }}
+          />
+        </div>
+
+        {/* Commit / target select (task 1.6c, D2): engage the plate under the
+            crosshair — refills the shot budget for that plate. */}
+        <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
+          <div>
+            target:{' '}
+            {currentTarget
+              ? `#${currentTarget.plateInstanceId} @ ${metersToYards(currentTarget.distanceM).toFixed(0)} yd`
+              : 'none committed'}
+          </div>
+          <button onClick={() => commitRef.current()} style={{ marginTop: 4 }}>
+            Commit
+          </button>
+        </div>
+
         {/* Engagement HUD (task 1.6c, D2/D3): shots remaining, the last spotter
-            call, and running score. Commit/target-select lands in 1.6c2. */}
+            call, and running score. */}
         <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
           <div>shots left: {shotBudget}</div>
           <div>
@@ -796,6 +874,11 @@ export function ScopeView() {
             first-round: {score.firstRoundHits}/{score.targetsEngaged} · hits: {score.hits}/{score.shotsFired}
           </div>
         </div>
+
+        {/* DOPE side panel (task 1.6d, D3): closed by default, stacked in this
+            same left-margin column so it can never overlap the scope glass or
+            the dial/fire controls — see DopePanel.tsx. */}
+        <DopePanel />
       </div>
       {/* HOLD (breath) — left thumb */}
       <div

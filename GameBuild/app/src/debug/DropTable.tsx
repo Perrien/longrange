@@ -3,10 +3,14 @@
 // match-check.mjs verifies against pristine BTK), MIL+MOA and metric+imperial
 // side-by-side per catalog §0.6.
 //
-// NOTE (deferred): the bridge zeroes the bore line through the target — sight
-// height over bore is not modeled yet, so these are bore-line drops, not
-// scope come-ups. Logged in PROGRESS deferred observations; needed before the
-// DOPE table (increment 1.6) is real.
+// Row formatting (range, come-up, wind hold, both unit systems) is shared with
+// the in-scope DOPE panel via game/dope-row.ts (task 1.6d) so the two screens
+// can't drift from each other.
+//
+// This table passes no `sightHeightM` (bore-line drops, not scope come-ups) —
+// deliberately, so it keeps matching the golden-vector oracle and
+// match-check.mjs exactly. The scope come-up table (with the 2″ sight height
+// applied) is scope/DopePanel.tsx.
 import { useEffect, useState } from 'react';
 import {
   createEngineBridge,
@@ -15,7 +19,8 @@ import {
   type Load,
   type TrajectoryTable,
 } from '../engine-bridge';
-import { asMilMoa, metersToYards, metersToInches, metersToCentimeters, mpsToFps } from '../units';
+import { metersToYards } from '../units';
+import { formatDopeRow } from '../game/dope-row';
 import fixture from '../../../validation/loads.json';
 
 const ref = fixture.loads[0];
@@ -30,9 +35,6 @@ const load: Load = {
   muzzleVelocityMps: ref.si.muzzleVelocityMps,
   spinRateRadPerSec: spinRateFromTwist(ref.si.muzzleVelocityMps, ref.si.twistM),
 };
-
-/** Small-angle-free correction angle (rad) subtended at the shooter. */
-const angleAtRange = (offsetM: number, rangeM: number): number => Math.atan2(offsetM, rangeM);
 
 const fmt = (n: number, digits = 2) => n.toFixed(digits);
 
@@ -97,37 +99,38 @@ export function DropTable() {
         </thead>
         <tbody>
           {rows.map((r) => {
-            const drop = asMilMoa(angleAtRange(r.dropM, r.rangeM));
-            const wind = asMilMoa(angleAtRange(r.windageM, r.rangeM));
+            const row = formatDopeRow(r);
             return (
               <tr key={r.rangeM} style={{ textAlign: 'right' }}>
                 <td>
-                  {fmt(r.rangeM, 0)} | {fmt(metersToYards(r.rangeM), 0)}
+                  {fmt(row.rangeM, 0)} | {fmt(row.rangeYd, 0)}
                 </td>
                 <td>
-                  {fmt(metersToCentimeters(r.dropM), 1)} | {fmt(metersToInches(r.dropM), 1)}
+                  {fmt(row.dropCm, 1)} | {fmt(row.dropIn, 1)}
                 </td>
                 <td>
-                  {fmt(drop.mil, 2)} | {fmt(drop.moa, 2)}
+                  {fmt(row.dropMilMoa.mil, 2)} | {fmt(row.dropMilMoa.moa, 2)}
                 </td>
                 <td>
-                  {fmt(metersToCentimeters(r.windageM), 1)} | {fmt(metersToInches(r.windageM), 1)}
+                  {fmt(row.windCm, 1)} | {fmt(row.windIn, 1)}
                 </td>
                 <td>
-                  {fmt(wind.mil, 2)} | {fmt(wind.moa, 2)}
+                  {fmt(row.windMilMoa.mil, 2)} | {fmt(row.windMilMoa.moa, 2)}
                 </td>
                 <td>
-                  {fmt(r.velocityMps, 0)} | {fmt(mpsToFps(r.velocityMps), 0)}
+                  {fmt(row.velocityMps, 0)} | {fmt(row.velocityFps, 0)}
                 </td>
-                <td>{fmt(r.timeOfFlightS, 3)}</td>
+                <td>{fmt(row.timeOfFlightS, 3)}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
       <p style={{ color: '#888' }}>
-        Bore-line trajectory (sight height not yet modeled — see PROGRESS deferred
-        observations). Verified vs pristine BTK: GameBuild/validation/match-check.mjs.
+        Bore-line trajectory (no sight height applied here by design, so this table
+        keeps matching the golden-vector oracle exactly). For the 2″ sight-height
+        scope come-up table, see the in-scope DOPE panel (task 1.6d). Verified vs
+        pristine BTK: GameBuild/validation/match-check.mjs.
       </p>
     </div>
   );
