@@ -206,6 +206,8 @@ export interface GameStore {
    *  the caller (ScopeView) is responsible for validating against the live
    *  `listWindPresets()` before building a field from it. */
   setWindPreset(preset: string): void;
+  /** Set the active range id (range select, task 1.8). */
+  setRangeId(id: string): void;
 
   // Budget / target
   /** Decrement the shot budget by one, floored at zero. */
@@ -293,6 +295,8 @@ export const useGameStore = create<GameStore>()((set) => ({
 
   setWindPreset: (preset) =>
     set((s) => ({ session: { ...s.session, windPreset: preset } })),
+
+  setRangeId: (id) => set((s) => ({ session: { ...s.session, rangeId: id } })),
 
   decrementBudget: () =>
     set((s) => ({

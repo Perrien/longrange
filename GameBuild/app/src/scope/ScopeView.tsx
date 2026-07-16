@@ -123,7 +123,7 @@ const BREATH_RECOVER_S = 5;
 const BREATH_COMFORT = 0.3; // below this remaining fraction the hold degrades
 const BREATH_DEBT_FACTOR = 1.5; // wobble multiplier out of air (oxygen debt)
 
-export function ScopeView() {
+export function ScopeView({ onExit }: { onExit?: () => void } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const reticleRef = useRef<HTMLCanvasElement>(null);
   const breathBarRef = useRef<HTMLDivElement>(null);
@@ -162,6 +162,17 @@ export function ScopeView() {
   const windState = useGameStore((s) => s.session.wind);
   const setWind = useGameStore((s) => s.setWind);
   const currentTarget = useGameStore((s) => s.session.currentTarget);
+
+  // Menu → range select (task 1.8a, D6). Only wired in the real player flow
+  // (App passes onExit); the dev tab-strip renders <ScopeView /> with no prop,
+  // so the button below is guarded by `onExit &&`. Confirm before discarding a
+  // committed run; return instantly otherwise.
+  const onMenu = () => {
+    if (currentTarget != null) {
+      if (!window.confirm('Return to range select? Your current run resets.')) return;
+    }
+    onExit?.(); // App wires this to resetSession() + setView('rangeSelect')
+  };
 
   // Wind realism (task 1.7a, D1): Steady keeps 1.6's exact deterministic mean;
   // Realistic layers the curl-noise field on top (D2/D3b).
@@ -956,6 +967,32 @@ export function ScopeView() {
           background: 'radial-gradient(circle at center, transparent 0 40vmin, rgba(0,0,0,0.97) 41vmin)',
         }}
       />
+      {/* Menu → range select (task 1.8a, D6). Top-RIGHT, not top-left: the HUD
+          panel below occupies top-left. Unobtrusive utility control, same
+          monospace HUD language. Only rendered in the real player flow. */}
+      {onExit && (
+        <button
+          onClick={onMenu}
+          style={{
+            position: 'absolute',
+            top: 'calc(8px + env(safe-area-inset-top))',
+            right: 'calc(8px + env(safe-area-inset-right))',
+            zIndex: 20,
+            fontFamily: 'monospace',
+            fontSize: 13,
+            color: '#e8eef4',
+            background: 'rgba(26,34,44,0.75)',
+            border: '1px solid rgba(232,238,244,0.4)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            cursor: 'pointer',
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+          }}
+        >
+          Menu
+        </button>
+      )}
       {/* HUD */}
       <div
         style={{

@@ -257,6 +257,16 @@ describe('wind markers (task 1.7b)', () => {
   });
 });
 
+describe('range select (task 1.8)', () => {
+  it('setRangeId sets the active range; resetSession restores range-a', () => {
+    const st = useGameStore.getState();
+    st.setRangeId('range-b');
+    expect(useGameStore.getState().session.rangeId).toBe('range-b');
+    st.resetSession();
+    expect(useGameStore.getState().session.rangeId).toBe('range-a');
+  });
+});
+
 describe('settings persistence round-trip', () => {
   it('maps settings → SaveData → settings (unitsPrimary persisted)', () => {
     const settings = {

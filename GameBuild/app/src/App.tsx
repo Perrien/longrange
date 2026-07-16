@@ -1,43 +1,55 @@
-// Root — tab switcher between the debug screen (0.4d/0.8) and the
-// touch-aiming spike (0.9).
+// Root — the two-state player machine (task 1.8a, D1/D5).
+//
+//   rangeSelect → (pick Range A) → scope → (Menu) → rangeSelect
+//
+// Cold launch always starts at range select (D5); nothing resumes mid-session.
+// The dev tools shell (tab strip + hidden test harnesses) renders ONLY behind a
+// static `import.meta.env.DEV` guard — Vite replaces that with `false` in a prod
+// build, so Rollup drops DevTools and its transitive dev-only imports
+// (RangeView / DropTable / PersistencePanel) from the shipped bundle. DevTools is
+// the only place those are imported; the 1.8a dist/ grep proves the drop.
 import { useState } from 'react';
-import { DropTable } from './debug/DropTable';
-import { PersistencePanel } from './debug/PersistencePanel';
-import { AimSpike } from './spike/AimSpike';
-import { RangeView } from './range/RangeView';
+import { RangeSelect } from './shell/RangeSelect';
 import { ScopeView } from './scope/ScopeView';
+import { DevTools } from './debug/DevTools';
+import { useGameStore } from './state/store';
 
-type View = 'range' | 'scope' | 'aim' | 'debug';
+type PlayerView = 'rangeSelect' | 'scope';
 
 export function App() {
-  const [view, setView] = useState<View>('scope');
-  const fullscreen = view === 'range' || view === 'scope' || view === 'aim';
+  const [view, setView] = useState<PlayerView>('rangeSelect'); // D5: always cold-starts here
+  const setRangeId = useGameStore((s) => s.setRangeId);
+  const resetSession = useGameStore((s) => s.resetSession);
 
-  return (
-    <div>
-      <nav style={{ fontFamily: 'monospace', padding: '0.5rem', display: 'flex', gap: '0.5rem', position: fullscreen ? 'absolute' : 'static', zIndex: 10, right: 0 }}>
-        <button onClick={() => setView('range')} disabled={view === 'range'}>
-          Range A
-        </button>
-        <button onClick={() => setView('scope')} disabled={view === 'scope'}>
-          Scope
-        </button>
-        <button onClick={() => setView('aim')} disabled={view === 'aim'}>
-          Aim spike
-        </button>
-        <button onClick={() => setView('debug')} disabled={view === 'debug'}>
-          Debug tables
-        </button>
-      </nav>
-      {view === 'range' && <RangeView />}
-      {view === 'scope' && <ScopeView />}
-      {view === 'aim' && <AimSpike />}
-      {view === 'debug' && (
-        <>
-          <DropTable />
-          <PersistencePanel />
-        </>
+  // The real player flow — range select → Scope, with a working Menu button.
+  const game = (
+    <>
+      {view === 'rangeSelect' && (
+        <RangeSelect
+          onSelect={(id) => {
+            setRangeId(id);
+            setView('scope');
+          }}
+        />
       )}
-    </div>
+      {view === 'scope' && (
+        <ScopeView
+          onExit={() => {
+            resetSession(); // D8/D5: fresh start on return home
+            setView('rangeSelect');
+          }}
+        />
+      )}
+    </>
   );
+
+  // Dev build only: wrap the player flow in the developer tab-strip + hidden test
+  // harnesses (default tab is the player flow itself, so dev cold-launches into
+  // the real landing screen). Statically `false` in prod, so DevTools and its
+  // dev-only imports tree-shake out of the shipped build.
+  if (import.meta.env.DEV) {
+    return <DevTools game={game} />;
+  }
+
+  return game;
 }
