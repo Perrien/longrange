@@ -458,6 +458,14 @@ export function ScopeView({ onExit }: { onExit?: () => void } = {}) {
       breath: 1,
     };
 
+    // Reticle redraw cache key (zoom | size | unit). Declared here — above
+    // `resize` — because `resize` must invalidate it: assigning `reticleCanvas
+    // .width` clears the 2D canvas and resets its context, so any cached "already
+    // drawn" state is now stale. Without this reset, the initial ResizeObserver
+    // callback (which fires once, asynchronously, AFTER the first frame has drawn
+    // and cached its key) wiped the reticle and the unchanged key blocked the
+    // redraw — the crosshair only reappeared once a unit toggle changed the key.
+    let lastReticleKey = '';
     function resize() {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
@@ -468,6 +476,7 @@ export function ScopeView({ onExit }: { onExit?: () => void } = {}) {
       reticleCanvas.width = Math.round(w * dpr);
       reticleCanvas.height = Math.round(h * dpr);
       rctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      lastReticleKey = ''; // force drawReticle to repaint the just-cleared canvas
     }
     resize();
     const ro = new ResizeObserver(resize);
@@ -740,7 +749,7 @@ export function ScopeView({ onExit }: { onExit?: () => void } = {}) {
     };
 
     // ---- reticle overlay (redraws only when zoom / size / unit change) ------
-    let lastReticleKey = '';
+    // (declared above `resize`, which invalidates this key — see below.)
     function drawReticle() {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
