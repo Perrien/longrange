@@ -23,7 +23,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RangeScene, PLATE_THICKNESS_M, setChainInstance } from '../range/RangeScene';
 import { RANGE_A_GROUND } from '../range/range-a-config';
-import { WIND_MARKERS, type MarkerStyle } from '../range/wind-markers-config';
+import { WIND_MARKERS } from '../range/wind-markers-config';
 import { initWindMarkers, updateWindMarkers, disposeWindMarkers } from './WindMarkers';
 import { initMirage, renderSceneWithMirage, disposeMirage, MIRAGE_REFERENCE_DISTANCE_M } from './Mirage';
 import { useGameStore, ZOOM_MIN, ZOOM_MAX, MIL_CLICK_RAD, MOA_CLICK_RAD, DEFAULT_WIND_PRESET } from '../state/store';
@@ -123,19 +123,17 @@ const BREATH_RECOVER_S = 5;
 const BREATH_COMFORT = 0.3; // below this remaining fraction the hold degrades
 const BREATH_DEBT_FACTOR = 1.5; // wobble multiplier out of air (oxygen debt)
 
-export function ScopeView({ onExit }: { onExit?: () => void } = {}) {
+export function ScopeView({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const reticleRef = useRef<HTMLCanvasElement>(null);
   const breathBarRef = useRef<HTMLDivElement>(null);
 
-  // Reactive slices for the HUD / React controls.
+  // Reactive slices for the HUD / React controls. (The player settings —
+  // units, sensitivity, trace, wind realism, marker style, mirage — moved to the
+  // Settings screen in task 2.1d; only the readout unit `unitsPrimary` and the
+  // preset-picker gate `windRealism` are still read here.)
   const magnification = useGameStore((s) => s.session.scope.magnification);
-  const sensitivity = useGameStore((s) => s.settings.sensitivity);
   const unitsPrimary = useGameStore((s) => s.settings.unitsPrimary);
-  const setUnitsPrimary = useGameStore((s) => s.setUnitsPrimary);
-  const setSensitivity = useGameStore((s) => s.setSensitivity);
-  const traceEnabled = useGameStore((s) => s.settings.traceEnabled);
-  const setTraceEnabled = useGameStore((s) => s.setTraceEnabled);
 
   // Turret dial (task 1.6c, D4-A solve-only): elevation/windage read for the
   // HUD readout; the ± buttons below dispatch the store actions directly.
@@ -163,29 +161,13 @@ export function ScopeView({ onExit }: { onExit?: () => void } = {}) {
   const setWind = useGameStore((s) => s.setWind);
   const currentTarget = useGameStore((s) => s.session.currentTarget);
 
-  // Menu → range select (task 1.8a, D6). Only wired in the real player flow
-  // (App passes onExit); the dev tab-strip renders <ScopeView /> with no prop,
-  // so the button below is guarded by `onExit &&`. Confirm before discarding a
-  // committed run; return instantly otherwise.
-  const onMenu = () => {
-    if (currentTarget != null) {
-      if (!window.confirm('Return to range select? Your current run resets.')) return;
-    }
-    onExit?.(); // App wires this to resetSession() + setView('rangeSelect')
-  };
-
-  // Wind realism (task 1.7a, D1): Steady keeps 1.6's exact deterministic mean;
-  // Realistic layers the curl-noise field on top (D2/D3b).
+  // Wind realism (task 1.7a, D1): read only to gate the in-HUD preset picker
+  // below — the Steady/Realistic toggle itself now lives in the Settings screen
+  // (task 2.1d). `windPreset` is the per-engagement environment choice and
+  // stays in the HUD with the wind speed/direction controls.
   const windRealism = useGameStore((s) => s.settings.windRealism);
-  const setWindRealism = useGameStore((s) => s.setWindRealism);
   const windPreset = useGameStore((s) => s.session.windPreset);
   const setWindPreset = useGameStore((s) => s.setWindPreset);
-  const windMarkerStyle = useGameStore((s) => s.settings.windMarkerStyle);
-  const setWindMarkerStyle = useGameStore((s) => s.setWindMarkerStyle);
-  // Mirage on/off (task 1.7c/1.7d): defaults OFF — owner feedback, 2026-07-15,
-  // parked pending a clearer directional read. Store-only, like traceEnabled.
-  const mirageEnabled = useGameStore((s) => s.settings.mirageEnabled);
-  const setMirageEnabled = useGameStore((s) => s.setMirageEnabled);
   // Raw BTK preset names (task 1.7b, D3): populated once the engine loads (the
   // imperative effect below calls `setAvailablePresets` — a stable setState
   // reference, same pattern as `setLastCall`).
@@ -976,12 +958,14 @@ export function ScopeView({ onExit }: { onExit?: () => void } = {}) {
           background: 'radial-gradient(circle at center, transparent 0 40vmin, rgba(0,0,0,0.97) 41vmin)',
         }}
       />
-      {/* Menu → range select (task 1.8a, D6). Top-RIGHT, not top-left: the HUD
-          panel below occupies top-left. Unobtrusive utility control, same
-          monospace HUD language. Only rendered in the real player flow. */}
-      {onExit && (
+      {/* Menu → Settings screen (task 1.8a Menu button; opens the 2.1d Settings
+          overlay, which is also where "Return to range select" now lives).
+          Top-RIGHT, not top-left: the HUD panel below occupies top-left.
+          Unobtrusive utility control, same monospace HUD language. Only rendered
+          in the real player flow (App passes onOpenMenu). */}
+      {onOpenMenu && (
         <button
-          onClick={onMenu}
+          onClick={onOpenMenu}
           style={{
             position: 'absolute',
             top: 'calc(8px + env(safe-area-inset-top))',
@@ -1021,25 +1005,11 @@ export function ScopeView({ onExit }: { onExit?: () => void } = {}) {
           overflowY: 'auto',
         }}
       >
-        {/* Met/Imp unit toggle (owner-requested improvement, 2026-07-15): the
-            single source of truth for every readout in this panel + the DOPE
-            panel + the in-scope reticle graduations (unchanged — it already
-            read `unitsPrimary`). MIL/Metric and MOA/Imperial share the same
-            underlying store field; nothing new was added to the store. */}
-        <div style={{ display: 'flex', gap: 2, marginBottom: 6 }}>
-          <button
-            onClick={() => setUnitsPrimary('MIL')}
-            style={{ fontWeight: unitsPrimary === 'MIL' ? 'bold' : 'normal', opacity: unitsPrimary === 'MIL' ? 1 : 0.6 }}
-          >
-            Met
-          </button>
-          <button
-            onClick={() => setUnitsPrimary('MOA')}
-            style={{ fontWeight: unitsPrimary === 'MOA' ? 'bold' : 'normal', opacity: unitsPrimary === 'MOA' ? 1 : 0.6 }}
-          >
-            Imp
-          </button>
-        </div>
+        {/* Units (MIL/MOA), sensitivity, trace, wind realism, marker style, and
+            mirage moved to the Settings screen (task 2.1d). This panel keeps the
+            in-scene shooting controls: zoom, wobble feel, turret, wind
+            environment, commit, and the engagement HUD. `unitsPrimary` still
+            drives every readout's display system (set in Settings). */}
         <div>
           {magnification.toFixed(1)}× · {systemLabel(unitsPrimary)} · Range A
         </div>
@@ -1055,10 +1025,6 @@ export function ScopeView({ onExit }: { onExit?: () => void } = {}) {
           />
         </label>
         <label style={{ display: 'block' }}>
-          sens ×{sensitivity.toFixed(2)}{' '}
-          <input type="range" min={0.3} max={3} step={0.05} value={sensitivity} onChange={(e) => setSensitivity(Number(e.target.value))} />
-        </label>
-        <label style={{ display: 'block' }}>
           wobble{' '}
           <input
             type="range"
@@ -1069,9 +1035,6 @@ export function ScopeView({ onExit }: { onExit?: () => void } = {}) {
             onChange={(e) => (wobbleAmpRef.current = Number(e.target.value))}
           />
         </label>
-        <button onClick={() => setTraceEnabled(!traceEnabled)} style={{ marginTop: 4 }}>
-          trace: {traceEnabled ? 'on' : 'off'}
-        </button>
 
         {/* Turret dial (task 1.6c, D4-A solve-only): dialing changes the firing
             solution; the sight picture does not move (Option B is a future task). */}
@@ -1159,48 +1122,23 @@ export function ScopeView({ onExit }: { onExit?: () => void } = {}) {
             onChange={(e) => setWind({ directionDeg: clockToDeg(Number(e.target.value)) })}
             style={{ width: 140 }}
           />
-          {/* Wind realism (task 1.7a D1 toggle; 1.7b D3 adds the raw-preset
-              picker in the same spot). Steady keeps 1.6's exact deterministic
-              mean; Realistic layers the curl-noise field on top and exposes
-              which BTK preset drives it. */}
-          <div style={{ marginTop: 6 }}>
-            <button onClick={() => setWindRealism(windRealism === 'steady' ? 'realistic' : 'steady')}>
-              wind: {windRealism === 'steady' ? 'Steady' : 'Realistic'}
-            </button>
-            {windRealism === 'realistic' && (
-              <select value={windPreset} onChange={(e) => setWindPreset(e.target.value)} style={{ marginLeft: 6 }}>
+          {/* Wind preset picker (task 1.7b, D3): the per-engagement wind
+              CHARACTER, an in-scene environment control kept here with the wind
+              speed/direction. The Steady/Realistic toggle + marker style + mirage
+              moved to the Settings screen (task 2.1d); the picker shows only when
+              Realistic is enabled there. */}
+          {windRealism === 'realistic' && (
+            <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span style={{ opacity: 0.8 }}>preset:</span>
+              <select value={windPreset} onChange={(e) => setWindPreset(e.target.value)}>
                 {(availablePresets.length > 0 ? availablePresets : [windPreset]).map((preset) => (
                   <option key={preset} value={preset}>
                     {preset}
                   </option>
                 ))}
               </select>
-            )}
-          </div>
-
-          {/* Wind marker style (task 1.7b step 1): flags/socks/both down the
-              lane — cosmetic only, doesn't touch the ballistics. */}
-          <div style={{ marginTop: 4, display: 'flex', gap: 4, alignItems: 'center' }}>
-            <span style={{ opacity: 0.8 }}>markers:</span>
-            {(['flag', 'sock', 'both'] as MarkerStyle[]).map((style) => (
-              <button
-                key={style}
-                onClick={() => setWindMarkerStyle(style)}
-                style={{
-                  fontWeight: windMarkerStyle === style ? 'bold' : 'normal',
-                  opacity: windMarkerStyle === style ? 1 : 0.6,
-                }}
-              >
-                {style}
-              </button>
-            ))}
-          </div>
-
-          {/* Mirage toggle (task 1.7c/1.7d): defaults OFF — parked pending a
-              clearer directional read (owner feedback, 2026-07-15). */}
-          <div style={{ marginTop: 4 }}>
-            <button onClick={() => setMirageEnabled(!mirageEnabled)}>mirage: {mirageEnabled ? 'on' : 'off'}</button>
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Commit / target select (task 1.6c, D2): engage the plate under the

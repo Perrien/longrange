@@ -17,25 +17,41 @@ v2. Build-plan §5 Increment 2. `Protocol:`
 **Tasks:**
 
 ## 2.1 Hidden-truth model + save schema v2
+> **Detailed plan:** [`increment-2.1-plan.md`](./increment-2.1-plan.md) (decisions D1–D6
+> locked 2026-07-16). It splits this task into **2.1a** (schema v2 + migration + settings
+> carry-over), **2.1b** (hidden-truth model), **2.1c** (wire + no-leak guard), and
+> **2.1d** (Settings screen — owner request). Note D1: truth is stored as **per-field
+> normalized draws mapped on demand**, NOT a re-derived RNG seed.
+
 `GameBuild/app/src/game/hidden-truth.ts`: per rifle **instance** — MV offset, zero offset
 (h/v), inherent precision; per ammo **lot** — mean-MV shift, MV SD, true BC, BC
-SD; all **derived deterministically from a stored RNG seed + catalog ranges**
+SD; all **mapped deterministically from stored per-field draws + catalog ranges**
 (owner-approved; keeps saves small, resists casual spoiling). True values flow
 only into engine-bridge calls, never to UI/logs (protocol §4.8). Schema v2:
-`rifles[]` (instances), `ammoLots[]`, seeds; migration v1→v2 + fixture save in the
-corpus.
-**Carry-over from 1.1:** also add **`settings.sensitivity`** (aim control gain) to
-the v2 `SaveSettings` in this bump. It exists in the Zustand store today
-(default 1.0) but is store-only under schema v1 — deliberately deferred here rather
-than spend a schema bump on one field. Update `settingsToSave`/`saveToSettings` in
-`GameBuild/app/src/state/persist-settings.ts` to persist it, and the v1→v2 migration
-must default `sensitivity` to 1.0 for old saves.
-**Done when:** vitest — same seed → same truth; distinct instances differ within
-catalog ranges; migration green (incl. `sensitivity` defaulted on v1 saves);
-`settings.sensitivity` round-trips through persistence; grep-style check that no
-UI/HUD module imports hidden-truth internals.
+`rifles[]` (instances), `ammoLots[]` (each carrying its draws); migration v1→v2 +
+fixture save in the corpus.
+**Carry-over (D5):** persist the store-only durable prefs in this bump —
+**`settings.sensitivity`** (aim gain, default 1.0), **`traceEnabled`** (default on), and
+**`windMarkerStyle`** (default 'flag'). `mirageEnabled` stays store-only until it ships.
+Update `settingsToSave`/`saveToSettings` in
+`GameBuild/app/src/state/persist-settings.ts`, and the v1→v2 migration must default each
+from `defaultSettings()` for old saves.
+**Done when:** vitest — same draws → same truth; distinct instances differ within
+catalog ranges; migration green (incl. `sensitivity`/`traceEnabled`/`windMarkerStyle`
+defaulted on v1 saves); those settings round-trip through persistence; grep-style check
+that no UI/HUD module imports hidden-truth internals.
 
 ## 2.2 Gear catalog + inventory
+> **Catalog starting data (2026-07-16):** use [`../catalog-starting-values.md`](../catalog-starting-values.md)
+> (readable) and [`../catalog-seed.json`](../catalog-seed.json) (engine-ready, imperial + SI,
+> mapped to the hidden-truth fields) for the teaching-ladder cartridges (.22 LR, .223/5.56,
+> 6.5 CM, .308, .300 WM, .338 LM, .50 BMG). Distilled from the two secondary reports
+> `Documentation/{Ammo,Rifle}Research.txt` (**work from the `.txt`, not the image-based
+> exports** — see `Documentation/sources.md` §6–7). Values are nominal + SD per D3; two
+> fields are **design-set, not in the research** (rifle zero offset h/v; per-shot BC scatter
+> `bcSdFraction`). Reconcile the provisional numbers currently in `game/loads.data.json`
+> (e.g. 6.5 CM match MV SD 2.7 m/s → seed's 12 fps ≈ 3.66 m/s) when building this task.
+
 Catalog data (`GameBuild/app/src/game/catalog.ts`): rifles .22 LR, .223, 6.5 CM, .308 with
 per-model variance *ranges*; 2–3 factory loads each per catalog §C2 (match
 low-SD ↔ bulk high-SD, box MV/BC). Inventory UI: acquire (skill-gated, **no

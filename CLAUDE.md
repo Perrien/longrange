@@ -36,7 +36,7 @@ learning resource; explanations build from first principles. The Wiki is now a
 **demand-driven support layer** (see Working agreement), no longer a precondition
 to building.
 
-**Progress (updated 2026-07-14):**
+**Progress (updated 2026-07-16):**
 - **Wiki:** groups **A (Foundations)** and **B (the projectile)** drafted (articles
   1–10), plus **range-estimation** and **mil-dots-subtensions** pulled forward from
   §4 to support the ranging mechanic (12 articles total). Every claim source-cited
@@ -50,17 +50,20 @@ to building.
   vision, the build-plan prompt) are archived in `Design/archive/`.
 - **Build execution** (live state in `Design/execution/PROGRESS.md` — authoritative):
   **Increment 0 COMPLETE** (offline PWA on iPad, durable saves, oracle-gated engine in
-  CI, native tests, touch-aim feel; tagged `inc0-complete`). **Increment 1 in progress**
-  — 1.1 game-state, 1.2 Range A scene, 1.3 scope pipeline (FFP MIL/MOA reticle), 1.4
-  firing-solution + hit-sim all DONE and owner-signed on device; **1.5 (reactive steel +
-  audio)** underway per `Design/execution/increment-1.5-plan.md`: **1.5a** (steel swing/
-  rotate via the C++ SteelTarget) and **1.5d** (distance-delayed audio: report always,
-  hit-only steel ping, energy-scaled, no miss sound) built + **owner-confirmed on device**;
-  **1.5c** (impact marks + dust + reactive chains) **COMPLETE + owner-confirmed on
-  device** — dust puffs colour-keyed by hit/miss (ground-miss projection) + steel
-  plates hanging from reactive chains that track the swing; **1.5b** (in-scope bullet
-  trace) is next. Test scope zero currently 300 yd (owner, for hold over/under
-  testing).
+  CI, native tests, touch-aim feel; tagged `inc0-complete`). **Increment 1 COMPLETE**
+  (closed 2026-07-16, tagged `inc1-complete`) — the first shippable slice: KD steel range,
+  dial-or-hold shot loop, FFP MIL/MOA scope, firing-solution + hit-sim, reactive steel +
+  distance-delayed audio + impact FX + in-scope bullet trace, curl-noise wind field with
+  flags/socks (mirage shipped OFF by default), and PWA ship polish (branded range-select
+  landing, offline install) — all owner-signed on device. Per-task plan docs for
+  Increments 0–1 were removed once closed (history in `PROGRESS.md` + git tags).
+  **Increment 2 in progress — planning.** Task **2.1** (hidden-truth model + save schema
+  v2) is planned in detail in `Design/execution/increment-2.1-plan.md` (decisions D1–D6
+  locked 2026-07-16), split into 2.1a (schema v2 + migration + settings carry-over), 2.1b
+  (hidden-truth model), 2.1c (wire + no-leak guard), and 2.1d (Settings screen). Key
+  decision: hidden truth is stored as **per-field normalized draws mapped to truth on
+  demand** (no RNG seed), spoiling-resistant and dependency-free. No build code written
+  yet. Test scope zero currently 300 yd (owner, for hold over/under testing).
 
 ## Design decisions locked in
 
@@ -123,7 +126,7 @@ LongRange/
 │   ├── execution/                          ← the coding agent's working layer (START HERE for build work)
 │   │   ├── execution-protocol.md           ← agent working rules, guardrails, stop rules, offline-env rules
 │   │   ├── PROGRESS.md                     ← task state, environment capabilities, owner install queue
-│   │   ├── increment-0/1/2.md              ← detailed, verified task docs
+│   │   ├── increment-2.md                  ← detailed, verified task doc for the active increment (0 & 1 complete; their plans removed, history in PROGRESS.md + git tags)
 │   │   └── increments-3-6.md               ← coarse breakdowns + just-in-time planning procedure
 │   └── archive/                            ← superseded docs (phase-2-plan, game-design, build-plan-prompt)
 ├── Documentation/     ← GROUND TRUTH: source articles, PDFs, datasets

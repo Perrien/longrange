@@ -61,7 +61,8 @@ export function DevTools({ game }: { game: ReactNode }) {
       {/* Default: the real player flow (range select → Scope, with Menu button). */}
       {view === 'game' && game}
       {view === 'range' && <RangeView />}
-      {/* Standalone Scope with no onExit — the pre-1.8 dev preview. */}
+      {/* Standalone Scope with no onOpenMenu — the pre-1.8 dev preview (no Menu
+          button, so no Settings overlay from this tab; use the Game tab for that). */}
       {view === 'scope' && <ScopeView />}
       {view === 'debug' && (
         <>

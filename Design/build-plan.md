@@ -16,11 +16,11 @@
 > **Execution layer (added 2026-07-13).** This plan is executed via
 > [`execution/`](./execution/): the agent's working rules are
 > [`execution/execution-protocol.md`](./execution/execution-protocol.md); state lives
-> in [`execution/PROGRESS.md`](./execution/PROGRESS.md); Increments 0–2 are broken
-> into session-sized, individually-verified tasks
-> ([`increment-0`](./execution/increment-0.md) /
-> [`increment-1`](./execution/increment-1.md) /
-> [`increment-2`](./execution/increment-2.md)); Increments 3–6 are planned
+> in [`execution/PROGRESS.md`](./execution/PROGRESS.md); each increment is broken
+> into session-sized, individually-verified tasks. Increments 0 and 1 are **complete**
+> (tagged `inc0-complete` / `inc1-complete`; their per-task plan docs were removed once
+> closed — history lives in `PROGRESS.md` and git tags). The active plan is
+> [`increment-2`](./execution/increment-2.md); Increments 3–6 are planned
 > just-in-time per [`execution/increments-3-6.md`](./execution/increments-3-6.md).
 > The executing agent starts with the protocol, not with this document's §11.
 
@@ -673,9 +673,9 @@ LongRange/
 
 ## 11. Immediate next steps (Increment-0 spikes, in order)
 
-> Superseded in granularity by [`execution/increment-0.md`](./execution/increment-0.md),
-> which breaks these same spikes into verified tasks — the executing agent works from
-> that file. This list remains as the summary.
+> These spikes were executed and closed as Increment 0 (tagged `inc0-complete`); the
+> per-task plan doc was removed once complete — task history lives in
+> `execution/PROGRESS.md`. This list remains as the original summary.
 
 Each is small, concrete, and has a binary success check.
 

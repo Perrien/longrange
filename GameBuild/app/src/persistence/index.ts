@@ -1,6 +1,14 @@
 // Persistence entry point (task 0.8). Components import from here only.
 export { CURRENT_SCHEMA_VERSION, DEFAULT_SAVE, SaveValidationError } from './schema';
-export type { SaveData, SaveSettings } from './schema';
+export type {
+  SaveData,
+  SaveSettings,
+  RifleInstance,
+  AmmoLot,
+  PlayerZero,
+  RifleDraws,
+  LotDraws,
+} from './schema';
 export { serializeSave, parseSave } from './save-store';
 export type { SaveStore } from './save-store';
 export { MemorySaveStore } from './memory-store';

@@ -1,0 +1,959 @@
+{
+ "_readme": "Catalog starting values for Increment-2 (gear catalog 2.2 + hidden-truth model 2.1). Nominal + SD per field (decision D3: bell-curve draw, clamp ±3 SD). Imperial as sourced; SI (…Mps/…Kg/…M) added for the engine. SECONDARY source — indicative starting values, spot-check against Litz before shipping.",
+ "_provenance": "Extracted from AmmoResearch.txt + RifleResearch.txt (plain-text copies of two AI deep-research reports, 2026-07-16). The .md/pdf/html/docx exports of these reports cropped the equation images and lost SD/range values; the text copies did not.",
+ "_modelMapping": {
+  "ammoLot.meanMvShift": "hidden: N(0, loads.*.lotMeanMvShiftSdFps). This lot's true mean MV vs box.",
+  "ammoLot.mvSd": "hidden: this lot's true per-shot MV SD ~ N(perShotMvSdFps.nom, .sd).",
+  "ammoLot.trueBc": "hidden: N(loads.*.trueBc, trueBc×lotBcVarPct/100). Box/believed BC = boxBcG1adv/boxBcG7adv (optimistic).",
+  "ammoLot.boxMv": "believed nominal = boxMvFps (advertised @ boxMvBarrelIn) or measMvFps (realistic).",
+  "rifleInstance.mvOffset": "hidden: N(0, rifle.barrelToBarrelMvSpreadFps.nom). Each rifle copy's fixed MV bias.",
+  "rifleInstance.inherentPrecision": "hidden: rifle.inherentPrecisionMOA[tier] for the model's tier (nom + sd).",
+  "rifleModel": "catalog attrs: barrelLength, twist(+gating), weight, recoil, barrelLife."
+ },
+ "_designSet_NOT_in_research": {
+  "_note": "Not in the research — game-design values (artistic license, owner-approved 2026-07-16). Tunable.",
+  "rifleInstance.zeroOffsetHV": {
+   "model": "each axis (h,v) ~ N(0, sdMOA), clamp ±3·sd. A fresh instance starts visibly off-zero; player dials it out in the 2.3 zeroing flow.",
+   "sdMOA": 1.0,
+   "sdMRAD": 0.29,
+   "clampMOA": 3.0,
+   "rationale": "~1 MOA typical mount/bore-sight error, up to ~3 MOA — small at 100 yd, clearly off downrange, zeroable in a group or two."
+  },
+  "ammoLot.perShotBcSdFraction": {
+   "model": "per-SHOT BC scatter (engine bcSdFraction), distinct from the lot-to-lot lotBcVarPct in the loads. By load class.",
+   "match": 0.005,
+   "bulk": 0.015,
+   "rationale": "keeps the current game provisional (0.5%/1.5%); roughly ⅓ of the sourced lot-to-lot BC variance — per-shot should be tighter than lot-to-lot."
+  }
+ },
+ "units": {
+  "mv": "fps (+Mps=m/s)",
+  "weight": "gr (+Kg)",
+  "barrel": "in (+M)",
+  "precision": "MOA",
+  "tempSens": "fps per 10°F",
+  "spreads": "nominal + SD"
+ },
+ "cartridges": {
+  "22lr": {
+   "name": ".22 LR",
+   "class": "Rimfire precision (teacher)",
+   "twistGating": "1:16\" → 36–40 gr LRN (std). 1:12\" → gate for 60 gr subsonic conicals.",
+   "rifle": {
+    "barrelLengthIn": {
+     "nom": 20.0,
+     "sd": 2.0
+    },
+    "barrelLengthM": {
+     "nom": 0.508
+    },
+    "mvPerInchFps": {
+     "nom": -5.0,
+     "sd": 1.5
+    },
+    "twist": "1:16.0",
+    "weightLb": {
+     "nom": 13.5,
+     "sd": 1.5
+    },
+    "recoilFtLb": {
+     "nom": 0.05,
+     "sd": 0.01
+    },
+    "inherentPrecisionMOA": {
+     "factoryHunting": {
+      "nom": 1.25,
+      "sd": 0.25
+     },
+     "factoryMatch": {
+      "nom": 0.65,
+      "sd": 0.15
+     },
+     "customMatch": {
+      "nom": 0.25,
+      "sd": 0.05
+     }
+    },
+    "barrelToBarrelMvSpreadFps": {
+     "nom": 30.0,
+     "sd": 10.0
+    },
+    "barrelToBarrelMvSpreadMps": 9.144,
+    "barrelLifeRounds": {
+     "nom": 15000.0,
+     "sd": 3000.0
+    }
+   },
+   "loads": {
+    "match": {
+     "bulletWeightGr": {
+      "nom": 40.0,
+      "sd": 0.1
+     },
+     "bulletMassKg": 0.0026,
+     "boxMvFps": 1073.0,
+     "boxMvBarrelIn": 26.0,
+     "measMvFps": {
+      "nom": 1073.0,
+      "sd": 10.0
+     },
+     "measMvBarrelIn": 20.0,
+     "measMvMps": {
+      "nom": 327.0504,
+      "sd": 3.048
+     },
+     "dragModel": "G1",
+     "trueBc": 0.134,
+     "trueBcMeasSd": 0.003,
+     "boxBcG1adv": 0.172,
+     "boxBcG7adv": null,
+     "perShotMvSdFps": {
+      "nom": 6.0,
+      "sd": 1.5
+     },
+     "perShotMvSdMps": 1.8288,
+     "lotMeanMvShiftSdFps": 15.0,
+     "lotMeanMvShiftSdMps": 4.572,
+     "lotBcVarPct": 1.5,
+     "tempSensFpsPer10F": {
+      "nom": 1.2,
+      "sd": 0.4
+     },
+     "product": "Lapua Center-X (40 gr LRN)"
+    },
+    "bulk": {
+     "bulletWeightGr": {
+      "nom": 40.0,
+      "sd": 0.4
+     },
+     "bulletMassKg": 0.0026,
+     "boxMvFps": 1070.0,
+     "boxMvBarrelIn": 18.5,
+     "measMvFps": {
+      "nom": 1055.0,
+      "sd": 25.0
+     },
+     "measMvBarrelIn": 18.5,
+     "measMvMps": {
+      "nom": 321.564,
+      "sd": 7.62
+     },
+     "dragModel": "G1",
+     "trueBc": 0.12,
+     "trueBcMeasSd": 0.005,
+     "boxBcG1adv": 0.12,
+     "boxBcG7adv": null,
+     "perShotMvSdFps": {
+      "nom": 18.0,
+      "sd": 4.0
+     },
+     "perShotMvSdMps": 5.4864,
+     "lotMeanMvShiftSdFps": 30.0,
+     "lotMeanMvShiftSdMps": 9.144,
+     "lotBcVarPct": 3.5,
+     "tempSensFpsPer10F": {
+      "nom": 3.2,
+      "sd": 0.8
+     },
+     "product": "CCI Standard Velocity (40 gr LRN)"
+    }
+   }
+  },
+  "223": {
+   "name": ".223 Rem / 5.56 NATO",
+   "class": "Light match",
+   "twistGating": "1:12\" → 40–55 gr. 1:9\" → 55–69 gr. 1:7–1:8\" → gate for 69–80 gr match.",
+   "rifle": {
+    "barrelLengthIn": {
+     "nom": 24.0,
+     "sd": 2.0
+    },
+    "barrelLengthM": {
+     "nom": 0.6096
+    },
+    "mvPerInchFps": {
+     "nom": 25.3,
+     "sd": 3.5
+    },
+    "twist": "1:7.5",
+    "weightLb": {
+     "nom": 15.0,
+     "sd": 1.0
+    },
+    "recoilFtLb": {
+     "nom": 2.0,
+     "sd": 0.2
+    },
+    "inherentPrecisionMOA": {
+     "factoryHunting": {
+      "nom": 1.25,
+      "sd": 0.25
+     },
+     "factoryMatch": {
+      "nom": 0.65,
+      "sd": 0.1
+     },
+     "customMatch": {
+      "nom": 0.3,
+      "sd": 0.05
+     }
+    },
+    "barrelToBarrelMvSpreadFps": {
+     "nom": 35.0,
+     "sd": 15.0
+    },
+    "barrelToBarrelMvSpreadMps": 10.668,
+    "barrelLifeRounds": {
+     "nom": 5000.0,
+     "sd": 1000.0
+    }
+   },
+   "loads": {
+    "match": {
+     "bulletWeightGr": {
+      "nom": 77.0,
+      "sd": 0.15
+     },
+     "bulletMassKg": 0.005,
+     "boxMvFps": 2750.0,
+     "boxMvBarrelIn": 20.0,
+     "measMvFps": {
+      "nom": 2683.0,
+      "sd": 12.0
+     },
+     "measMvBarrelIn": 16.0,
+     "measMvMps": {
+      "nom": 817.7784,
+      "sd": 3.6576
+     },
+     "dragModel": "G7",
+     "trueBc": 0.207,
+     "trueBcMeasSd": null,
+     "boxBcG1adv": 0.42,
+     "boxBcG7adv": 0.207,
+     "perShotMvSdFps": {
+      "nom": 10.0,
+      "sd": 2.0
+     },
+     "perShotMvSdMps": 3.048,
+     "lotMeanMvShiftSdFps": 15.0,
+     "lotMeanMvShiftSdMps": 4.572,
+     "lotBcVarPct": 3.5,
+     "tempSensFpsPer10F": {
+      "nom": 1.5,
+      "sd": 0.4
+     },
+     "product": "Black Hills 5.56 77 gr TMK"
+    },
+    "bulk": {
+     "bulletWeightGr": {
+      "nom": 55.0,
+      "sd": 0.4
+     },
+     "bulletMassKg": 0.0036,
+     "boxMvFps": 3250.0,
+     "boxMvBarrelIn": 20.0,
+     "measMvFps": {
+      "nom": 3165.0,
+      "sd": 25.0
+     },
+     "measMvBarrelIn": 16.0,
+     "measMvMps": {
+      "nom": 964.692,
+      "sd": 7.62
+     },
+     "dragModel": "G7",
+     "trueBc": 0.12,
+     "trueBcMeasSd": 0.005,
+     "boxBcG1adv": 0.243,
+     "boxBcG7adv": null,
+     "perShotMvSdFps": {
+      "nom": 18.0,
+      "sd": 4.0
+     },
+     "perShotMvSdMps": 5.4864,
+     "lotMeanMvShiftSdFps": 45.0,
+     "lotMeanMvShiftSdMps": 13.716,
+     "lotBcVarPct": null,
+     "tempSensFpsPer10F": {
+      "nom": 17.0,
+      "sd": 3.0
+     },
+     "product": "Federal American Eagle XM193 (55 gr FMJ)"
+    }
+   }
+  },
+  "65cm": {
+   "name": "6.5 Creedmoor",
+   "class": "Medium match",
+   "twistGating": "1:8–1:8.5\" → 120–147 gr high-BC (full range).",
+   "rifle": {
+    "barrelLengthIn": {
+     "nom": 26.0,
+     "sd": 1.0
+    },
+    "barrelLengthM": {
+     "nom": 0.6604
+    },
+    "mvPerInchFps": {
+     "nom": 18.1,
+     "sd": 3.7
+    },
+    "twist": "1:8.0",
+    "weightLb": {
+     "nom": 21.0,
+     "sd": 2.5
+    },
+    "recoilFtLb": {
+     "nom": 4.27,
+     "sd": 0.5
+    },
+    "inherentPrecisionMOA": {
+     "factoryHunting": {
+      "nom": 1.0,
+      "sd": 0.2
+     },
+     "factoryMatch": {
+      "nom": 0.5,
+      "sd": 0.1
+     },
+     "customMatch": {
+      "nom": 0.25,
+      "sd": 0.05
+     }
+    },
+    "barrelToBarrelMvSpreadFps": {
+     "nom": 25.0,
+     "sd": 8.0
+    },
+    "barrelToBarrelMvSpreadMps": 7.62,
+    "barrelLifeRounds": {
+     "nom": 2800.0,
+     "sd": 400.0
+    }
+   },
+   "loads": {
+    "match": {
+     "bulletWeightGr": {
+      "nom": 140.0,
+      "sd": 0.1
+     },
+     "bulletMassKg": 0.0091,
+     "boxMvFps": 2710.0,
+     "boxMvBarrelIn": 24.0,
+     "measMvFps": {
+      "nom": 2712.0,
+      "sd": 12.0
+     },
+     "measMvBarrelIn": 24.0,
+     "measMvMps": {
+      "nom": 826.6176,
+      "sd": 3.6576
+     },
+     "dragModel": "G7",
+     "trueBc": 0.31,
+     "trueBcMeasSd": 0.005,
+     "boxBcG1adv": 0.646,
+     "boxBcG7adv": 0.326,
+     "perShotMvSdFps": {
+      "nom": 12.0,
+      "sd": 2.0
+     },
+     "perShotMvSdMps": 3.6576,
+     "lotMeanMvShiftSdFps": 25.0,
+     "lotMeanMvShiftSdMps": 7.62,
+     "lotBcVarPct": 1.5,
+     "tempSensFpsPer10F": {
+      "nom": 1.2,
+      "sd": 0.3
+     },
+     "product": "Hornady Match 140 gr ELD-M"
+    },
+    "bulk": {
+     "bulletWeightGr": {
+      "nom": 140.0,
+      "sd": 0.35
+     },
+     "bulletMassKg": 0.0091,
+     "boxMvFps": 2657.0,
+     "boxMvBarrelIn": 24.0,
+     "measMvFps": {
+      "nom": 2610.0,
+      "sd": 20.0
+     },
+     "measMvBarrelIn": 24.0,
+     "measMvMps": {
+      "nom": 795.528,
+      "sd": 6.096
+     },
+     "dragModel": "G7",
+     "trueBc": 0.24,
+     "trueBcMeasSd": 0.008,
+     "boxBcG1adv": 0.485,
+     "boxBcG7adv": null,
+     "perShotMvSdFps": {
+      "nom": 18.0,
+      "sd": 4.0
+     },
+     "perShotMvSdMps": 5.4864,
+     "lotMeanMvShiftSdFps": 45.0,
+     "lotMeanMvShiftSdMps": 13.716,
+     "lotBcVarPct": 4.0,
+     "tempSensFpsPer10F": {
+      "nom": 15.0,
+      "sd": 3.0
+     },
+     "product": "Sellier & Bellot 140 gr FMJ-BT"
+    }
+   }
+  },
+  "308": {
+   "name": ".308 Winchester",
+   "class": "Standard precision",
+   "twistGating": "1:12\" → 150–168 gr. 1:10\" → up to 175–185 gr (M118LR).",
+   "rifle": {
+    "barrelLengthIn": {
+     "nom": 22.0,
+     "sd": 2.0
+    },
+    "barrelLengthM": {
+     "nom": 0.5588
+    },
+    "mvPerInchFps": {
+     "nom": 22.7,
+     "sd": 1.8
+    },
+    "twist": "1:10.0",
+    "weightLb": {
+     "nom": 16.0,
+     "sd": 2.0
+    },
+    "recoilFtLb": {
+     "nom": 8.68,
+     "sd": 0.8
+    },
+    "inherentPrecisionMOA": {
+     "factoryHunting": {
+      "nom": 1.25,
+      "sd": 0.25
+     },
+     "factoryMatch": {
+      "nom": 0.65,
+      "sd": 0.1
+     },
+     "customMatch": {
+      "nom": 0.35,
+      "sd": 0.05
+     }
+    },
+    "barrelToBarrelMvSpreadFps": {
+     "nom": 30.0,
+     "sd": 10.0
+    },
+    "barrelToBarrelMvSpreadMps": 9.144,
+    "barrelLifeRounds": {
+     "nom": 6500.0,
+     "sd": 1500.0
+    }
+   },
+   "loads": {
+    "match": {
+     "bulletWeightGr": {
+      "nom": 175.0,
+      "sd": 0.15
+     },
+     "bulletMassKg": 0.0113,
+     "boxMvFps": 2600.0,
+     "boxMvBarrelIn": 24.0,
+     "measMvFps": {
+      "nom": 2580.0,
+      "sd": 12.0
+     },
+     "measMvBarrelIn": 22.0,
+     "measMvMps": {
+      "nom": 786.384,
+      "sd": 3.6576
+     },
+     "dragModel": "G7",
+     "trueBc": 0.243,
+     "trueBcMeasSd": 0.003,
+     "boxBcG1adv": 0.505,
+     "boxBcG7adv": null,
+     "perShotMvSdFps": {
+      "nom": 11.5,
+      "sd": 2.0
+     },
+     "perShotMvSdMps": 3.5052,
+     "lotMeanMvShiftSdFps": 20.0,
+     "lotMeanMvShiftSdMps": 6.096,
+     "lotBcVarPct": 1.5,
+     "tempSensFpsPer10F": {
+      "nom": 7.5,
+      "sd": 1.5
+     },
+     "product": "Federal Gold Medal Match 175 gr SMK"
+    },
+    "bulk": {
+     "bulletWeightGr": {
+      "nom": 147.0,
+      "sd": 0.4
+     },
+     "bulletMassKg": 0.0095,
+     "boxMvFps": 2780.0,
+     "boxMvBarrelIn": 24.0,
+     "measMvFps": {
+      "nom": 2740.0,
+      "sd": 20.0
+     },
+     "measMvBarrelIn": 22.0,
+     "measMvMps": {
+      "nom": 835.152,
+      "sd": 6.096
+     },
+     "dragModel": "G7",
+     "trueBc": 0.195,
+     "trueBcMeasSd": 0.01,
+     "boxBcG1adv": 0.39,
+     "boxBcG7adv": null,
+     "perShotMvSdFps": {
+      "nom": 16.0,
+      "sd": 3.5
+     },
+     "perShotMvSdMps": 4.8768,
+     "lotMeanMvShiftSdFps": 35.0,
+     "lotMeanMvShiftSdMps": 10.668,
+     "lotBcVarPct": 4.0,
+     "tempSensFpsPer10F": {
+      "nom": 16.0,
+      "sd": 3.0
+     },
+     "product": "PMC Bronze 147 gr FMJ-BT"
+    }
+   }
+  },
+  "300wm": {
+   "name": ".300 Win Mag",
+   "class": "Heavy long-range",
+   "twistGating": "1:10\" → 190–210 gr. 1:8–1:9\" → gate for 220–230 gr.",
+   "rifle": {
+    "barrelLengthIn": {
+     "nom": 25.0,
+     "sd": 1.0
+    },
+    "barrelLengthM": {
+     "nom": 0.635
+    },
+    "mvPerInchFps": {
+     "nom": 39.6,
+     "sd": 5.0
+    },
+    "twist": "1:10.0",
+    "weightLb": {
+     "nom": 18.0,
+     "sd": 1.5
+    },
+    "recoilFtLb": {
+     "nom": 14.09,
+     "sd": 1.5
+    },
+    "inherentPrecisionMOA": {
+     "factoryHunting": {
+      "nom": 1.25,
+      "sd": 0.25
+     },
+     "factoryMatch": {
+      "nom": 0.65,
+      "sd": 0.15
+     },
+     "customMatch": {
+      "nom": 0.4,
+      "sd": 0.05
+     }
+    },
+    "barrelToBarrelMvSpreadFps": {
+     "nom": 40.0,
+     "sd": 15.0
+    },
+    "barrelToBarrelMvSpreadMps": 12.192,
+    "barrelLifeRounds": {
+     "nom": 1500.0,
+     "sd": 300.0
+    }
+   },
+   "loads": {
+    "match": {
+     "bulletWeightGr": {
+      "nom": 215.0,
+      "sd": 0.15
+     },
+     "bulletMassKg": 0.0139,
+     "boxMvFps": 2800.0,
+     "boxMvBarrelIn": 24.0,
+     "measMvFps": {
+      "nom": 2765.0,
+      "sd": 15.0
+     },
+     "measMvBarrelIn": 24.0,
+     "measMvMps": {
+      "nom": 842.772,
+      "sd": 4.572
+     },
+     "dragModel": "G7",
+     "trueBc": 0.354,
+     "trueBcMeasSd": 0.003,
+     "boxBcG1adv": 0.696,
+     "boxBcG7adv": null,
+     "perShotMvSdFps": {
+      "nom": 12.0,
+      "sd": 2.5
+     },
+     "perShotMvSdMps": 3.6576,
+     "lotMeanMvShiftSdFps": 25.0,
+     "lotMeanMvShiftSdMps": 7.62,
+     "lotBcVarPct": 4.5,
+     "tempSensFpsPer10F": {
+      "nom": 3.0,
+      "sd": 0.8
+     },
+     "product": "Federal Premium Gold Medal 215 gr Berger"
+    },
+    "bulk": {
+     "bulletWeightGr": {
+      "nom": 180.0,
+      "sd": 0.4
+     },
+     "bulletMassKg": 0.0117,
+     "boxMvFps": 2936.0,
+     "boxMvBarrelIn": 24.0,
+     "measMvFps": {
+      "nom": 2880.0,
+      "sd": 25.0
+     },
+     "measMvBarrelIn": 24.0,
+     "measMvMps": {
+      "nom": 877.824,
+      "sd": 7.62
+     },
+     "dragModel": "G7",
+     "trueBc": 0.2,
+     "trueBcMeasSd": 0.01,
+     "boxBcG1adv": null,
+     "boxBcG7adv": null,
+     "perShotMvSdFps": {
+      "nom": 19.0,
+      "sd": 4.0
+     },
+     "perShotMvSdMps": 5.7912,
+     "lotMeanMvShiftSdFps": 50.0,
+     "lotMeanMvShiftSdMps": 15.24,
+     "lotBcVarPct": null,
+     "tempSensFpsPer10F": {
+      "nom": 22.0,
+      "sd": 4.0
+     },
+     "product": "Sellier & Bellot 180 gr SPCE"
+    }
+   }
+  },
+  "338lm": {
+   "name": ".338 Lapua Mag",
+   "class": "Extreme long-range",
+   "twistGating": "1:10\" → 250 gr. 1:9.3–1:9.5\" → gate for 300 gr.",
+   "rifle": {
+    "barrelLengthIn": {
+     "nom": 28.0,
+     "sd": 2.0
+    },
+    "barrelLengthM": {
+     "nom": 0.7112
+    },
+    "mvPerInchFps": {
+     "nom": 28.3,
+     "sd": 2.1
+    },
+    "twist": "1:9.3",
+    "weightLb": {
+     "nom": 22.0,
+     "sd": 2.0
+    },
+    "recoilFtLb": {
+     "nom": 22.45,
+     "sd": 2.0
+    },
+    "inherentPrecisionMOA": {
+     "factoryHunting": {
+      "nom": 1.25,
+      "sd": 0.25
+     },
+     "factoryMatch": {
+      "nom": 0.7,
+      "sd": 0.15
+     },
+     "customMatch": {
+      "nom": 0.35,
+      "sd": 0.05
+     }
+    },
+    "barrelToBarrelMvSpreadFps": {
+     "nom": 40.0,
+     "sd": 15.0
+    },
+    "barrelToBarrelMvSpreadMps": 12.192,
+    "barrelLifeRounds": {
+     "nom": 1800.0,
+     "sd": 400.0
+    }
+   },
+   "loads": {
+    "match": {
+     "bulletWeightGr": {
+      "nom": 300.0,
+      "sd": 0.2
+     },
+     "bulletMassKg": 0.0194,
+     "boxMvFps": 2713.0,
+     "boxMvBarrelIn": 27.0,
+     "measMvFps": {
+      "nom": 2680.0,
+      "sd": 15.0
+     },
+     "measMvBarrelIn": 26.0,
+     "measMvMps": {
+      "nom": 816.864,
+      "sd": 4.572
+     },
+     "dragModel": "G7",
+     "trueBc": 0.392,
+     "trueBcMeasSd": 0.004,
+     "boxBcG1adv": 0.782,
+     "boxBcG7adv": null,
+     "perShotMvSdFps": {
+      "nom": 9.0,
+      "sd": 2.0
+     },
+     "perShotMvSdMps": 2.7432,
+     "lotMeanMvShiftSdFps": 30.0,
+     "lotMeanMvShiftSdMps": 9.144,
+     "lotBcVarPct": 1.5,
+     "tempSensFpsPer10F": {
+      "nom": 4.0,
+      "sd": 1.0
+     },
+     "product": "Lapua 300 gr Scenar"
+    },
+    "bulk": {
+     "bulletWeightGr": {
+      "nom": 250.0,
+      "sd": 0.5
+     },
+     "bulletMassKg": 0.0162,
+     "boxMvFps": 2848.0,
+     "boxMvBarrelIn": 27.0,
+     "measMvFps": {
+      "nom": 2790.0,
+      "sd": 20.0
+     },
+     "measMvBarrelIn": 24.0,
+     "measMvMps": {
+      "nom": 850.392,
+      "sd": 6.096
+     },
+     "dragModel": "G7",
+     "trueBc": 0.26,
+     "trueBcMeasSd": 0.012,
+     "boxBcG1adv": 0.62,
+     "boxBcG7adv": null,
+     "perShotMvSdFps": {
+      "nom": 16.0,
+      "sd": 3.5
+     },
+     "perShotMvSdMps": 4.8768,
+     "lotMeanMvShiftSdFps": 55.0,
+     "lotMeanMvShiftSdMps": 16.764,
+     "lotBcVarPct": 4.0,
+     "tempSensFpsPer10F": {
+      "nom": 18.0,
+      "sd": 3.0
+     },
+     "product": "Sellier & Bellot 250 gr FMJ-BT"
+    }
+   }
+  },
+  "50bmg": {
+   "name": ".50 BMG",
+   "class": "Anti-materiel / ELR",
+   "twistGating": "1:15\" → 647–700 gr ball. 1:12\" → gate for 750–800 gr solids.",
+   "rifle": {
+    "barrelLengthIn": {
+     "nom": 32.0,
+     "sd": 3.0
+    },
+    "barrelLengthM": {
+     "nom": 0.8128
+    },
+    "mvPerInchFps": {
+     "nom": 25.0,
+     "sd": 6.5
+    },
+    "twist": "1:15.0",
+    "weightLb": {
+     "nom": 32.0,
+     "sd": 3.0
+    },
+    "recoilFtLb": {
+     "nom": 101.77,
+     "sd": 10.0
+    },
+    "inherentPrecisionMOA": {
+     "factoryHunting": {
+      "nom": 1.5,
+      "sd": 0.3
+     },
+     "factoryMatch": {
+      "nom": 0.9,
+      "sd": 0.15
+     },
+     "customMatch": {
+      "nom": 0.5,
+      "sd": 0.1
+     }
+    },
+    "barrelToBarrelMvSpreadFps": {
+     "nom": 50.0,
+     "sd": 20.0
+    },
+    "barrelToBarrelMvSpreadMps": 15.24,
+    "barrelLifeRounds": {
+     "nom": 4000.0,
+     "sd": 800.0
+    }
+   },
+   "loads": {
+    "match": {
+     "bulletWeightGr": {
+      "nom": 750.0,
+      "sd": 0.3
+     },
+     "bulletMassKg": 0.0486,
+     "boxMvFps": 2815.0,
+     "boxMvBarrelIn": 36.0,
+     "measMvFps": {
+      "nom": 2720.0,
+      "sd": 15.0
+     },
+     "measMvBarrelIn": 30.0,
+     "measMvMps": {
+      "nom": 829.056,
+      "sd": 4.572
+     },
+     "dragModel": "G7",
+     "trueBc": 0.581,
+     "trueBcMeasSd": 0.005,
+     "boxBcG1adv": 1.05,
+     "boxBcG7adv": null,
+     "perShotMvSdFps": {
+      "nom": 14.0,
+      "sd": 3.0
+     },
+     "perShotMvSdMps": 4.2672,
+     "lotMeanMvShiftSdFps": 45.0,
+     "lotMeanMvShiftSdMps": 13.716,
+     "lotBcVarPct": 1.5,
+     "tempSensFpsPer10F": {
+      "nom": 5.0,
+      "sd": 1.2
+     },
+     "product": "Hornady Match 750 gr A-MAX"
+    },
+    "bulk": {
+     "bulletWeightGr": {
+      "nom": 661.0,
+      "sd": 2.0
+     },
+     "bulletMassKg": 0.0428,
+     "boxMvFps": 2910.0,
+     "boxMvBarrelIn": 45.0,
+     "measMvFps": {
+      "nom": 2820.0,
+      "sd": 30.0
+     },
+     "measMvBarrelIn": 30.0,
+     "measMvMps": {
+      "nom": 859.536,
+      "sd": 9.144
+     },
+     "dragModel": "G7",
+     "trueBc": 0.34,
+     "trueBcMeasSd": 0.015,
+     "boxBcG1adv": 0.701,
+     "boxBcG7adv": null,
+     "perShotMvSdFps": {
+      "nom": 25.0,
+      "sd": 5.0
+     },
+     "perShotMvSdMps": 7.62,
+     "lotMeanMvShiftSdFps": 75.0,
+     "lotMeanMvShiftSdMps": 22.86,
+     "lotBcVarPct": 5.0,
+     "tempSensFpsPer10F": {
+      "nom": 20.0,
+      "sd": 4.0
+     },
+     "product": "PMC Bronze 660 gr FMJ (M33)"
+    }
+   }
+  }
+ },
+ "scope": {
+  "_note": "Sighting-system mechanical error by QUALITY TIER. Reconciled from two secondary reports: tracking factor + return-to-zero taken from RifleResearch.txt's sighting model (has SDs, monotonic, higher conf) — ScopeAccuracy.md roughly agrees for top/mid (1.000/0.990) but its budget-vs-mid return-to-zero is non-monotonic; travel/cant/parallax/subtension/zero-retention from ScopeAccuracy.md (Medium/Low conf, sources column empty). UNIT-TO-UNIT scope variation was UNSOURCED in both reports — so model scope quality as a TIER CHOICE (feature-catalog §C3, one configurable optic), NOT per-instance hidden truth. LOW CONFIDENCE overall; re-source before shipping.",
+  "tiers": {
+   "top": {
+    "trackingFactor": {
+     "nom": 1.0,
+     "sd": 0.005
+    },
+    "returnToZeroSdMOA": 0.05,
+    "returnToZeroSdMRAD": 0.015,
+    "elevationTravelMOA": 120,
+    "elevationTravelMRAD": 40.0,
+    "cantSdDeg": 0.2,
+    "reticleSubtensionErrPct": 0.0,
+    "parallaxAdj": "10 yd–∞"
+   },
+   "mid": {
+    "trackingFactor": {
+     "nom": 0.985,
+     "sd": 0.012
+    },
+    "returnToZeroSdMOA": 0.15,
+    "returnToZeroSdMRAD": 0.045,
+    "elevationTravelMOA": 100,
+    "elevationTravelMRAD": 29.0,
+    "cantSdDeg": 0.5,
+    "reticleSubtensionErrPct": 0.5,
+    "parallaxAdj": "25 yd–∞"
+   },
+   "budget": {
+    "trackingFactor": {
+     "nom": 0.96,
+     "sd": 0.025
+    },
+    "returnToZeroSdMOA": 0.35,
+    "returnToZeroSdMRAD": 0.105,
+    "elevationTravelMOA": 60,
+    "elevationTravelMRAD": 16.4,
+    "cantSdDeg": 0.5,
+    "reticleSubtensionErrPct": null,
+    "parallaxAdj": "fixed @100 yd"
+   }
+  },
+  "modelMapping": {
+   "trackingFactor": "scales every dialed correction (dial X → reticle moves X×factor); the tall-target error.",
+   "returnToZeroSd": "random zero drift (1σ) applied per session / after dialing up & back.",
+   "elevationTravel": "caps total usable dial → gates max range for ELR.",
+   "cantSd": "reticle cant (1σ, deg) → horizontal error that grows with range.",
+   "reticleSubtensionErrPct": "FFP subtension error → holdover + mil-ranging error.",
+   "parallaxAdj": "parallax null capability; POA shift if not set."
+  }
+ }
+}

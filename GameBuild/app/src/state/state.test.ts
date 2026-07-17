@@ -300,7 +300,13 @@ describe('settings persistence round-trip', () => {
 
   it('windRealism defaults to steady when absent from an older save', () => {
     const back = saveToSettings(
-      { schemaVersion: 1, updatedAt: new Date(0).toISOString(), settings: { unitsPrimary: 'MIL' } },
+      {
+        schemaVersion: 1,
+        updatedAt: new Date(0).toISOString(),
+        settings: { unitsPrimary: 'MIL' },
+        rifles: [],
+        ammoLots: [],
+      },
       defaultSettings(),
     );
     expect(back.windRealism).toBe('steady');
@@ -322,17 +328,52 @@ describe('settings persistence round-trip', () => {
     expect(useGameStore.getState().settings.unitsPrimary).toBe('MOA');
   });
 
-  it('sensitivity and traceEnabled are intentionally NOT persisted under schema v1', () => {
+  it('carries sensitivity, traceEnabled, and windMarkerStyle into the save (schema v2, D5)', () => {
+    const settings = {
+      unitsPrimary: 'MOA' as const,
+      sensitivity: 1.75,
+      traceEnabled: false,
+      windRealism: 'realistic' as const,
+      windMarkerStyle: 'both' as const,
+      mirageEnabled: false,
+    };
+    const save = settingsToSave(settings);
+    expect(save.settings.sensitivity).toBe(1.75);
+    expect(save.settings.traceEnabled).toBe(false);
+    expect(save.settings.windMarkerStyle).toBe('both');
+    // Round-trips back through the loader.
+    const back = saveToSettings(save, defaultSettings());
+    expect(back.sensitivity).toBe(1.75);
+    expect(back.traceEnabled).toBe(false);
+    expect(back.windMarkerStyle).toBe('both');
+  });
+
+  it('the carried-over settings default from the store when absent (pre-v2 save)', () => {
+    const back = saveToSettings(
+      {
+        schemaVersion: 1,
+        updatedAt: new Date(0).toISOString(),
+        settings: { unitsPrimary: 'MIL' },
+        rifles: [],
+        ammoLots: [],
+      },
+      defaultSettings(),
+    );
+    expect(back.sensitivity).toBe(1.0);
+    expect(back.traceEnabled).toBe(true);
+    expect(back.windMarkerStyle).toBe('flag');
+  });
+
+  it('mirageEnabled is intentionally NOT persisted (store-only until it ships, D5)', () => {
     const save = settingsToSave({
       unitsPrimary: 'MIL',
       sensitivity: 2.0,
       traceEnabled: false,
       windRealism: 'steady',
       windMarkerStyle: 'flag',
-      mirageEnabled: false,
+      mirageEnabled: true,
     });
-    expect('sensitivity' in save.settings).toBe(false);
-    expect('traceEnabled' in save.settings).toBe(false);
+    expect('mirageEnabled' in save.settings).toBe(false);
   });
 });
 
