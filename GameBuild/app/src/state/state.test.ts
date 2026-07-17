@@ -328,6 +328,30 @@ describe('settings persistence round-trip', () => {
     expect(useGameStore.getState().settings.unitsPrimary).toBe('MOA');
   });
 
+  it('persists and rehydrates the schema-v2 carry-over settings end-to-end (task 2.1d wiring)', async () => {
+    // Mirrors the real bootstrap (main.tsx): subscribe, mutate several settings,
+    // then simulate a cold relaunch (fresh defaults → hydrate from the store).
+    const store = new MemorySaveStore();
+    const unsub = persistSettingsOnChange(useGameStore, store);
+    const st = useGameStore.getState();
+    st.setUnitsPrimary('MOA');
+    st.setSensitivity(2.25);
+    st.setTraceEnabled(false);
+    st.setWindMarkerStyle('sock');
+    st.setMirageEnabled(true); // store-only — must NOT survive a relaunch
+    await new Promise((r) => setTimeout(r, 0));
+    unsub();
+
+    useGameStore.setState({ settings: defaultSettings() });
+    await loadSettingsInto(useGameStore, store);
+    const back = useGameStore.getState().settings;
+    expect(back.unitsPrimary).toBe('MOA');
+    expect(back.sensitivity).toBe(2.25);
+    expect(back.traceEnabled).toBe(false);
+    expect(back.windMarkerStyle).toBe('sock');
+    expect(back.mirageEnabled).toBe(false); // not persisted → back to default
+  });
+
   it('carries sensitivity, traceEnabled, and windMarkerStyle into the save (schema v2, D5)', () => {
     const settings = {
       unitsPrimary: 'MOA' as const,
