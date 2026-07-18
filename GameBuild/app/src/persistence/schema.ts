@@ -71,6 +71,10 @@ export interface SaveData {
   rifles: RifleInstance[];
   /** Owned ammo lots (v2). Empty until the gear catalog lands (task 2.2). */
   ammoLots: AmmoLot[];
+  /** Active loadout selection (task 2.2b, D10) — additive-optional, no version
+   *  bump (2.1 D6 pattern); validated when present, defaulted to null on load. */
+  activeRifleId?: string | null;
+  activeLotId?: string | null;
 }
 
 export const DEFAULT_SAVE: SaveData = {
@@ -85,6 +89,8 @@ export const DEFAULT_SAVE: SaveData = {
   },
   rifles: [],
   ammoLots: [],
+  activeRifleId: null,
+  activeLotId: null,
 };
 
 export class SaveValidationError extends Error {}
@@ -190,4 +196,11 @@ export function validateSaveShape(data: unknown): asserts data is SaveData {
     if (!Array.isArray(d.ammoLots)) fail('ammoLots must be an array when present');
     d.ammoLots.forEach((l, i) => validateLot(l, i));
   }
+
+  // Active loadout selection (task 2.2b, D10). Additive-optional: absent on a
+  // pre-2.2b save; `null` means "nothing selected"; a string is an instance id.
+  if (d.activeRifleId !== undefined && d.activeRifleId !== null && typeof d.activeRifleId !== 'string')
+    fail('activeRifleId must be a string or null when present');
+  if (d.activeLotId !== undefined && d.activeLotId !== null && typeof d.activeLotId !== 'string')
+    fail('activeLotId must be a string or null when present');
 }

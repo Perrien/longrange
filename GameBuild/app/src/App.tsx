@@ -17,6 +17,8 @@
 import { useState } from 'react';
 import { RangeSelect } from './shell/RangeSelect';
 import { SettingsScreen } from './shell/SettingsScreen';
+import { StoreScreen } from './shell/StoreScreen';
+import { LoadoutOverlay } from './shell/LoadoutOverlay';
 import { ScopeView } from './scope/ScopeView';
 import { DevTools } from './debug/DevTools';
 import { useGameStore } from './state/store';
@@ -26,24 +28,34 @@ type PlayerView = 'rangeSelect' | 'scope';
 export function App() {
   const [view, setView] = useState<PlayerView>('rangeSelect'); // D5: always cold-starts here
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [storeOpen, setStoreOpen] = useState(false);
+  const [loadoutOpen, setLoadoutOpen] = useState(false);
   const setRangeId = useGameStore((s) => s.setRangeId);
   const resetSession = useGameStore((s) => s.resetSession);
 
-  // The real player flow — range select → Scope, with a Menu button that opens
-  // the Settings overlay.
+  // The real player flow — range select (+ Store) → Scope, with a Menu button
+  // that opens the Settings overlay and a Loadout button that swaps gear in place.
   const game = (
     <>
       {view === 'rangeSelect' && (
-        <RangeSelect
-          onSelect={(id) => {
-            setRangeId(id);
-            setView('scope');
-          }}
-        />
+        <>
+          <RangeSelect
+            onSelect={(id) => {
+              setRangeId(id);
+              setView('scope');
+            }}
+            onOpenStore={() => setStoreOpen(true)}
+          />
+          {storeOpen && <StoreScreen onClose={() => setStoreOpen(false)} />}
+        </>
       )}
       {view === 'scope' && (
         <>
-          <ScopeView onOpenMenu={() => setSettingsOpen(true)} />
+          <ScopeView
+            onOpenMenu={() => setSettingsOpen(true)}
+            onOpenLoadout={() => setLoadoutOpen(true)}
+          />
+          {loadoutOpen && <LoadoutOverlay onClose={() => setLoadoutOpen(false)} />}
           {settingsOpen && (
             <SettingsScreen
               onClose={() => setSettingsOpen(false)}

@@ -21,9 +21,10 @@ import { useState, type ReactNode } from 'react';
 import { RangeView } from '../range/RangeView';
 import { DropTable } from './DropTable';
 import { PersistencePanel } from './PersistencePanel';
+import { TruthInspector } from './TruthInspector';
 import { ScopeView } from '../scope/ScopeView';
 
-type DevView = 'game' | 'range' | 'scope' | 'debug';
+type DevView = 'game' | 'range' | 'scope' | 'debug' | 'truth';
 
 export function DevTools({ game }: { game: ReactNode }) {
   const [view, setView] = useState<DevView>('game');
@@ -57,6 +58,9 @@ export function DevTools({ game }: { game: ReactNode }) {
         <button onClick={() => setView('debug')} disabled={view === 'debug'}>
           Debug tables
         </button>
+        <button onClick={() => setView('truth')} disabled={view === 'truth'}>
+          Truth inspector
+        </button>
       </nav>
       {/* Default: the real player flow (range select → Scope, with Menu button). */}
       {view === 'game' && game}
@@ -70,6 +74,7 @@ export function DevTools({ game }: { game: ReactNode }) {
           <PersistencePanel />
         </>
       )}
+      {view === 'truth' && <TruthInspector />}
     </div>
   );
 }

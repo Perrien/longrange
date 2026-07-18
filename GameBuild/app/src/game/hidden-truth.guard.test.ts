@@ -4,6 +4,12 @@
 // never reach the UI/HUD/scene/shell/state layers, where it could leak to the
 // player via display or logs. This test scans those directories' source and
 // asserts none of them import `game/hidden-truth`.
+//
+// ONE sanctioned exception (task 2.2d, D9): `debug/TruthInspector.tsx` is a
+// dev-only diagnostic that deliberately reveals truth. It is legitimate because
+// DevTools (its only importer) renders behind `import.meta.env.DEV`, so Rollup
+// drops it — and this whole truth-reading path — from the shipped prod bundle
+// (proven by the tree-shake test below). Every OTHER UI-dir file must stay clean.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +19,9 @@ const SRC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Directories that must NOT import hidden truth (UI / HUD / scene / shell / state). */
 const GUARDED_DIRS = ['scope', 'range', 'shell', 'debug', 'state'];
+
+/** Dev-only diagnostics allowed to read truth (D9) — relative to SRC_DIR, tree-shaken from prod. */
+const ALLOWLIST = ['debug/TruthInspector.tsx'];
 
 /** Static-import and dynamic-import references to the hidden-truth module. */
 const IMPORT_RE = /(?:from|import)\s*\(?\s*['"][^'"]*hidden-truth[^'"]*['"]/;
@@ -30,18 +39,24 @@ function collectSourceFiles(dir: string): string[] {
   return out;
 }
 
-describe('hidden-truth encapsulation (no-leak guard, task 2.1c)', () => {
-  it('no UI/HUD/scene/shell/state module imports game/hidden-truth', () => {
+describe('hidden-truth encapsulation (no-leak guard, task 2.1c/2.2d)', () => {
+  it('no UI/HUD/scene/shell/state module imports game/hidden-truth (except the dev allowlist)', () => {
     const offenders: string[] = [];
     for (const d of GUARDED_DIRS) {
       const dirPath = join(SRC_DIR, d);
       for (const file of collectSourceFiles(dirPath)) {
-        if (IMPORT_RE.test(readFileSync(file, 'utf8'))) {
-          offenders.push(file.slice(SRC_DIR.length + 1));
-        }
+        const rel = file.slice(SRC_DIR.length + 1);
+        if (ALLOWLIST.includes(rel)) continue;
+        if (IMPORT_RE.test(readFileSync(file, 'utf8'))) offenders.push(rel);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('the allowlisted dev inspector genuinely does read truth (allowlist is not stale)', () => {
+    // If TruthInspector stops importing hidden-truth, drop it from ALLOWLIST.
+    const src = readFileSync(join(SRC_DIR, 'debug/TruthInspector.tsx'), 'utf8');
+    expect(IMPORT_RE.test(src)).toBe(true);
   });
 
   it('actually scanned the guarded directories (sanity — the scan is not a no-op)', () => {

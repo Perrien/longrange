@@ -123,7 +123,13 @@ const BREATH_RECOVER_S = 5;
 const BREATH_COMFORT = 0.3; // below this remaining fraction the hold degrades
 const BREATH_DEBT_FACTOR = 1.5; // wobble multiplier out of air (oxygen debt)
 
-export function ScopeView({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
+export function ScopeView({
+  onOpenMenu,
+  onOpenLoadout,
+}: {
+  onOpenMenu?: () => void;
+  onOpenLoadout?: () => void;
+} = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const reticleRef = useRef<HTMLCanvasElement>(null);
   const breathBarRef = useRef<HTMLDivElement>(null);
@@ -958,33 +964,60 @@ export function ScopeView({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
           background: 'radial-gradient(circle at center, transparent 0 40vmin, rgba(0,0,0,0.97) 41vmin)',
         }}
       />
-      {/* Menu → Settings screen (task 1.8a Menu button; opens the 2.1d Settings
-          overlay, which is also where "Return to range select" now lives).
-          Top-RIGHT, not top-left: the HUD panel below occupies top-left.
-          Unobtrusive utility control, same monospace HUD language. Only rendered
-          in the real player flow (App passes onOpenMenu). */}
-      {onOpenMenu && (
-        <button
-          onClick={onOpenMenu}
+      {/* Top-right utility cluster (task 1.8a Menu + 2.2c Loadout). Menu opens the
+          2.1d Settings overlay (also where "Return to range select" lives);
+          Loadout opens the 2.2c gear-swap overlay (non-destructive — the session
+          survives). Only rendered in the real player flow (App passes the props). */}
+      {(onOpenMenu || onOpenLoadout) && (
+        <div
           style={{
             position: 'absolute',
             top: 'calc(8px + env(safe-area-inset-top))',
             right: 'calc(8px + env(safe-area-inset-right))',
             zIndex: 20,
-            fontFamily: 'monospace',
-            fontSize: 13,
-            color: '#e8eef4',
-            background: 'rgba(26,34,44,0.75)',
-            border: '1px solid rgba(232,238,244,0.4)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            cursor: 'pointer',
-            WebkitUserSelect: 'none',
-            userSelect: 'none',
+            display: 'flex',
+            gap: 6,
           }}
         >
-          Menu
-        </button>
+          {onOpenLoadout && (
+            <button
+              onClick={onOpenLoadout}
+              style={{
+                fontFamily: 'monospace',
+                fontSize: 13,
+                color: '#e8eef4',
+                background: 'rgba(26,34,44,0.75)',
+                border: '1px solid rgba(232,238,244,0.4)',
+                borderRadius: 6,
+                padding: '6px 10px',
+                cursor: 'pointer',
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+              }}
+            >
+              Loadout
+            </button>
+          )}
+          {onOpenMenu && (
+            <button
+              onClick={onOpenMenu}
+              style={{
+                fontFamily: 'monospace',
+                fontSize: 13,
+                color: '#e8eef4',
+                background: 'rgba(26,34,44,0.75)',
+                border: '1px solid rgba(232,238,244,0.4)',
+                borderRadius: 6,
+                padding: '6px 10px',
+                cursor: 'pointer',
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+              }}
+            >
+              Menu
+            </button>
+          )}
+        </div>
       )}
       {/* HUD */}
       <div

@@ -1,0 +1,215 @@
+{
+  "_readme": "Gear catalog data (Increment 2.2a). Rifle models + ammo loads for the 4 shipped cartridges (D1: .22 LR, .223, 6.5 CM, .308). Consumed by game/catalog.ts, which derives the 2.1b hidden-truth ranges (RifleTruthRanges/LotTruthRanges) + the believed (box) Load. SECONDARY-source starting data — spot-check before shipping.",
+  "_provenance": "Hidden ranges + believed/true values distilled from Design/catalog-seed.json (two AI research reports, plain-text). Match-load geometry (massKg/lengthM) + 6.5 CM match believed values are oracle-exact from GameBuild/validation/loads.json (the golden-vector fixture) so the D2 consistency test holds and there is no drift. Bulk-load lengthM is approximated to the cartridge reference length (documented; length is second-order for the drag-model solve).",
+  "_units": "SI throughout for engine inputs: mps, kg, m, rad-source. Inherent precision authored in MOA (converted to rad in catalog.ts). Zero offset authored in mrad. Display-only imperial attrs (barrel in, weight lb, recoil ft-lb) kept for the Store UI.",
+  "catalogVersion": 1,
+  "designSet": {
+    "_note": "Not in the research — game-design values (owner-approved 2026-07-16). zeroOffset: each axis ~ N(0, sd), clamp ±3 SD (0.29 mrad ≈ 1 MOA → ±3 MOA); applied in 2.3, not 2.2. perShotBcSdFraction: per-SHOT BC scatter (engine bcSdFraction), by grade.",
+    "zeroOffsetSdMrad": 0.29,
+    "perShotBcSdFraction": { "match": 0.005, "bulk": 0.015 }
+  },
+  "rifleTiers": ["hunting", "factoryMatch", "custom"],
+  "grades": ["match", "bulk"],
+  "cartridges": {
+    "22lr": {
+      "name": ".22 LR",
+      "class": "Rimfire precision (teacher)",
+      "twist": "1:16.0",
+      "twistGating": "1:16\" → 36–40 gr LRN (std). 1:12\" → gate for 60 gr subsonic conicals.",
+      "caliberDiameterM": 0.0057277,
+      "referenceLengthM": 0.0114554,
+      "rifle": {
+        "barrelLengthIn": 20.0,
+        "weightLb": 13.5,
+        "recoilFtLb": 0.05,
+        "barrelLifeRounds": 15000,
+        "barrelToBarrelMvSpreadMps": 9.144,
+        "inherentPrecisionMoa": {
+          "hunting": { "nom": 1.25, "sd": 0.25 },
+          "factoryMatch": { "nom": 0.65, "sd": 0.15 },
+          "custom": { "nom": 0.25, "sd": 0.05 }
+        }
+      },
+      "loads": {
+        "match": {
+          "product": "Lapua Center-X (40 gr LRN)",
+          "oracleLoadId": "22lr-40-standard",
+          "dragModel": "G1",
+          "massKg": 0.0025919564,
+          "lengthM": 0.0114554,
+          "boxMvMps": 327.0504,
+          "believedBc": 0.172,
+          "trueBaseMvMps": 327.0504,
+          "trueBc": 0.134,
+          "lotMeanShiftSdMps": 4.572,
+          "perShotMvSd": { "nom": 1.8288, "sd": 0.4572 },
+          "lotBcVarPct": 1.5
+        },
+        "bulk": {
+          "product": "CCI Standard Velocity (40 gr LRN)",
+          "oracleLoadId": null,
+          "dragModel": "G1",
+          "massKg": 0.0026,
+          "lengthM": 0.0114554,
+          "boxMvMps": 326.136,
+          "believedBc": 0.12,
+          "trueBaseMvMps": 321.564,
+          "trueBc": 0.12,
+          "lotMeanShiftSdMps": 9.144,
+          "perShotMvSd": { "nom": 5.4864, "sd": 1.2192 },
+          "lotBcVarPct": 3.5
+        }
+      }
+    },
+    "223": {
+      "name": ".223 Rem / 5.56 NATO",
+      "class": "Light match",
+      "twist": "1:7.5",
+      "twistGating": "1:12\" → 40–55 gr. 1:9\" → 55–69 gr. 1:7–1:8\" → gate for 69–80 gr match.",
+      "caliberDiameterM": 0.0056896,
+      "referenceLengthM": 0.024892,
+      "rifle": {
+        "barrelLengthIn": 24.0,
+        "weightLb": 15.0,
+        "recoilFtLb": 2.0,
+        "barrelLifeRounds": 5000,
+        "barrelToBarrelMvSpreadMps": 10.668,
+        "inherentPrecisionMoa": {
+          "hunting": { "nom": 1.25, "sd": 0.25 },
+          "factoryMatch": { "nom": 0.65, "sd": 0.1 },
+          "custom": { "nom": 0.3, "sd": 0.05 }
+        }
+      },
+      "loads": {
+        "match": {
+          "product": "Black Hills 5.56 77 gr TMK",
+          "oracleLoadId": "223-77-match",
+          "dragModel": "G7",
+          "massKg": 0.0049895161,
+          "lengthM": 0.024892,
+          "boxMvMps": 838.2,
+          "believedBc": 0.207,
+          "trueBaseMvMps": 817.7784,
+          "trueBc": 0.207,
+          "lotMeanShiftSdMps": 4.572,
+          "perShotMvSd": { "nom": 3.048, "sd": 0.6096 },
+          "lotBcVarPct": 3.5
+        },
+        "bulk": {
+          "product": "Federal American Eagle XM193 (55 gr FMJ)",
+          "oracleLoadId": null,
+          "dragModel": "G7",
+          "massKg": 0.0036,
+          "lengthM": 0.024892,
+          "boxMvMps": 990.6,
+          "believedBc": 0.12,
+          "trueBaseMvMps": 964.692,
+          "trueBc": 0.12,
+          "lotMeanShiftSdMps": 13.716,
+          "perShotMvSd": { "nom": 5.4864, "sd": 1.2192 },
+          "lotBcVarPct": 0
+        }
+      }
+    },
+    "65cm": {
+      "name": "6.5 Creedmoor",
+      "class": "Medium match",
+      "twist": "1:8.0",
+      "twistGating": "1:8–1:8.5\" → 120–147 gr high-BC (full range).",
+      "caliberDiameterM": 0.0067056,
+      "referenceLengthM": 0.0353568,
+      "rifle": {
+        "barrelLengthIn": 26.0,
+        "weightLb": 21.0,
+        "recoilFtLb": 4.27,
+        "barrelLifeRounds": 2800,
+        "barrelToBarrelMvSpreadMps": 7.62,
+        "inherentPrecisionMoa": {
+          "hunting": { "nom": 1.0, "sd": 0.2 },
+          "factoryMatch": { "nom": 0.5, "sd": 0.1 },
+          "custom": { "nom": 0.25, "sd": 0.05 }
+        }
+      },
+      "loads": {
+        "match": {
+          "product": "Hornady Match 140 gr ELD-M",
+          "oracleLoadId": "65cm-140-match",
+          "dragModel": "G7",
+          "massKg": 0.0090718474,
+          "lengthM": 0.0353568,
+          "boxMvMps": 826.008,
+          "believedBc": 0.326,
+          "trueBaseMvMps": 826.6176,
+          "trueBc": 0.31,
+          "lotMeanShiftSdMps": 7.62,
+          "perShotMvSd": { "nom": 3.6576, "sd": 0.6096 },
+          "lotBcVarPct": 1.5
+        },
+        "bulk": {
+          "product": "Sellier & Bellot 140 gr FMJ-BT",
+          "oracleLoadId": null,
+          "dragModel": "G7",
+          "massKg": 0.0091,
+          "lengthM": 0.0353568,
+          "boxMvMps": 809.9736,
+          "believedBc": 0.24,
+          "trueBaseMvMps": 795.528,
+          "trueBc": 0.24,
+          "lotMeanShiftSdMps": 13.716,
+          "perShotMvSd": { "nom": 5.4864, "sd": 1.2192 },
+          "lotBcVarPct": 4.0
+        }
+      }
+    },
+    "308": {
+      "name": ".308 Winchester",
+      "class": "Standard precision",
+      "twist": "1:10.0",
+      "twistGating": "1:12\" → 150–168 gr. 1:10\" → up to 175–185 gr (M118LR).",
+      "caliberDiameterM": 0.0078232,
+      "referenceLengthM": 0.031496,
+      "rifle": {
+        "barrelLengthIn": 22.0,
+        "weightLb": 16.0,
+        "recoilFtLb": 8.68,
+        "barrelLifeRounds": 6500,
+        "barrelToBarrelMvSpreadMps": 9.144,
+        "inherentPrecisionMoa": {
+          "hunting": { "nom": 1.25, "sd": 0.25 },
+          "factoryMatch": { "nom": 0.65, "sd": 0.1 },
+          "custom": { "nom": 0.35, "sd": 0.05 }
+        }
+      },
+      "loads": {
+        "match": {
+          "product": "Federal Gold Medal Match 175 gr SMK",
+          "oracleLoadId": "308-175-match",
+          "dragModel": "G7",
+          "massKg": 0.0113398093,
+          "lengthM": 0.031496,
+          "boxMvMps": 792.48,
+          "believedBc": 0.243,
+          "trueBaseMvMps": 786.384,
+          "trueBc": 0.243,
+          "lotMeanShiftSdMps": 6.096,
+          "perShotMvSd": { "nom": 3.5052, "sd": 0.6096 },
+          "lotBcVarPct": 1.5
+        },
+        "bulk": {
+          "product": "PMC Bronze 147 gr FMJ-BT",
+          "oracleLoadId": null,
+          "dragModel": "G7",
+          "massKg": 0.0095,
+          "lengthM": 0.031496,
+          "boxMvMps": 847.344,
+          "believedBc": 0.195,
+          "trueBaseMvMps": 835.152,
+          "trueBc": 0.195,
+          "lotMeanShiftSdMps": 10.668,
+          "perShotMvSd": { "nom": 4.8768, "sd": 1.0668 },
+          "lotBcVarPct": 4.0
+        }
+      }
+    }
+  }
+}

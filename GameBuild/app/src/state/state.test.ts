@@ -16,6 +16,7 @@ import {
   defaultSession,
   defaultSettings,
   defaultScore,
+  defaultInventory,
   MIL_CLICK_RAD,
   MOA_CLICK_RAD,
   ZOOM_MIN,
@@ -23,6 +24,7 @@ import {
   DEFAULT_WIND_PRESET,
   settingsToSave,
   saveToSettings,
+  storeToSave,
   loadSettingsInto,
   persistSettingsOnChange,
 } from './index';
@@ -41,6 +43,7 @@ beforeEach(() => {
     session: defaultSession(),
     settings: defaultSettings(),
     score: defaultScore(),
+    inventory: defaultInventory(),
   });
 });
 
@@ -418,5 +421,94 @@ describe('mirage toggle (task 1.7c/1.7d)', () => {
 
     st.setMirageEnabled(false);
     expect(useGameStore.getState().settings.mirageEnabled).toBe(false);
+  });
+});
+
+describe('inventory / loadout (task 2.2b)', () => {
+  // Deterministic draw source so acquires are reproducible in tests.
+  const rng = () => 0.5;
+
+  it('acquireRifle appends an instance and returns its id; twice → two instances', () => {
+    const st = useGameStore.getState();
+    const id1 = st.acquireRifle('65cm-custom', { rng });
+    const id2 = st.acquireRifle('65cm-custom', { rng });
+    const inv = useGameStore.getState().inventory;
+    expect(inv.rifles).toHaveLength(2);
+    expect(id1).not.toBe(id2);
+    expect(inv.rifles.map((r) => r.id)).toEqual([id1, id2]);
+    expect(inv.rifles[0].catalogId).toBe('65cm-custom');
+    expect(inv.rifles[0].draws.mvOffset).toBe(0.5);
+  });
+
+  it('acquireLot appends a lot; selectRifle/selectLot set the active ids', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('308-factoryMatch', { rng });
+    const lid = st.acquireLot('308-match', { rng });
+    st.selectRifle(rid);
+    st.selectLot(lid);
+    const inv = useGameStore.getState().inventory;
+    expect(inv.ammoLots).toHaveLength(1);
+    expect(inv.activeRifleId).toBe(rid);
+    expect(inv.activeLotId).toBe(lid);
+    st.selectRifle(null);
+    expect(useGameStore.getState().inventory.activeRifleId).toBeNull();
+  });
+
+  it('resetSession leaves inventory alone (gear is not session state)', () => {
+    const st = useGameStore.getState();
+    st.acquireRifle('22lr-hunting', { rng });
+    st.resetSession();
+    expect(useGameStore.getState().inventory.rifles).toHaveLength(1);
+  });
+});
+
+describe('gear persistence (task 2.2b — the DEFAULT_SAVE-wipe fix)', () => {
+  const rng = () => 0.5;
+
+  it('storeToSave carries settings AND inventory (arrays + active ids)', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng });
+    const lid = st.acquireLot('65cm-match', { rng });
+    st.selectRifle(rid);
+    st.selectLot(lid);
+    const save = storeToSave(useGameStore.getState());
+    expect(save.rifles).toHaveLength(1);
+    expect(save.ammoLots).toHaveLength(1);
+    expect(save.activeRifleId).toBe(rid);
+    expect(save.activeLotId).toBe(lid);
+    expect(save.settings.unitsPrimary).toBe('MIL');
+  });
+
+  it('a settings change does NOT wipe owned gear (the regression this fixes)', async () => {
+    const store = new MemorySaveStore();
+    const unsub = persistSettingsOnChange(useGameStore, store);
+    const st = useGameStore.getState();
+    st.acquireRifle('308-custom', { rng }); // triggers a save with gear
+    st.setUnitsPrimary('MOA'); // a pure settings change — must NOT clear the gear
+    await new Promise((r) => setTimeout(r, 0));
+    unsub();
+
+    const saved = await store.load();
+    expect(saved!.rifles).toHaveLength(1); // gear survived the settings write
+    expect(saved!.settings.unitsPrimary).toBe('MOA');
+  });
+
+  it('acquire → persist → reload reproduces the instances + resolves the same truth', async () => {
+    const store = new MemorySaveStore();
+    const unsub = persistSettingsOnChange(useGameStore, store);
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('308-custom', { rng: () => 0.73 });
+    st.selectRifle(rid);
+    st.acquireLot('308-bulk', { rng: () => 0.4 });
+    await new Promise((r) => setTimeout(r, 0));
+    unsub();
+
+    const before = useGameStore.getState().inventory;
+    // Simulate a cold relaunch: fresh inventory, then hydrate from the store.
+    useGameStore.setState({ inventory: defaultInventory() });
+    expect(useGameStore.getState().inventory.rifles).toHaveLength(0);
+    await loadSettingsInto(useGameStore, store);
+    const after = useGameStore.getState().inventory;
+    expect(after).toEqual(before); // same draws, ids, catalogVersion, active selection
   });
 });

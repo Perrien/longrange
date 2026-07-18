@@ -17,6 +17,14 @@ import { create } from 'zustand';
 import { milToRad, moaToRad } from '../units';
 import { yardsToMeters } from '../units';
 import type { ShotResult } from '../game/shot';
+import type { AmmoLot, RifleInstance } from '../persistence';
+import {
+  buildAmmoLot,
+  buildRifleInstance,
+  cryptoRng,
+  newId,
+  type AcquireOptions,
+} from '../game/acquire';
 
 export type UnitsPrimary = 'MIL' | 'MOA';
 
@@ -179,12 +187,33 @@ export const defaultScore = (): ScoreState => ({
   targetsEngaged: 0,
 });
 
+/** Owned gear + active loadout (task 2.2b). Persisted in the v2 save (the arrays
+ *  ride the schema-v2 `rifles[]`/`ammoLots[]`; the active ids are additive-optional
+ *  fields, D10). The catalog + hidden-truth derivation stay OUT of the store —
+ *  it holds only the persisted records (id + catalogId + catalogVersion + draws).
+ *  In 2.2 the active selection is inert on the live solve (D2); it drives the
+ *  solve from 2.3. */
+export interface InventoryState {
+  rifles: RifleInstance[];
+  ammoLots: AmmoLot[];
+  activeRifleId: string | null;
+  activeLotId: string | null;
+}
+
+export const defaultInventory = (): InventoryState => ({
+  rifles: [],
+  ammoLots: [],
+  activeRifleId: null,
+  activeLotId: null,
+});
+
 // --- Store ------------------------------------------------------------------
 
 export interface GameStore {
   session: SessionState;
   settings: SettingsState;
   score: ScoreState;
+  inventory: InventoryState;
 
   // Scope / turret
   /** Dial elevation by N detents (can be negative). */
@@ -238,12 +267,27 @@ export interface GameStore {
   setMirageEnabled(enabled: boolean): void;
   /** Merge a partial settings patch (used by persistence hydration). */
   applySettings(patch: Partial<SettingsState>): void;
+
+  // Inventory / loadout (task 2.2b)
+  /** Acquire a rifle instance from a catalog model id. Rolls hidden draws (opts.rng
+   *  or platform crypto) and appends a NEW instance — acquiring the same model
+   *  twice yields two distinct instances. Returns the new instance's id. */
+  acquireRifle(catalogId: string, opts?: Partial<AcquireOptions>): string;
+  /** Acquire an ammo lot from a catalog load id (same semantics as acquireRifle). */
+  acquireLot(catalogId: string, opts?: Partial<AcquireOptions>): string;
+  /** Set the active rifle instance (by record id, or null to clear). */
+  selectRifle(instanceId: string | null): void;
+  /** Set the active ammo lot (by record id, or null to clear). */
+  selectLot(lotId: string | null): void;
+  /** Replace the whole inventory (used by persistence hydration). */
+  applyInventory(inventory: InventoryState): void;
 }
 
 export const useGameStore = create<GameStore>()((set) => ({
   session: defaultSession(),
   settings: defaultSettings(),
   score: defaultScore(),
+  inventory: defaultInventory(),
 
   dialElevationClicks: (clicks) =>
     set((s) => ({
@@ -372,4 +416,33 @@ export const useGameStore = create<GameStore>()((set) => ({
     set((s) => ({ settings: { ...s.settings, mirageEnabled } })),
 
   applySettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
+
+  acquireRifle: (catalogId, opts) => {
+    const id = opts?.id ?? newId('rifle');
+    const instance = buildRifleInstance(catalogId, {
+      rng: opts?.rng ?? cryptoRng(),
+      id,
+      catalogVersion: opts?.catalogVersion,
+    });
+    set((s) => ({ inventory: { ...s.inventory, rifles: [...s.inventory.rifles, instance] } }));
+    return id;
+  },
+
+  acquireLot: (catalogId, opts) => {
+    const id = opts?.id ?? newId('lot');
+    const lot = buildAmmoLot(catalogId, {
+      rng: opts?.rng ?? cryptoRng(),
+      id,
+      catalogVersion: opts?.catalogVersion,
+    });
+    set((s) => ({ inventory: { ...s.inventory, ammoLots: [...s.inventory.ammoLots, lot] } }));
+    return id;
+  },
+
+  selectRifle: (instanceId) =>
+    set((s) => ({ inventory: { ...s.inventory, activeRifleId: instanceId } })),
+
+  selectLot: (lotId) => set((s) => ({ inventory: { ...s.inventory, activeLotId: lotId } })),
+
+  applyInventory: (inventory) => set({ inventory }),
 }));

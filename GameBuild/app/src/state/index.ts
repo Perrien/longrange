@@ -4,6 +4,7 @@ export {
   defaultSession,
   defaultSettings,
   defaultScore,
+  defaultInventory,
   MIL_CLICK_RAD,
   MOA_CLICK_RAD,
   ZOOM_MIN,
@@ -23,10 +24,13 @@ export type {
   UnitsPrimary,
   CommittedTarget,
   ScoreState,
+  InventoryState,
 } from './store';
 export {
   settingsToSave,
   saveToSettings,
+  storeToSave,
+  saveToInventory,
   loadSettingsInto,
   persistSettingsOnChange,
 } from './persist-settings';

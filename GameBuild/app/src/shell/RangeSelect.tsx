@@ -8,7 +8,13 @@
 // Deliberately simple: no grayed-out "coming soon" slots for ranges that don't
 // exist yet (D8). Plain inline styles, matching every other component here.
 
-export function RangeSelect({ onSelect }: { onSelect: (rangeId: string) => void }) {
+export function RangeSelect({
+  onSelect,
+  onOpenStore,
+}: {
+  onSelect: (rangeId: string) => void;
+  onOpenStore: () => void;
+}) {
   return (
     <div
       style={{
@@ -56,6 +62,25 @@ export function RangeSelect({ onSelect }: { onSelect: (rangeId: string) => void 
         }}
       >
         Range A — 50 to 500 yd steel
+      </button>
+      <button
+        onClick={onOpenStore}
+        style={{
+          minWidth: 280,
+          maxWidth: '80vw',
+          padding: '14px 28px',
+          background: 'rgba(232,238,244,0.08)',
+          color: '#e8eef4',
+          border: '1px solid rgba(232,238,244,0.4)',
+          borderRadius: 10,
+          fontFamily: 'monospace',
+          fontSize: 16,
+          cursor: 'pointer',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
+        }}
+      >
+        Store — rifles &amp; ammo
       </button>
     </div>
   );
