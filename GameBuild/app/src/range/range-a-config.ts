@@ -60,6 +60,10 @@ export interface RackSpec {
   plates: PlateSpec[];
   /** Catch berm behind the rack (DERIVED from the rack frame, BTK-style). */
   berm: BermSpec;
+  /** Optional plate paint color for this rack, 0xRRGGBB (target-surface TS-B).
+   *  Absent = RangeScene's default bright-steel paint. Purely cosmetic — hit
+   *  marks chip through ANY paint to bare metal (engine paint model). */
+  paintColor?: number;
 }
 
 /** Sand berm behind a rack that stops missed shots. Low + wide, matching
@@ -143,6 +147,12 @@ const X_OFFSET_YARDS: Record<number, number> = {
  *  the beam so the frame clears the tallest plate). */
 const PLATE_CENTER_FRACTION = 0.5;
 
+/** AUTHORED per-rack paint colors (target-surface TS-B). Racks not listed keep
+ *  the default bright-steel paint (`RangeScene` `PLATE_COLOR`). Currently every
+ *  rack uses the default grey — hit splats read most clearly against it. The
+ *  per-rack override mechanism (`RackSpec.paintColor`) stays wired for future use. */
+const PAINT_COLOR_HEX: Record<number, number> = {};
+
 function buildRack(yards: number): RackSpec {
   const distanceM = yardsToMeters(yards);
   const plates: PlateSpec[] = PLATE_INCHES[yards].map((inches) => {
@@ -180,6 +190,7 @@ function buildRack(yards: number): RackSpec {
     plateCenterYM,
     plates,
     berm,
+    ...(PAINT_COLOR_HEX[yards] !== undefined ? { paintColor: PAINT_COLOR_HEX[yards] } : {}),
   };
 }
 

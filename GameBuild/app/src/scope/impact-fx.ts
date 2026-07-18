@@ -4,11 +4,13 @@
 // (colour from game/impact-fx-model.ts). The puff grows and fades over its
 // lifetime, then recycles.
 //
-// Why sprites (and no persistent mark): an earlier build used a GPU dust shader
-// + a persistent decal/sprite "scuff". The scuff read wrong on a swinging plate
-// (world-anchored, didn't ride the swing) and the shader puffs didn't render
-// reliably. Owner 2026-07-14: drop the mark, use a plain sprite puff for BOTH
-// hits and misses (different colour). Sprites always render, so this is robust.
+// Why sprites: an earlier build's GPU dust shader didn't render reliably;
+// plain sprites always do. The puff is TRANSIENT by design — persistent hit
+// marks are a separate system (target-surface TS-C, 2026-07-18): the C++
+// engine paints splats into each plate's texture layer (range/plate-surface),
+// which rides the swinging plate in its material UVs. (That replaced the
+// original world-anchored "scuff" sprite, which hung in space while the plate
+// swung — dropped 2026-07-14, redone properly in plate-UV space.)
 //
 // Pool bookkeeping + colour live in the pure model; this file owns only the
 // sprites + texture. Built lazily via initImpactFx(scene) so importing the

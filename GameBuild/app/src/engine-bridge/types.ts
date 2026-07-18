@@ -214,10 +214,11 @@ export interface EStringVector extends EmbindHandle {
 
 /** The C++ rigid-body steel target (btk::rendering::SteelTarget). Used by the
  * reactive-steel bridge (task 1.5a) to swing/rotate a struck plate from the
- * bullet's impact impulse. Getters that return math types return COPIES (no
- * embind reference policy in bindings.cpp) → their handles must be `.delete()`d.
- * The texture/impact-painting surface is intentionally unused (the game draws
- * its own marks — see increment-1.5-plan D2). */
+ * bullet's impact impulse, and (target-surface TS-C) as the plate's persistent
+ * impact-paint store — `hit()` paints a splat into the target's RGBA buffer,
+ * which the game mirrors into the plate's atlas layer. Getters that return math
+ * types return COPIES (no embind reference policy in bindings.cpp) → their
+ * handles must be `.delete()`d. */
 export interface ESteelTarget extends EmbindHandle {
   addChainAnchor(localAttachment: EVector3D, worldFixed: EVector3D): void;
   hit(bullet: EBullet): void;
@@ -229,6 +230,15 @@ export interface ESteelTarget extends EmbindHandle {
   /** COPY → delete. */
   localToWorld(local: EVector3D): EVector3D;
   isMoving(): boolean;
+  /** Paint + metal colors (bytes). embind exposes the full 6-arg signature. */
+  setColors(paintR: number, paintG: number, paintB: number, metalR: number, metalG: number, metalB: number): void;
+  /** Refill the paint buffer with the current paint color. */
+  initializeTexture(): void;
+  /** Clear recorded impacts AND refill the buffer with clean paint. */
+  clearImpacts(): void;
+  /** ZERO-COPY view of the paint buffer on the WASM heap (typed_memory_view) —
+   * fresh per call; memory growth detaches old views, so copy out immediately. */
+  getTexture(): Uint8Array;
 }
 
 /** Opaque embind enum value (e.g. DragFunction.G7). */

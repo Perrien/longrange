@@ -304,8 +304,41 @@ namespace btk::rendering
     static constexpr float VELOCITY_THRESHOLD = 0.2f;         // m/s
     static constexpr float ANGULAR_VELOCITY_THRESHOLD = 0.2f; // rad/s
 
+    // A plate must also be near facing-forward before it counts as settled, so it
+    // never freezes (and snaps) mid-twist. Radians of residual world-Y twist
+    // allowed at settle.
+    static constexpr float TWIST_SETTLE_THRESHOLD = 0.05f; // ~3°
+
+    // Cap on angular speed (rad/s). A bullet strike on a light plate would
+    // otherwise impart a cartoonish 100–400 rad/s spin (tiny inertia, mass floored
+    // at MIN_MASS), which both looks wrong and takes many seconds to bleed off.
+    // Real steel clangs and swings; it does not spin like a top. Capping keeps
+    // every plate in the same well-behaved regime as the heavy ones.
+    static constexpr float MAX_ANGULAR_SPEED = 12.0f;
+
     // Time window for settle detection (must be below thresholds for this long)
     static constexpr float SETTLE_TIME_THRESHOLD_S = 1.0f; // seconds
+
+    // Torsional restoring stiffness about the world vertical (Y) axis, as a fixed
+    // angular acceleration per radian of twist (rad/s² per rad, i.e. ωₙ²). Twist is
+    // decoupled from the chains (see timeStep) and driven purely by this spring, so
+    // every plate shares one natural frequency ωₙ = sqrt(TWIST_STIFFNESS) and thus
+    // one visible twist amplitude regardless of size: an off-centre hit spins the
+    // plate out to a peak ≈ MAX_ANGULAR_SPEED / ωₙ, then it rings back and settles
+    // facing the shooter. Raise for a stiffer/smaller twist, lower for a looser one.
+    static constexpr float TWIST_STIFFNESS = 60.0f;
+
+    // Fraction of the twist rate remaining after 1 second (extra damping on the
+    // world-Y twist DOF only). The global ANGULAR_DAMPING leaves the twist spring
+    // far too underdamped (≈15 rings); this pulls it toward ζ≈0.3–0.4 so the plate
+    // spins out, swings back through, and settles in a couple of overshoots.
+    static constexpr float TWIST_DAMPING = 0.03f;
+
+    // Hard limit on twist about the world vertical (Y), radians — a safety backstop
+    // BELOW a flip. The dedicated twist spring already peaks below this (see
+    // TWIST_STIFFNESS); the clamp only catches pathological cases so the plate can
+    // never wind past ~90° into a crossed / facing-away knot.
+    static constexpr float MAX_TWIST = 1.658f; // ~95°
 
     // Shape definition (in YZ plane, normal in +X direction)
     float width_;
@@ -354,6 +387,20 @@ namespace btk::rendering
      * @brief Apply instantaneous impulse at a world-space point
      */
     void applyImpulse(const btk::math::Vector3D& impulse, const btk::math::Vector3D& world_position);
+
+    /**
+     * @brief Apply a pure angular impulse (world-space torque × dt) about the
+     * center of mass, using the local-frame diagonal inertia tensor. Adds no
+     * linear velocity — used for the twist restoring torque.
+     */
+    void applyTorque(const btk::math::Vector3D& torque_world, float dt);
+
+    /**
+     * @brief Signed twist angle about the world vertical (Y) axis, radians,
+     * in (−π, π]. Swing-twist decomposition, hemisphere-corrected so the sign is
+     * always the true short-way twist regardless of the quaternion's sheet.
+     */
+    float twistAboutY() const;
 
     /**
      * @brief Apply force at a world-space point

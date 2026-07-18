@@ -8,9 +8,10 @@
 // the bookkeeping is testable in isolation, the rendering is not.
 //
 // Design (owner 2026-07-14): a shot ALWAYS kicks a dust puff — a light metallic
-// spark on a steel hit, brown dirt on a berm/ground miss. There is no persistent
-// impact "mark" (the earlier decal/sprite scuff read wrong on a swinging plate);
-// the transient puff carries all the hit/miss feedback.
+// spark on a steel hit, brown dirt on a berm/ground miss. The puff is the
+// TRANSIENT feedback; persistent hit marks are a separate system (target-surface
+// TS-C, 2026-07-18: engine-painted splats in the plate's texture layer, see
+// range/plate-surface.ts). Steel hits mark the plate; misses leave only the puff.
 
 /** An RGB colour, 0–255 per channel. */
 export interface RgbColor {

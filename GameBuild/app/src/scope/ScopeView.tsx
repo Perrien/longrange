@@ -318,14 +318,20 @@ export function ScopeView({
       };
     }
 
-    // Live reactive-steel physics for currently-swinging plates (task 1.5a). One
-    // C++ SteelTarget per struck plate instance, reused for repeat hits, deleted
-    // when it settles. `rest` is the plate's static instance matrix (restored on
-    // settle); `baseQuat`/`scale` are its face-the-shooter rotation + size.
+    // Live reactive-steel physics for currently-SWINGING plates (task 1.5a).
+    // `rest` is the plate's static instance matrix (restored on settle);
+    // `baseQuat`/`scale` are its rest rotation (identity since TS-B's
+    // engine-frame disc geometry) + size.
     const reactions = new Map<
       number,
       { reaction: SteelReaction; rest: THREE.Matrix4; baseQuat: THREE.Quaternion; scale: THREE.Vector3 }
     >();
+    // Session-long C++ steel targets, one per STRUCK plate (target-surface
+    // TS-C). Created on a plate's first hit and kept after settle — the C++
+    // impact-paint buffer IS the persistent hit-mark store (deleting on settle,
+    // as pre-TS-C code did, would wipe the plate's marks). Entries in
+    // `reactions` always alias entries here; deleted only on unmount.
+    const plateTargets = new Map<number, SteelReaction>();
     // Impacts land at the target only after the bullet's time of flight. The plate
     // swing + dust puff are queued here at FIRE and run when the loop clock reaches
     // their due time, so they coincide with the tracer arriving (not the trigger
@@ -656,16 +662,24 @@ export function ScopeView({
                 run: () => {
                   let entry = reactions.get(hitPlate.instanceId);
                   if (!entry) {
-                    // Non-null assertion (matches simAt's engineModule! above): this
-                    // closure is only queued from inside the `if (engineModule && …)`
-                    // guard, and engineModule is never reset to null once loaded — TS
-                    // just can't carry that narrowing across the deferred closure.
-                    const reaction = createSteelReaction(engineModule!, {
-                      diameterM: hitPlate.diameterM,
-                      thicknessM: PLATE_THICKNESS_M,
-                      position: { x: hitPlate.position.x, y: hitPlate.position.y, z: hitPlate.position.z },
-                      beamHeightM: hitPlate.beamHeightM,
-                    });
+                    let reaction = plateTargets.get(hitPlate.instanceId);
+                    if (!reaction) {
+                      // Non-null assertion (matches simAt's engineModule! above): this
+                      // closure is only queued from inside the `if (engineModule && …)`
+                      // guard, and engineModule is never reset to null once loaded — TS
+                      // just can't carry that narrowing across the deferred closure.
+                      reaction = createSteelReaction(engineModule!, {
+                        diameterM: hitPlate.diameterM,
+                        thicknessM: PLATE_THICKNESS_M,
+                        position: { x: hitPlate.position.x, y: hitPlate.position.y, z: hitPlate.position.z },
+                        beamHeightM: hitPlate.beamHeightM,
+                        paintColorHex: hitPlate.paintColor,
+                      });
+                      plateTargets.set(hitPlate.instanceId, reaction);
+                    }
+                    // Not in `reactions` ⇒ the plate is at rest, so the current
+                    // instance matrix IS the rest matrix (first hit, or settled
+                    // and snapped back).
                     const rest = new THREE.Matrix4();
                     range.plateMesh.getMatrixAt(hitPlate.instanceId, rest);
                     const baseQuat = new THREE.Quaternion();
@@ -675,6 +689,12 @@ export function ScopeView({
                     reactions.set(hitPlate.instanceId, entry);
                   }
                   entry.reaction.strike(impactWorld, impactVel, gameLoad.load.massKg, gameLoad.load.diameterM);
+                  // Persistent mark (TS-C): strike() → C++ hit() just painted a
+                  // splat into the target's buffer — mirror the whole buffer into
+                  // the plate's atlas layer (fresh zero-copy view, copied out by
+                  // writeLayer; only this layer re-uploads to the GPU). The mark
+                  // lives in the plate's material UVs, so it rides the swing.
+                  range.plateSurface.writeLayer(hitPlate.instanceId, entry.reaction.getTexture());
                 },
               });
             }
@@ -853,7 +873,8 @@ export function ScopeView({
           const pose = entry.reaction.getPose();
           reactionPos.set(pose.position.x, pose.position.y, pose.position.z);
           // Steel orientation (relative to the world-aligned rest frame) composed
-          // onto the plate's face-the-shooter rotation, at the plate's scale.
+          // onto the plate's rest rotation (identity since TS-B's engine-frame
+          // disc geometry — kept as a compose so any future base rotation works).
           reactionQuat.set(pose.quaternion.x, pose.quaternion.y, pose.quaternion.z, pose.quaternion.w).multiply(entry.baseQuat);
           reactionMat.compose(reactionPos, reactionQuat, entry.scale);
           range.plateMesh.setMatrixAt(id, reactionMat);
@@ -867,7 +888,8 @@ export function ScopeView({
             for (let ci = 0; ci < 2; ci++) {
               range.chainMesh.setMatrixAt(id * 2 + ci, range.chainRest[id * 2 + ci]);
             }
-            entry.reaction.delete();
+            // Retire from the swing loop but KEEP the C++ target (TS-C): its
+            // paint buffer holds the plate's accumulated marks for the session.
             reactions.delete(id);
           }
         }
@@ -926,8 +948,11 @@ export function ScopeView({
       canvas.removeEventListener('pointercancel', onPointerUp);
       canvas.removeEventListener('wheel', onWheel);
       pendingImpacts.length = 0;
-      for (const entry of reactions.values()) entry.reaction.delete();
+      // Every reaction aliases a plateTargets entry — delete each native handle
+      // once, via plateTargets (TS-C session lifecycle: marks live until here).
       reactions.clear();
+      for (const target of plateTargets.values()) target.delete();
+      plateTargets.clear();
       windField?.delete();
       disposeWindMarkers();
       disposeMirage();

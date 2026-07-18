@@ -22,9 +22,13 @@
 
 import type { BtkModule, ESteelTarget, EVector3D, Vec3, Quat } from './types';
 
-/** Small texture so the (unused) impact-paint buffer costs almost nothing; the
- * game draws its own marks (increment-1.5-plan D2). Must be > 0. */
-const TEXTURE_SIZE = 8;
+/** Engine impact-paint buffer size (target-surface TS-C; supersedes the 1.5-plan
+ * D2 "8px stub — game draws its own marks"). Each C++ target paints hit splats
+ * into a (2·size)×size RGBA buffer (front|back halves; see TS-A native tests);
+ * the game mirrors that buffer into the plate's atlas layer (range/plate-surface),
+ * so this MUST match the atlas tile size — plate-surface derives its tiles from
+ * this constant. */
+export const STEEL_PAINT_TEXTURE_SIZE = 256;
 
 /** Chain anchor sits a hair proud of the plate face so the target hangs just in
  * front of the beam line, as in steel-sim (outwardOffset). Exported so the scene
@@ -61,6 +65,10 @@ export interface SteelReactionSpec {
   position: Vec3;
   /** World Y of the rack beam the chains hang from. */
   beamHeightM: number;
+  /** Plate paint color 0xRRGGBB (TS-C): the C++ paint buffer is filled with
+   * this so a splat chips through the SAME paint the rendered plate shows
+   * (range config paintColor). Absent → engine default (red paint). */
+  paintColorHex?: number;
 }
 
 /** One struck plate's live physics. Created lazily on the first hit, stepped
@@ -82,6 +90,13 @@ export interface SteelReaction {
   getChains(): { attach: Vec3; fixed: Vec3 }[];
   /** True while the plate is still moving (C++ settle detection). */
   isMoving(): boolean;
+  /** The engine's impact-paint buffer, RGBA (2·size)×size (TS-C). A FRESH
+   * zero-copy view of the WASM heap on every call — WASM memory growth detaches
+   * old views, so consume (copy) it immediately, never store it. */
+  getTexture(): Uint8Array;
+  /** Wipe all recorded impacts and refill the paint buffer with clean paint —
+   * the future "repaint the plate" mechanic hook (TS-C ships the plumbing). */
+  repaint(): void;
   /** Release the native handle. Idempotent. */
   delete(): void;
 }
@@ -98,8 +113,13 @@ function v3(module: BtkModule, x: number, y: number, z: number): EVector3D {
 export function createSteelReaction(module: BtkModule, spec: SteelReactionSpec): SteelReaction {
   const isOval = true; // round steel plate
   const pos = v3(module, spec.position.x, spec.position.y, spec.position.z);
-  // Face the shooter (normal points uprange, toward +Z). This is the engine
-  // default normal, so the plate starts at identity orientation.
+  // Engine default normal — points DOWNRANGE (−Z), giving identity orientation
+  // (plate local axes == world axes). The surface the shooter sees is therefore
+  // the engine's "back" face (+Z side): downrange bullets have vel·normal > 0,
+  // so hit() paints the RIGHT half of the texture buffer (pinned by the TS-A
+  // native test DownrangeHitPaintsRightHalfOnly; the TS-B disc geometry maps
+  // the shooter-facing cap's UVs there). NOTE: an earlier comment here claimed
+  // this normal "faces the shooter" — it does not.
   const normal = v3(module, 0, 0, -1);
   const st: ESteelTarget = new module.SteelTarget(
     spec.diameterM,
@@ -108,10 +128,20 @@ export function createSteelReaction(module: BtkModule, spec: SteelReactionSpec):
     isOval,
     pos,
     normal,
-    TEXTURE_SIZE,
+    STEEL_PAINT_TEXTURE_SIZE,
   );
   pos.delete();
   normal.delete();
+
+  // Paint the buffer in the plate's own color (constructor filled it with the
+  // engine's default red). Metal-under-paint stays the engine default gray, so
+  // splats contrast against any paint. embind binds the full 6-arg signature
+  // (C++ default args don't carry through).
+  if (spec.paintColorHex !== undefined) {
+    const hex = spec.paintColorHex;
+    st.setColors((hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff, 140, 140, 140);
+    st.initializeTexture();
+  }
 
   // Two chains from near the top edge (steel-sim geometry). Oval attach point is
   // at ~35° off vertical on the rim, mirrored left/right.
@@ -176,6 +206,12 @@ export function createSteelReaction(module: BtkModule, spec: SteelReactionSpec):
     },
     isMoving(): boolean {
       return st.isMoving();
+    },
+    getTexture(): Uint8Array {
+      return st.getTexture();
+    },
+    repaint(): void {
+      st.clearImpacts();
     },
     delete(): void {
       if (deleted) return;

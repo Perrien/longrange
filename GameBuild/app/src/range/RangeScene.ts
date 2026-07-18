@@ -13,9 +13,11 @@
 import * as THREE from 'three';
 import { RANGE_A_RACKS, RANGE_A_GROUND, type RackSpec } from './range-a-config';
 import { chainAnchorLocalOffset, CHAIN_SPLAY_FRACTION } from '../engine-bridge/steel-target';
+import { createPlateDiscGeometry } from './plate-geometry';
+import { createPlateSurface, createPlateMaterial, type PlateSurface } from './plate-surface';
 
 const SKY_COLOR = 0x9fc4e8;
-const PLATE_COLOR = 0xf0f0ea; // bright steel
+const PLATE_COLOR = 0xf0f0ea; // default plate PAINT (bright steel white); racks may override via config paintColor
 const FRAME_COLOR = 0xaaaaaa; // galvanised posts/beams
 const BERM_COLOR = 0xd8b483; // sand
 const GRASS_COLOR = 0x7d9450;
@@ -42,6 +44,10 @@ export interface PlateInstance {
   beamHeightM: number;
   /** Index of this plate in the shared plate InstancedMesh. */
   instanceId: number;
+  /** Resolved plate paint color, 0xRRGGBB (rack override or default steel;
+   * target-surface TS-C feeds it to the C++ paint buffer so splats chip through
+   * the same paint the rendered plate shows). */
+  paintColor: number;
 }
 
 /**
@@ -52,6 +58,10 @@ export class RangeScene {
   /** The shared InstancedMesh holding every plate. The reactive-steel loop
    * (task 1.5a) writes per-plate matrices here via `setMatrixAt(instanceId,…)`. */
   plateMesh!: THREE.InstancedMesh;
+  /** Per-plate paint/mark texture atlas (target-surface TS-B): layer index ==
+   * plate `instanceId`. TS-C copies a struck plate's engine paint buffer into
+   * its layer via `writeLayer` so hit marks appear on the plate surface. */
+  plateSurface!: PlateSurface;
   /** The shared InstancedMesh holding every plate's two hanging chains (task
    * 1.5c). Chain instances for plate `instanceId` are `instanceId*2` and
    * `instanceId*2+1`; the reactive-steel loop rewrites a struck plate's pair to
@@ -180,19 +190,34 @@ export class RangeScene {
   // --- plates (all racks share one InstancedMesh) ---------------------------
   private addPlates(): void {
     const total = RANGE_A_RACKS.reduce((n, r) => n + r.plates.length, 0);
-    // Unit cylinder radius 0.5 so scaling X/Z by diameter → radius = diameter/2.
-    const geo = this.track(new THREE.CylinderGeometry(0.5, 0.5, 1, 40));
-    const mat = this.track(
-      new THREE.MeshStandardMaterial({ color: PLATE_COLOR, metalness: 0.3, roughness: 0.6 }),
-    );
+
+    // Per-plate paint colors in instanceId order (must match the placement loop
+    // below: racks near→far, plates left→right).
+    const paintColors: number[] = [];
+    for (const rack of RANGE_A_RACKS) {
+      for (let i = 0; i < rack.plates.length; i++) paintColors.push(rack.paintColor ?? PLATE_COLOR);
+    }
+    this.plateSurface = createPlateSurface(paintColors);
+    this.disposables.push(this.plateSurface);
+
+    // Unit disc in the ENGINE frame (face in XY, thickness along Z, shooter side
+    // +Z — see plate-geometry.ts): scaling X/Y by diameter → radius = ⌀/2, and
+    // instances need NO face-the-shooter rotation (identity == engine frame,
+    // which is also what the reactive-steel C++ pose is relative to).
+    const geo = this.track(createPlateDiscGeometry());
+    const mat = this.track(createPlateMaterial(this.plateSurface.texture));
     const mesh = new THREE.InstancedMesh(geo, mat, total);
     mesh.castShadow = true;
+
+    // Per-instance atlas layer selector for the plate material (layer == id).
+    const layerIndex = new Float32Array(total);
+    for (let i = 0; i < total; i++) layerIndex[i] = i;
+    geo.setAttribute('instanceTargetIndex', new THREE.InstancedBufferAttribute(layerIndex, 1));
 
     const m = new THREE.Matrix4();
     const s = new THREE.Vector3();
     const p = new THREE.Vector3();
-    // Lay the disc's flat faces toward the shooter: cylinder axis Y → Z.
-    const faceShooter = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
+    const identity = new THREE.Quaternion();
 
     let id = 0;
     for (const rack of RANGE_A_RACKS) {
@@ -208,8 +233,8 @@ export class RangeScene {
         const x = rack.xOffsetM + cursor + plate.diameterM / 2;
         cursor += plate.diameterM + gap;
         p.set(x, rack.plateCenterYM, z);
-        s.set(plate.diameterM, PLATE_THICKNESS_M, plate.diameterM);
-        m.compose(p, faceShooter, s);
+        s.set(plate.diameterM, plate.diameterM, PLATE_THICKNESS_M);
+        m.compose(p, identity, s);
         mesh.setMatrixAt(id, m);
         this.plates.push({
           rackId: rack.id,
@@ -219,6 +244,7 @@ export class RangeScene {
           position: p.clone(),
           beamHeightM: rack.beamHeightM,
           instanceId: id,
+          paintColor: rack.paintColor ?? PLATE_COLOR,
         });
         id++;
       });

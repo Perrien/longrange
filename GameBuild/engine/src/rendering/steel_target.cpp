@@ -318,25 +318,40 @@ namespace btk::rendering
     // Linear impulse
     velocity_ms_ += impulse / mass_kg_;
 
-    // Angular impulse: apply torque consistently with local-space inertia tensor.
-    // 1) Lever arm and force in world space
+    // Angular impulse: torque = r × F about the center of mass, integrated
+    // consistently with the local-space inertia tensor (see applyTorque).
     btk::math::Vector3D r_world = world_position - position_;
-    btk::math::Vector3D F_world = impulse;
+    btk::math::Vector3D torque_world = r_world.cross(impulse);
+    applyTorque(torque_world, 1.0f); // impulse already has the dt folded in
+  }
 
-    // 2) Convert r and F to local space using the conjugate (inverse) rotation
+  void SteelTarget::applyTorque(const btk::math::Vector3D& torque_world, float dt)
+  {
+    // Convert the world-space torque into a local-space angular acceleration via
+    // the diagonal inertia tensor, then rotate back to world and integrate.
     btk::math::Quaternion inv_orientation = orientation_.conjugate();
-    btk::math::Vector3D r_local = inv_orientation.rotate(r_world);
-    btk::math::Vector3D F_local = inv_orientation.rotate(F_world);
+    btk::math::Vector3D torque_local = inv_orientation.rotate(torque_world);
 
-    // 3) Torque in local space
-    btk::math::Vector3D torque_local = r_local.cross(F_local);
-
-    // 4) Angular acceleration in local space using diagonal inertia tensor
     btk::math::Vector3D ang_acc_local(torque_local.x / inertia_tensor_.x, torque_local.y / inertia_tensor_.y, torque_local.z / inertia_tensor_.z);
 
-    // 5) Convert angular acceleration back to world space and accumulate
     btk::math::Vector3D ang_acc_world = orientation_.rotate(ang_acc_local);
-    angular_velocity_ += ang_acc_world;
+    angular_velocity_ += ang_acc_world * dt;
+  }
+
+  float SteelTarget::twistAboutY() const
+  {
+    // Swing-twist decomposition about Y: the twist quaternion is (w, 0, y, 0). A
+    // quaternion and its negation are the same rotation, so force the w≥0
+    // hemisphere first — otherwise a fast multi-revolution spin lands on the w<0
+    // sheet where atan2 returns the wrong-signed angle.
+    float qw = orientation_.w;
+    float qy = orientation_.y;
+    if(qw < 0.0f)
+    {
+      qw = -qw;
+      qy = -qy;
+    }
+    return 2.0f * std::atan2(qy, qw); // (−π, π]
   }
 
   void SteelTarget::applyForce(const btk::math::Vector3D& force, const btk::math::Vector3D& world_position, float dt)
@@ -364,8 +379,24 @@ namespace btk::rendering
       btk::math::Vector3D gravity_force(0.0f, -btk::physics::Constants::GRAVITY * mass_kg_, 0.0f);
       applyForce(gravity_force, position_, substep_dt);
 
-      // Apply chain tension forces
+      // Twist about world vertical (Y) is a DEDICATED, decoupled DOF — the chains
+      // drive only the swing (pendulum) and must not govern twist. The bare chain
+      // model gives near-zero twist restoring near upright yet a strong crossed-
+      // chain trap at 180°, and it fights unpredictably per plate size; letting it
+      // drive twist is exactly what made light plates settle facing away. So we
+      // snapshot the world-Y twist rate, let the chains act, then restore it — the
+      // chains change swing/position but leave twist to the clean spring below.
+      float twist_rate_before = angular_velocity_.y;
       applyChainForces(substep_dt);
+      angular_velocity_.y = twist_rate_before;
+
+      // Torsional spring toward twist=0 (facing the shooter, chains uncrossed), as a
+      // fixed angular acceleration (rad/s² per rad) so every plate — light or heavy
+      // — shares one natural frequency and therefore one visible twist amplitude:
+      // an off-centre hit visibly spins the plate out (to ~the cap-set peak), then
+      // it rings back and settles facing forward. See twistAboutY() for the
+      // hemisphere-corrected angle.
+      angular_velocity_.y -= TWIST_STIFFNESS * twistAboutY() * substep_dt;
 
       // Apply damping proportional to dt
       // Convert damping coefficients to per-second rates
@@ -374,6 +405,20 @@ namespace btk::rendering
       float angular_damping_factor = std::pow(ANGULAR_DAMPING, substep_dt);
       velocity_ms_ = velocity_ms_ * linear_damping_factor;
       angular_velocity_ = angular_velocity_ * angular_damping_factor;
+
+      // Extra damping on the twist DOF only. The global angular damping is very
+      // light (ζ≈0.05 against the twist spring → ~15 rotational rings before it
+      // settles, which reads as buzz). This brings the twist toward a clean "spin
+      // out, swing back, settle in a couple of overshoots" feel without touching
+      // the swing (x/z) damping.
+      angular_velocity_.y = angular_velocity_.y * std::pow(TWIST_DAMPING, substep_dt);
+
+      // Cap angular speed so a light plate can't spin cartoonishly fast (see
+      // MAX_ANGULAR_SPEED). This also sets the peak twist: with the fixed-frequency
+      // spring above, max twist ≈ cap / sqrt(TWIST_STIFFNESS), uniform across sizes.
+      float w_speed = angular_velocity_.magnitude();
+      if(w_speed > MAX_ANGULAR_SPEED)
+        angular_velocity_ = angular_velocity_ * (MAX_ANGULAR_SPEED / w_speed);
 
       // Semi-implicit Euler integration
       position_ += velocity_ms_ * substep_dt;
@@ -391,13 +436,38 @@ namespace btk::rendering
         // Local default normal is (0, 0, -1) (uprange), so rotate that into world space.
         normal_ = orientation_.rotate(btk::math::Vector3D(0.0f, 0.0f, -1.0f));
       }
+
+      // Twist limit about world vertical (Y). Real hanging chains BIND before a
+      // plate can spin far about vertical — it physically cannot flip to face away
+      // or wind the chains into a crossed 180° knot (that symmetric crossed-chain
+      // state is a strong trap the light, fast-spinning plates would otherwise
+      // settle into). Hard-clamp the world-Y twist to ±MAX_TWIST and kill the twist
+      // rate at the stop; the restoring spring above then walks the plate back to
+      // facing the shooter. This makes "settles facing away / chains crossed"
+      // structurally impossible for any plate size or hit energy.
+      {
+        float twist = twistAboutY();
+        if(std::fabs(twist) > MAX_TWIST)
+        {
+          float clamped = (twist > 0.0f ? MAX_TWIST : -MAX_TWIST);
+          btk::math::Quaternion t_delta = btk::math::Quaternion::fromAxisAngle(btk::math::Vector3D(0.0f, 1.0f, 0.0f), clamped - twist);
+          orientation_ = orientation_ * t_delta; // remove the excess world-Y twist
+          orientation_.normalize();
+          normal_ = orientation_.rotate(btk::math::Vector3D(0.0f, 0.0f, -1.0f));
+          angular_velocity_.y = 0.0f; // stop winding further into the limit
+        }
+      }
     }
 
-    // Update is_moving flag based on velocity thresholds with time-window settle detection
+    // Update is_moving flag based on velocity thresholds with time-window settle
+    // detection. Also require the plate to be near facing-forward (twist ≈ 0) so it
+    // never freezes — and snaps — mid-twist; the spring keeps drifting it home
+    // until then.
     float linear_speed = velocity_ms_.magnitude();
     float angular_speed = angular_velocity_.magnitude();
+    bool facing_forward = std::fabs(twistAboutY()) < TWIST_SETTLE_THRESHOLD;
 
-    if(linear_speed < VELOCITY_THRESHOLD && angular_speed < ANGULAR_VELOCITY_THRESHOLD)
+    if(linear_speed < VELOCITY_THRESHOLD && angular_speed < ANGULAR_VELOCITY_THRESHOLD && facing_forward)
     {
       // Accumulate time spent below thresholds
       time_below_threshold_s_ += dt;

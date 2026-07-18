@@ -68,6 +68,33 @@ don't-chase: UI nudge if the player adjusts after a single shot.
 fresh instance starts visibly off-zero; the flow works with both MIL and MOA
 turrets.
 
+> **Design notes — dedicated dual-scale zeroing range (owner discussion 2026-07-17/18):**
+> - **New range type for sighting-in** with a marked/gridded target you can read a
+>   group *center* off (steel gives only hit/miss + swing — no readable POI). The grid
+>   is drawn **procedurally in the active angular unit** (mil grid vs. MOA grid), so it
+>   follows the MIL/MOA toggle — one parameterized component, not two datasets.
+> - **Zeroing + DOPE ranges must exist in BOTH yards and meters.** A player picks their
+>   preferred system in prefs and zeros / builds DOPE in that system with round-number
+>   stations (imperial → 50/100/… yd; metric → 50/100/… m). These are the ranges where
+>   round numbers are pedagogically load-bearing. (Other range types declare a **unit
+>   character** — `both` / `yards` / `meters` / `agnostic`; the future unknown-distance
+>   field range is `agnostic` — no signs, player ranges via reticle/LRF — a distinct
+>   future range type, i.e. new target/ranging/LRF systems, not part of 2.3/2.4.)
+> - **Unit resolution is at range ENTRY, not on a live toggle.** The station layout is
+>   chosen when you walk onto the range and stays fixed while you shoot. A display-unit
+>   flip mid-session must NEVER move the physical world (it would silently invalidate a
+>   zero and blow away in-progress engagement/DOPE state).
+> - **Zero is stored as a PHYSICAL FACT** (the actual distance in SI + the come-up), not
+>   a label. Zero at 100 yd, later switch display to metric → it honestly reads "zeroed
+>   at 91.4 m." The toggle converts the label; it does not re-zero. Come-ups convert too
+>   (MOA⇄MIL). This physical-fact storage is what makes 2.4/2.5 (DOPE/truing) coherent.
+> - **Zero distance is cartridge-appropriate**, one station even if the range offers
+>   several: 50 (rimfire) / 100 (centerfire) in the active unit. Zero near, reach far by
+>   dialing — you do NOT zero far even for ELR (a .50 zeros at 100, dials up for 1500+;
+>   scope elevation-travel + canted base gate whether far is even reachable). Whether the
+>   player may *choose* the zero distance (100 default vs a 200 doctrine) is deferred —
+>   v1 leans auto-by-cartridge×system.
+
 ## 2.4 Computed DOPE + data book v1
 DOPE service: solver-generated come-up table from *box + player zero* (the
 baseline the player believes); data book UI listing per rifle+lot: baseline
@@ -77,6 +104,21 @@ conditions).
 **Done when:** book shows baseline vs. confirmed nodes; node confidence label
 scales with shots and lot SD (rule: display "confirmed" at ≥N shots where N
 derives from SD — unit-tested).
+
+> **Design notes — dual-scale DOPE range (owner discussion 2026-07-18):**
+> - **Dedicated DOPE / confirmation range in BOTH yards and meters** (same dual-scale
+>   requirement as the zeroing range, 2.3). Multi-distance station ladder (e.g.
+>   50/100/300/500/800 in the active unit) where the player shoots each distance, sees
+>   how far their *box-value* DOPE misses because true MV/BC differ, and records the
+>   real come-ups. Station ladder extent is gated per cartridge by **effective range**
+>   (add effective-range to the catalog) — don't offer 1500 for a .22.
+> - **DOPE rows are PHYSICAL FACTS** (distance in SI + measured come-up + conditions),
+>   like the zero. Build DOPE at yard stations, later switch display to metric → rows
+>   read as the *converted* distances (100 yd → 91 m, 200 yd → 183 m…), **not** round
+>   100/200 m — because you didn't shoot there. To get round-metric DOPE you re-shoot at
+>   metric stations. This is correct-by-design and a good teaching artifact (DOPE is tied
+>   to where you actually shot). Come-ups convert MOA⇄MIL on display.
+> - Same **entry-time unit resolution** + **no live-morph** rules as 2.3.
 
 ## 2.5 Two-lever truing
 `truing.ts`: given nodes, fit (1) **effective MV** primarily from the nearest
