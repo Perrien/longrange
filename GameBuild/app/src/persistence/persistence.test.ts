@@ -154,6 +154,45 @@ describe('migration v1 → v2 (task 2.1a)', () => {
     const round = parseSave(serializeSave(v2WithGear));
     expect(round).toEqual(v2WithGear); // validates + migrate-noop + preserves draws & playerZero
   });
+
+  // Task 2.3a: a rifle whose playerZero carries the new additive-optional
+  // `zeroRangeM` physical fact round-trips unchanged (validated when present, no
+  // version bump — 2.1 D6 pattern). Guards the zeroing flow's persisted state.
+  it('a v2 save with a full playerZero (incl. zeroRangeM) round-trips unchanged', () => {
+    const v2Zeroed = {
+      schemaVersion: 2,
+      updatedAt: '2026-07-19T00:00:00.000Z',
+      settings: { unitsPrimary: 'MOA' as const },
+      rifles: [
+        {
+          id: 'rifle-0002',
+          catalogId: 'rifle-6.5cm',
+          catalogVersion: 1,
+          draws: { mvOffset: 0.4, zeroH: 0.6, zeroV: 0.55, inherentPrecision: 0.3 },
+          playerZero: { elevationRad: 0.0013, windageRad: 0.0002, zeroRangeM: 91.44 },
+        },
+      ],
+      ammoLots: [],
+    };
+    const round = parseSave(serializeSave(v2Zeroed));
+    expect(round).toEqual(v2Zeroed);
+  });
+
+  it('rejects a non-finite playerZero.zeroRangeM', () => {
+    const bad = {
+      ...v2Save,
+      rifles: [
+        {
+          id: 'r1',
+          catalogId: 'c1',
+          catalogVersion: 1,
+          draws: { mvOffset: 0.5 },
+          playerZero: { elevationRad: 0, windageRad: 0, zeroRangeM: Number.NaN },
+        },
+      ],
+    };
+    expect(() => parseSave(JSON.stringify(bad))).toThrow(/zeroRangeM must be a finite number/);
+  });
 });
 
 describe('export file name', () => {

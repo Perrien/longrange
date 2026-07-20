@@ -43,6 +43,11 @@ export type LotDraws = Record<string, number>; //   e.g. { meanMvShift, mvSd, bc
 export interface PlayerZero {
   elevationRad: number;
   windageRad: number;
+  /** SI distance the zero was confirmed at (task 2.3, D5) — a physical fact,
+   *  stored in meters (its display flips MIL⇄MOA without moving the zero, D3).
+   *  Additive-optional: a playerZero written before 2.3 lacks it, so it is
+   *  validated only when present — no schema bump (2.1 D6 pattern). */
+  zeroRangeM?: number;
 }
 
 /** A specific rifle the player owns (v2). Truth = map(draws, catalog ranges);
@@ -115,6 +120,12 @@ function validatePlayerZero(pz: unknown, ctx: string): void {
     fail(`${ctx}.playerZero.elevationRad must be a finite number`);
   if (typeof o.windageRad !== 'number' || !Number.isFinite(o.windageRad))
     fail(`${ctx}.playerZero.windageRad must be a finite number`);
+  // zeroRangeM (task 2.3): additive-optional, validated only when present.
+  if (
+    o.zeroRangeM !== undefined &&
+    (typeof o.zeroRangeM !== 'number' || !Number.isFinite(o.zeroRangeM))
+  )
+    fail(`${ctx}.playerZero.zeroRangeM must be a finite number when present`);
 }
 
 function validateRifle(r: unknown, i: number): void {

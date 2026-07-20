@@ -21,8 +21,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { RangeScene, PLATE_THICKNESS_M, setChainInstance } from '../range/RangeScene';
+import { RangeScene, PLATE_THICKNESS_M, setChainInstance, type PlateInstance } from '../range/RangeScene';
 import { RANGE_A_GROUND } from '../range/range-a-config';
+import { SightInScene, type SightInTargetInstance } from '../range/SightInScene';
+import { snapshotSightIn } from '../range/sight-in-config';
+import { getRangeDefinition } from '../range/ranges';
+import { solveGear, createGearScatter, gearZeroOffset } from '../engine-bridge/gear-solve';
+import { gearSolveContext, type GearSolveContext } from '../game/active-gear';
 import { WIND_MARKERS } from '../range/wind-markers-config';
 import { initWindMarkers, updateWindMarkers, disposeWindMarkers } from './WindMarkers';
 import { initMirage, renderSceneWithMirage, disposeMirage, MIRAGE_REFERENCE_DISTANCE_M } from './Mirage';
@@ -52,7 +57,7 @@ import {
 import { buildTracePath } from '../game/trace-path';
 import type { BtkModule, TrajectoryTable } from '../engine-bridge/types';
 import { resolveShot, type ShotPlate } from '../game/shot';
-import { windToVec, averageEffectiveWind } from '../game/firing-solution';
+import { windToVec, averageEffectiveWind, requiredCorrectionRad } from '../game/firing-solution';
 import { superposeWind, gustScaleFor } from '../game/wind-superposition';
 import { GUST_REFERENCE_MPS } from '../game/wind-field-config';
 import { callImpact, type ImpactCall } from '../game/impact-call';
@@ -167,6 +172,25 @@ export function ScopeView({
   const setWind = useGameStore((s) => s.setWind);
   const currentTarget = useGameStore((s) => s.session.currentTarget);
 
+  // Range-type (task 2.3c2): which world is loaded. Drives the HUD branch
+  // (Clean-target on the sight-in bay vs Commit/engagement on the steel range)
+  // and the header label; the effect reads the same off the store.
+  const rangeId = useGameStore((s) => s.session.rangeId);
+  const rangeDef = getRangeDefinition(rangeId);
+  const isSightInHud = rangeDef.sceneType === 'sight-in';
+  // Sight-in inventory (task 2.3d): the active rifle drives the zero readout +
+  // whether Confirm can store a zero.
+  const inventory = useGameStore((s) => s.inventory);
+  const activeRifle = inventory.rifles.find((r) => r.id === inventory.activeRifleId) ?? null;
+  // Running group (task 2.3d, D5): the engaged target + shot count for the
+  // read-the-grid HUD (the centroid marker itself is drawn on the target face).
+  const [sightInGroup, setSightInGroup] = useState<{
+    shots: number;
+    nominalDistance: number;
+  } | null>(null);
+  // Inspect (D10): head-on close-up of the engaged target.
+  const [inspectOpen, setInspectOpen] = useState(false);
+
   // Wind realism (task 1.7a, D1): read only to gate the in-HUD preset picker
   // below — the Steady/Realistic toggle itself now lives in the Settings screen
   // (task 2.1d). `windPreset` is the per-engagement environment choice and
@@ -186,8 +210,10 @@ export function ScopeView({
   const [lastEffectiveWind, setLastEffectiveWind] = useState<SolveResult['effectiveWind'] | null>(null);
 
   // Local feel control (wobble amplitude is not a persisted setting yet — see
-  // PROGRESS deferred obs; owner-tuned default 0.75 from the 0.9 spike).
-  const wobbleAmpRef = useRef(0.75);
+  // PROGRESS deferred obs). Default 0 = steady hold on every range (owner QoL
+  // request 2026-07-19, supersedes the 0.9-spike 0.75 default); the slider
+  // dials the wobble back in when wanted.
+  const wobbleAmpRef = useRef(0);
   // Breath-hold flag: shared between the HOLD button (JSX) and the render loop.
   const holdingRef = useRef(false);
 
@@ -198,6 +224,14 @@ export function ScopeView({
   // Commit (task 1.6c, D2): the Commit button calls this; it reaches into the
   // imperative aim state to find the plate under the crosshair right now.
   const commitRef = useRef<() => void>(() => {});
+  // Clean-target (task 2.3c2, D9): the sight-in HUD's Clean button calls this; it
+  // reaches into the imperative scene to wipe the engaged target's marks.
+  const cleanRef = useRef<() => void>(() => {});
+  // Confirm zero (task 2.3d): stores the current turret as the rifle's zero and
+  // resets the turret. Inspect (D10): returns the engaged target's face canvas.
+  const confirmZeroRef = useRef<() => void>(() => {});
+  const faceCanvasRef = useRef<() => HTMLCanvasElement | null>(() => null);
+  const inspectCanvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -209,14 +243,36 @@ export function ScopeView({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     const scene = new THREE.Scene();
-    const range = new RangeScene(scene);
-    // Impact marks + hit/miss dust pools (task 1.5c) live in the same scene.
+    // Range-type branch (task 2.3c2): the steel KD range (RangeScene) vs the
+    // sight-in bay (SightInScene). Both reuse the magnified camera, aim/wobble/
+    // breath/recoil, zoom, and reticle below — only the world + the fire path
+    // differ. `range` is null on the sight-in bay and vice-versa.
+    const isSightIn = getRangeDefinition(store().session.rangeId).sceneType === 'sight-in';
+    let range: RangeScene | null = null;
+    let sightIn: SightInScene | null = null;
+    let sightInLayout: ReturnType<typeof snapshotSightIn> | null = null;
+    if (isSightIn) {
+      // Entry snapshot (D3): fix the art variant + target size + stations for the
+      // whole session from the current unit system. Calm by default (D4) — the
+      // player dials wind from the same HUD controls and watches it push the shot.
+      store().setWind({ speedMps: 0, directionDeg: 0 });
+      sightInLayout = snapshotSightIn(store().settings.unitsPrimary);
+      sightIn = new SightInScene(scene, sightInLayout);
+    } else {
+      range = new RangeScene(scene);
+    }
+    // Impact marks + hit/miss dust pools (task 1.5c) + in-scope bullet trace
+    // (task 1.5b): shared pools, harmless (they stay empty) on the sight-in bay.
     initImpactFx(scene);
-    // In-scope bullet trace (task 1.5b): a tracer comet flown per shot.
     initBulletTrace(scene);
     // Wind flags/socks (task 1.7b): built once at the store's CURRENT style;
-    // `updateWindMarkers` rebuilds lazily if the player switches style later.
-    initWindMarkers(scene, WIND_MARKERS, store().settings.windMarkerStyle);
+    // `updateWindMarkers` rebuilds lazily if the player switches style later. On
+    // the sight-in bay keep only the markers that fit the shorter lane (D4).
+    const markerSpecs =
+      isSightIn && sightInLayout
+        ? WIND_MARKERS.filter((m) => m.distanceM <= sightInLayout!.ground.lengthM - 10)
+        : WIND_MARKERS;
+    initWindMarkers(scene, markerSpecs, store().settings.windMarkerStyle);
     // Mirage shimmer (task 1.7c): a post-process pass between this world render
     // and the reticle's separate 2D overlay canvas (untouched by this).
     initMirage(renderer);
@@ -265,12 +321,41 @@ export function ScopeView({
         if (hit) audio.ping(soundDistanceM, speedOfSoundMps, impactEnergyJ, undefined, timeOfFlightS); // hits only
       });
     }
+    // Range A gear integration (task 2.3e, D2): with an active rifle+lot, the
+    // steel range flies the gear's TRUE ballistics (impact + trace), scatters
+    // with its TRUE dispersion, and passes the rifle's zero offset + stored
+    // player zero into resolveShot — an unzeroed rifle visibly misses. With no
+    // gear (or a stale catalog id), the box-true fallback keeps Increment-1
+    // behaviour identical (getGameLoad + SCOPE_ZERO_RANGE_M, no zero error).
+    function steelGearCtx(): GearSolveContext | null {
+      const inv = store().inventory;
+      const rifle = inv.rifles.find((r) => r.id === inv.activeRifleId);
+      const lot = inv.ammoLots.find((l) => l.id === inv.activeLotId);
+      if (!rifle || !lot) return null;
+      try {
+        return gearSolveContext(rifle, lot, store().settings.unitsPrimary);
+      } catch (err) {
+        console.error('range A: gear context failed, using box-true fallback', err);
+        return null;
+      }
+    }
+    // Cache discriminator: steel solves/sims depend on the gear identity + its
+    // zero reference ('box' = no-gear fallback). A Loadout swap or a new
+    // confirmed zero simply misses the cache; stale entries are harmless and
+    // bounded per session.
+    const gearKeyOf = (ctx: GearSolveContext | null): string =>
+      ctx ? `${ctx.rifle.id}|${ctx.lot.id}|${ctx.zeroRangeM}` : 'box';
     const solveCache = new Map<string, { dropM: number; windageM: number; velocityMps: number; timeOfFlightS: number }>();
     // Constant ZERO-wind solve per range (task 1.7a): the no-wind baseline that
     // still captures spin drift, so "fieldSolve − zeroSolve" isolates the
     // field's own gust contribution instead of double-counting spin drift (D2).
+    // Deliberately stays on the BOX load even with gear active (task 2.3e): the
+    // gust DELTA (field − zero) is second-order in the small true-vs-believed
+    // MV/BC gap, so superposing the box delta on the gear-true mean is accurate
+    // to well under the DOPE gap — avoids a field-aware gear solve for now
+    // (deferred refinement, logged in PROGRESS).
     const zeroSolveCache = new Map<number, { dropM: number; windageM: number }>();
-    const simCache = new Map<number, ScatterSimulator>();
+    const simCache = new Map<string, ScatterSimulator>();
     // Fine per-shot trajectory sampling for the bullet trace (task 1.5b); its last
     // row matches solveAt's, so the trace arc and the impact agree at the target.
     const traceTableCache = new Map<string, TrajectoryTable>();
@@ -318,6 +403,16 @@ export function ScopeView({
       };
     }
 
+    // On the sight-in bay the flags show the dialed MEAN only (task 2.3c2, D4:
+    // gusts are orthogonal — the shot uses the mean too), so markers and the
+    // fired shot always agree. The steel range keeps the full field-aware read.
+    const windAtForMarkers = isSightIn
+      ? (_worldPos: { x: number; y: number; z: number }) => {
+          const w = store().session.wind;
+          return windToVec(w.speedMps, w.directionDeg);
+        }
+      : currentWindAt;
+
     // Live reactive-steel physics for currently-SWINGING plates (task 1.5a).
     // `rest` is the plate's static instance matrix (restored on settle);
     // `baseQuat`/`scale` are its rest rotation (identity since TS-B's
@@ -338,16 +433,17 @@ export function ScopeView({
     // pull). Drained in the render loop.
     const pendingImpacts: { dueAt: number; run: () => void }[] = [];
 
-    // The ordinary constant-mean solve — UNCHANGED from 1.6 (cached per
-    // range|speed|dir). This is exactly what `solveAt` returns in Steady mode.
-    function meanSolveAt(rangeM: number, wind: { speedMps: number; directionDeg: number }) {
-      const key = `${rangeM}|${wind.speedMps}|${wind.directionDeg}`;
+    // The ordinary constant-mean solve — cached per gear|range|speed|dir. This
+    // is exactly what `solveAt` returns in Steady mode. With gear it reads the
+    // TRUE table (task 2.3e); the box fallback is byte-identical to 1.6.
+    function meanSolveAt(rangeM: number, wind: { speedMps: number; directionDeg: number }, ctx: GearSolveContext | null) {
+      const key = `${gearKeyOf(ctx)}|${rangeM}|${wind.speedMps}|${wind.directionDeg}`;
       let s = solveCache.get(key);
       if (!s) {
         // Read the last row of the fine trace table (shared, cached) rather than a
         // second solve — one trajectory simulate per engagement keeps the FIRE
         // gesture light (a long main-thread stall can interrupt iOS audio).
-        const table = traceTableAt(rangeM, wind);
+        const table = traceTableAt(rangeM, wind, ctx);
         const row = table[table.length - 1];
         s = row
           ? { dropM: row.dropM, windageM: row.windageM, velocityMps: row.velocityMps, timeOfFlightS: row.timeOfFlightS }
@@ -382,8 +478,8 @@ export function ScopeView({
     // Realistic mode superposes the live field's gust contribution (scaled
     // proportionally to the dialed mean speed) on top of that same mean, and
     // adds the D6 effective-wind readout.
-    function solveAt(rangeM: number, wind: { speedMps: number; directionDeg: number }): SolveResult {
-      const mean = meanSolveAt(rangeM, wind);
+    function solveAt(rangeM: number, wind: { speedMps: number; directionDeg: number }, ctx: GearSolveContext | null): SolveResult {
+      const mean = meanSolveAt(rangeM, wind, ctx);
       if (store().settings.windRealism !== 'realistic') return mean;
       const field = ensureWindField();
       if (!field) return mean; // engine/field not ready yet — fall back to the mean
@@ -418,25 +514,53 @@ export function ScopeView({
         effectiveWind: { speedMps: effective.speedMps, directionDeg: effective.directionDeg, windOffsetRad },
       };
     }
-    function simAt(rangeM: number): ScatterSimulator {
-      let sim = simCache.get(rangeM);
+    function simAt(rangeM: number, ctx: GearSolveContext | null): ScatterSimulator {
+      const key = `${gearKeyOf(ctx)}|${rangeM}`;
+      let sim = simCache.get(key);
       if (!sim) {
-        sim = createScatterSimulator(engineModule!, gameLoad.load, gameLoad.dispersion, rangeM, ISA_ATMOSPHERE, gameLoad.twistM);
-        simCache.set(rangeM, sim);
+        // Gear → the TRUE dispersion (lot MV/BC SDs + rifle inherent precision,
+        // task 2.3e); box fallback → the Increment-1 match-load dispersion.
+        sim = ctx
+          ? createGearScatter(engineModule!, {
+              rifle: ctx.rifle,
+              lot: ctx.lot,
+              rifleRanges: ctx.rifleRanges,
+              lotRanges: ctx.lotRanges,
+              atmosphere: ISA_ATMOSPHERE,
+              targetRangeM: rangeM,
+            })
+          : createScatterSimulator(engineModule!, gameLoad.load, gameLoad.dispersion, rangeM, ISA_ATMOSPHERE, gameLoad.twistM);
+        simCache.set(key, sim);
       }
       return sim;
     }
-    function traceTableAt(rangeM: number, wind: { speedMps: number; directionDeg: number }): TrajectoryTable {
-      const key = `${rangeM}|${wind.speedMps}|${wind.directionDeg}`;
+    function traceTableAt(rangeM: number, wind: { speedMps: number; directionDeg: number }, ctx: GearSolveContext | null): TrajectoryTable {
+      const key = `${gearKeyOf(ctx)}|${rangeM}|${wind.speedMps}|${wind.directionDeg}`;
       let table = traceTableCache.get(key);
       if (!table) {
         const windVec = windToVec(wind.speedMps, wind.directionDeg);
-        table = solveTrajectory(engineModule!, solveLoad, ISA_ATMOSPHERE, windVec, {
-          zeroRangeM: SCOPE_ZERO_RANGE_M,
-          maxRangeM: rangeM,
-          stepM: rangeM / TRACE_SAMPLES,
-          sightHeightM: SIGHT_HEIGHT_M,
-        });
+        // Gear → the TRUE trajectory zeroed at the rifle's stored zero (else the
+        // cartridge default — ctx.zeroRangeM); box fallback → the Increment-1
+        // solve at SCOPE_ZERO_RANGE_M (its remaining role, task 2.3e).
+        table = ctx
+          ? solveGear(engineModule!, {
+              rifle: ctx.rifle,
+              lot: ctx.lot,
+              rifleRanges: ctx.rifleRanges,
+              lotRanges: ctx.lotRanges,
+              atmosphere: ISA_ATMOSPHERE,
+              wind: windVec,
+              zeroRangeM: ctx.zeroRangeM,
+              maxRangeM: rangeM,
+              stepM: rangeM / TRACE_SAMPLES,
+              sightHeightM: SIGHT_HEIGHT_M,
+            }).trueTable
+          : solveTrajectory(engineModule!, solveLoad, ISA_ATMOSPHERE, windVec, {
+              zeroRangeM: SCOPE_ZERO_RANGE_M,
+              maxRangeM: rangeM,
+              stepM: rangeM / TRACE_SAMPLES,
+              sightHeightM: SIGHT_HEIGHT_M,
+            });
         traceTableCache.set(key, table);
       }
       return table;
@@ -561,7 +685,8 @@ export function ScopeView({
     // at that plate's own plane. Shared by FIRE and Commit (task 1.6c, D2) so
     // "commit to the plate under the crosshair" and "the plate that shot just
     // resolved against" always agree.
-    function findAimed(): { dir: THREE.Vector3; plate: (typeof range.plates)[number] } | null {
+    function findAimed(): { dir: THREE.Vector3; plate: PlateInstance } | null {
+      if (!range) return null; // steel-only; the sight-in bay uses findAimedTarget
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(aimQuaternion(st.t));
       if (dir.z >= -1e-3 || range.plates.length === 0) return null;
       let aimed = range.plates[0];
@@ -587,8 +712,10 @@ export function ScopeView({
       if (found) store().commitTarget(found.plate.instanceId, found.plate.distanceM);
     };
 
-    // FIRE — resolve the shot from the aim, then recoil.
-    fireRef.current = () => {
+    // FIRE (steel range) — resolve the shot from the aim, then recoil.
+    function fireSteel() {
+      if (!range) return; // steel-only path; the sight-in bay uses fireSightIn
+      const steel = range; // non-null alias so the deferred impact closures narrow
       // Gate on budget (task 1.6c, D2): ends the 1.4c dry-fire allowance — no
       // shot, no recoil, once the budget for the current target is spent.
       if (store().session.shotBudget <= 0) return;
@@ -602,7 +729,14 @@ export function ScopeView({
           const rangeM = aimed.distanceM;
           const wind = store().session.wind;
           const scope = store().session.scope;
-          const solved = solveAt(rangeM, wind);
+          // Active gear drives the solve/scatter/zero-error (task 2.3e, D2);
+          // null = box-true fallback, today's Increment-1 behaviour. The load
+          // geometry (mass/diameter) follows the gear too — steel impulse and
+          // impact-audio energy scale with the actual cartridge.
+          const gearCtx = steelGearCtx();
+          const bulletMassKg = gearCtx?.bulletMassKg ?? gameLoad.load.massKg;
+          const bulletDiameterM = gearCtx?.bulletDiameterM ?? gameLoad.load.diameterM;
+          const solved = solveAt(rangeM, wind, gearCtx);
           // Effective-wind readout (task 1.7b, D6): undefined in Steady mode
           // (or before the field's loaded), which the HUD reads as "nothing
           // new to show" and just displays the dialed mean instead.
@@ -620,9 +754,13 @@ export function ScopeView({
             dial: { elevRad: scope.elevationRad, windRad: scope.windageRad },
             solve: solved,
             distanceM: rangeM,
-            scatter: simAt(rangeM).fire(),
+            scatter: simAt(rangeM, gearCtx).fire(),
             plates: rackPlates,
-            bulletDiameterM: gameLoad.load.diameterM,
+            bulletDiameterM,
+            // D6 zero-error terms (task 2.3e): the rifle's hidden bore offset +
+            // the stored player zero; both default to 0 in the box fallback.
+            zeroOffsetRad: gearCtx ? gearZeroOffset(gearCtx.rifle, gearCtx.rifleRanges) : undefined,
+            playerZero: gearCtx?.playerZero,
           });
           store().recordShot(result);
           store().decrementBudget();
@@ -681,20 +819,20 @@ export function ScopeView({
                     // instance matrix IS the rest matrix (first hit, or settled
                     // and snapped back).
                     const rest = new THREE.Matrix4();
-                    range.plateMesh.getMatrixAt(hitPlate.instanceId, rest);
+                    steel.plateMesh.getMatrixAt(hitPlate.instanceId, rest);
                     const baseQuat = new THREE.Quaternion();
                     const scale = new THREE.Vector3();
                     rest.decompose(new THREE.Vector3(), baseQuat, scale);
                     entry = { reaction, rest: rest.clone(), baseQuat, scale };
                     reactions.set(hitPlate.instanceId, entry);
                   }
-                  entry.reaction.strike(impactWorld, impactVel, gameLoad.load.massKg, gameLoad.load.diameterM);
+                  entry.reaction.strike(impactWorld, impactVel, bulletMassKg, bulletDiameterM);
                   // Persistent mark (TS-C): strike() → C++ hit() just painted a
                   // splat into the target's buffer — mirror the whole buffer into
                   // the plate's atlas layer (fresh zero-copy view, copied out by
                   // writeLayer; only this layer re-uploads to the GPU). The mark
                   // lives in the plate's material UVs, so it rides the swing.
-                  range.plateSurface.writeLayer(hitPlate.instanceId, entry.reaction.getTexture());
+                  steel.plateSurface.writeLayer(hitPlate.instanceId, entry.reaction.getTexture());
                 },
               });
             }
@@ -709,7 +847,7 @@ export function ScopeView({
             result.impact.y - eyeY,
             impactZ - eyeZ,
           );
-          const impactEnergyJ = 0.5 * gameLoad.load.massKg * solved.velocityMps * solved.velocityMps;
+          const impactEnergyJ = 0.5 * bulletMassKg * solved.velocityMps * solved.velocityMps;
           playShotAudio(result.hitPlateId != null, soundDistanceM, impactEnergyJ, timeOfFlightS);
 
           // Impact FX (task 1.5c): a dust puff on every shot — metallic on a
@@ -740,7 +878,7 @@ export function ScopeView({
           // impact above fires.
           if (store().settings.traceEnabled) {
             const path = buildTracePath(
-              traceTableAt(rangeM, wind),
+              traceTableAt(rangeM, wind, gearCtx),
               { x: eyeX, y: eyeY, z: eyeZ },
               result.impact,
               rangeM,
@@ -754,7 +892,284 @@ export function ScopeView({
       st.dist.vy += (Math.random() * 2 - 1) * RECOIL_YAW_VEL;
       st.pitch += (Math.random() * 2 - 1) * RESIDUAL_SHIFT_RAD;
       st.yaw += (Math.random() * 2 - 1) * RESIDUAL_SHIFT_RAD;
+    }
+
+    // --- sight-in fire path + zeroing flow (task 2.3c2 / 2.3d) ---------------
+    // Per-target running group: impacts as offsets (m) from the target centre.
+    // The centroid marker is drawn on the target face; a dial change starts a new
+    // group (D5) — prior splats stay, but they're excluded from the centroid.
+    const groups = new Map<number, { dx: number; dy: number }[]>();
+    let engagedStation = -1;
+    // One true-dispersion scatter sim per station, rebuilt if the gear changes.
+    const sightInSimCache = new Map<number, { sim: ScatterSimulator; key: string }>();
+
+    // The paper target nearest the sight line at its own plane.
+    function findAimedTarget(): { dir: THREE.Vector3; target: SightInTargetInstance } | null {
+      if (!sightIn || sightIn.targets.length === 0) return null;
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(aimQuaternion(st.t));
+      if (dir.z >= -1e-3) return null;
+      let aimed = sightIn.targets[0];
+      let best = Infinity;
+      for (const t of sightIn.targets) {
+        const tt = -t.distanceM / dir.z;
+        const ax = camera.position.x + dir.x * tt;
+        const ay = camera.position.y + dir.y * tt;
+        const d = Math.hypot(ax - t.position.x, ay - t.position.y);
+        if (d < best) {
+          best = d;
+          aimed = t;
+        }
+      }
+      return { dir, target: aimed };
+    }
+
+    // Gear-driven solve for a sight-in target (D2): the active rifle+lot's TRUE
+    // trajectory (sampled fine for the tracer) + zero offset + stored player zero;
+    // else the box-true fallback (believed = true, no zero error) so a fresh save
+    // still shoots.
+    //
+    // ZERO REFERENCE (fidelity fix 2026-07-19, supersedes the same-day "zero at
+    // the engaged target" fix): the solve zeros the trajectory at the rifle's
+    // CURRENT zero reference — the stored `playerZero.zeroRangeM`, else the
+    // cartridge default (`ctx.zeroRangeM`) — NOT at the engaged target. A rifle
+    // zeroed at 100 therefore reads its real trajectory at the other stations
+    // (~0.2 mil low at 50 from sight height, ~0.5 mil low at 200 from drop),
+    // which is the physical behaviour the 3-station layout teaches. The
+    // over-correction the old fix papered over is instead handled where it
+    // belongs: Confirm subtracts the come-up between the old reference and the
+    // confirmed target (see confirmZeroRef), so `playerZero` stays a pure bore-
+    // offset corrector and POA=POI holds at the confirmed distance. The no-gear
+    // fallback still zeros at the target itself (a friendly POA=POI loaner —
+    // nothing to confirm without a rifle).
+    function sightInSolve(distanceM: number, ctx: GearSolveContext | null) {
+      const wind = store().session.wind;
+      const windVec = windToVec(wind.speedMps, wind.directionDeg);
+      const fineStep = distanceM / TRACE_SAMPLES; // fine table so the tracer arcs
+      if (engineModule && ctx) {
+        const res = solveGear(engineModule, {
+          rifle: ctx.rifle,
+          lot: ctx.lot,
+          rifleRanges: ctx.rifleRanges,
+          lotRanges: ctx.lotRanges,
+          atmosphere: ISA_ATMOSPHERE,
+          wind: windVec,
+          zeroRangeM: ctx.zeroRangeM,
+          maxRangeM: distanceM,
+          stepM: fineStep,
+          sightHeightM: SIGHT_HEIGHT_M,
+        });
+        const row = res.trueTable[res.trueTable.length - 1];
+        return {
+          table: res.trueTable,
+          solve: { dropM: row?.dropM ?? 0, windageM: row?.windageM ?? 0, timeOfFlightS: row?.timeOfFlightS ?? 0 },
+          zeroOffsetRad: res.zeroOffsetRad,
+          playerZero: ctx.playerZero,
+          bulletDiameterM: ctx.bulletDiameterM,
+        };
+      }
+      const table = solveTrajectory(engineModule!, solveLoad, ISA_ATMOSPHERE, windVec, {
+        zeroRangeM: distanceM,
+        maxRangeM: distanceM,
+        stepM: fineStep,
+        sightHeightM: SIGHT_HEIGHT_M,
+      });
+      const row = table[table.length - 1];
+      return {
+        table,
+        solve: { dropM: row?.dropM ?? 0, windageM: row?.windageM ?? 0, timeOfFlightS: row?.timeOfFlightS ?? 0 },
+        zeroOffsetRad: { h: 0, v: 0 },
+        playerZero: { elevationRad: 0, windageRad: 0 },
+        bulletDiameterM: gameLoad.load.diameterM,
+      };
+    }
+
+    // Per-shot scatter from the gear's TRUE dispersion (task 2.3d) — cached per
+    // station, rebuilt if the active gear changes. {0,0} with no gear.
+    function sightInScatterAt(ctx: GearSolveContext, rangeM: number, stationIndex: number) {
+      if (!engineModule) return { x: 0, y: 0 };
+      const key = `${ctx.rifle.id}|${ctx.lot.id}|${rangeM}`;
+      let entry = sightInSimCache.get(stationIndex);
+      if (!entry || entry.key !== key) {
+        entry?.sim.delete();
+        const sim = createGearScatter(engineModule, {
+          rifle: ctx.rifle,
+          lot: ctx.lot,
+          rifleRanges: ctx.rifleRanges,
+          lotRanges: ctx.lotRanges,
+          atmosphere: ISA_ATMOSPHERE,
+          targetRangeM: rangeM,
+        });
+        entry = { sim, key };
+        sightInSimCache.set(stationIndex, entry);
+      }
+      return entry.sim.fire();
+    }
+
+    function fireSightIn() {
+      // Guard the whole shot resolution so a solve error can't kill the recoil.
+      try {
+        if (engineModule && sightIn) {
+          const found = findAimedTarget();
+          if (found) {
+            const { dir, target } = found;
+            const inv = store().inventory;
+            const rifle = inv.rifles.find((r) => r.id === inv.activeRifleId);
+            const lot = inv.ammoLots.find((l) => l.id === inv.activeLotId);
+            // Resolve the gear context once (stale/drifted catalog id → box fallback).
+            let ctx: GearSolveContext | null = null;
+            if (rifle && lot) {
+              try {
+                ctx = gearSolveContext(rifle, lot, store().settings.unitsPrimary);
+              } catch (err) {
+                console.error('sight-in: gear context failed, using box-true fallback', err);
+              }
+            }
+            const sz = sightInSolve(target.distanceM, ctx);
+            const scatter = ctx ? sightInScatterAt(ctx, target.distanceM, target.stationIndex) : { x: 0, y: 0 };
+            const scope = store().session.scope;
+            // The target face as a single (large) disc so resolveShot centres the
+            // group on it; aim-as-hold + dial + player zero vs the true solution +
+            // the rifle's zero offset decide where the group lands (D6).
+            const facePlate: ShotPlate = {
+              instanceId: target.stationIndex,
+              position: { x: target.position.x, y: target.position.y },
+              diameterM: target.sizeM,
+            };
+            const result = resolveShot({
+              eye: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+              aimDir: { x: dir.x, y: dir.y, z: dir.z },
+              dial: { elevRad: scope.elevationRad, windRad: scope.windageRad },
+              solve: sz.solve,
+              distanceM: target.distanceM,
+              scatter,
+              plates: [facePlate],
+              bulletDiameterM: sz.bulletDiameterM,
+              zeroOffsetRad: sz.zeroOffsetRad,
+              playerZero: sz.playerZero,
+            });
+
+            const eyeX = camera.position.x;
+            const eyeY = camera.position.y;
+            const eyeZ = camera.position.z;
+            // Dust puff position: a below-ground miss is projected down the sight
+            // ray onto the grass (same as Range A); otherwise the target plane.
+            let fxX = result.impact.x;
+            let fxY = result.impact.y;
+            let fxZ = -target.distanceM;
+            if (fxY < GROUND_Y_M) {
+              const t = (GROUND_Y_M - eyeY) / (fxY - eyeY);
+              fxX = eyeX + t * (fxX - eyeX);
+              fxZ = eyeZ + t * (fxZ - eyeZ);
+              fxY = GROUND_Y_M + GROUND_PUFF_LIFT_M;
+            }
+            // Paint the splat + dust puff now (paper is close — immediate feedback).
+            sightIn.paintHit(target.stationIndex, result.impact.x, result.impact.y, sz.bulletDiameterM);
+            emitImpact({ impactWorld: new THREE.Vector3(fxX, fxY, fxZ), hit: false });
+            if (store().settings.traceEnabled) {
+              const path = buildTracePath(sz.table, { x: eyeX, y: eyeY, z: eyeZ }, result.impact, target.distanceM);
+              launchBulletTrace(path, st.t);
+            }
+            void audio.unlock().then(() => audio.report());
+
+            // Running group + centroid (D5): accumulate this shot, recompute the
+            // centroid, and overlay it on the target grid.
+            let g = groups.get(target.stationIndex);
+            if (!g) {
+              g = [];
+              groups.set(target.stationIndex, g);
+            }
+            g.push({ dx: result.impact.x - target.position.x, dy: result.impact.y - target.position.y });
+            engagedStation = target.stationIndex;
+            const cx = g.reduce((s, p) => s + p.dx, 0) / g.length;
+            const cy = g.reduce((s, p) => s + p.dy, 0) / g.length;
+            sightIn.setGroupCentroid(target.stationIndex, target.position.x + cx, target.position.y + cy);
+            setSightInGroup({ shots: g.length, nominalDistance: target.nominalDistance });
+          }
+        }
+      } catch (err) {
+        console.error('sight-in fire failed', err);
+      }
+      // Recoil (feel; same as the steel path) — ALWAYS runs.
+      st.dist.vp -= RECOIL_PITCH_VEL;
+      st.dist.vy += (Math.random() * 2 - 1) * RECOIL_YAW_VEL;
+      st.pitch += (Math.random() * 2 - 1) * RESIDUAL_SHIFT_RAD;
+      st.yaw += (Math.random() * 2 - 1) * RESIDUAL_SHIFT_RAD;
+    }
+
+    fireRef.current = isSightIn ? fireSightIn : fireSteel;
+    // Clean-target (D9): wipe the engaged target's marks + reset its group for a
+    // fresh face; falls back to cleaning all three if nothing is under the crosshair.
+    cleanRef.current = () => {
+      if (!sightIn) return;
+      const found = findAimedTarget();
+      const idx = found ? found.target.stationIndex : engagedStation;
+      if (idx >= 0) {
+        sightIn.cleanTarget(idx);
+        groups.set(idx, []);
+        if (idx === engagedStation) setSightInGroup(null);
+      } else {
+        sightIn.cleanAll();
+      }
     };
+    // Confirm zero (D5/D6): COMPOSE the current turret into the rifle's stored
+    // zero, MINUS the come-up handoff, at the engaged target's distance; then
+    // reset the turret and clear the group.
+    //  • Compose, not replace (2026-07-19 re-confirm bug): the stored zero is a
+    //    baseline under the dial (resolveShot: applied = aim + dial + playerZero),
+    //    so on a rifle that already has a zero the turret only holds the touch-up.
+    //  • Handoff (fidelity fix, same day): the dial the player centred with also
+    //    contains the REAL trajectory correction between the old zero reference
+    //    and this target (sightInSolve zeros at the old reference). That part
+    //    moves into the new trajectory zero (`zeroRangeM`), not the angular
+    //    baseline — so re-solve at the old reference and subtract its required
+    //    correction: pz_new = pz_old + dial − required. Leaves playerZero a pure
+    //    bore-offset corrector, so the other stations read their true hold.
+    //    (The required term includes any dialed wind, so a wind hold at confirm
+    //    time cancels cleanly rather than corrupting the zero — the calm-
+    //    conditions hint stays as pedagogy, not a correctness guard.)
+    // The store action does compose + subtract + turret reset atomically.
+    confirmZeroRef.current = () => {
+      const inv = store().inventory;
+      if (!sightIn || engagedStation < 0 || !inv.activeRifleId) return;
+      const target = sightIn.targets[engagedStation];
+      if (!target) return;
+      let required = { elevRad: 0, windRad: 0 };
+      try {
+        const rifle = inv.rifles.find((r) => r.id === inv.activeRifleId);
+        const lot = inv.ammoLots.find((l) => l.id === inv.activeLotId);
+        if (rifle && lot && engineModule) {
+          const ctx = gearSolveContext(rifle, lot, store().settings.unitsPrimary);
+          const sz = sightInSolve(target.distanceM, ctx);
+          required = requiredCorrectionRad(sz.solve.dropM, sz.solve.windageM, target.distanceM);
+        }
+      } catch (err) {
+        console.error('confirm zero: come-up handoff solve failed, storing dial as-is', err);
+      }
+      store().confirmZero(inv.activeRifleId, target.distanceM, required);
+      groups.set(engagedStation, []);
+      sightIn.clearGroupCentroid(engagedStation);
+      setSightInGroup(null);
+    };
+    // Inspect (D10): the engaged target's face canvas for the head-on close-up.
+    faceCanvasRef.current = () => (sightIn && engagedStation >= 0 ? sightIn.getFaceCanvas(engagedStation) : null);
+
+    // Any turret dial change starts a NEW group (D5): reset the engaged target's
+    // running group (prior splats stay on paper); the centroid clears until the
+    // next confirming shot.
+    let dialUnsub: () => void = () => {};
+    if (isSightIn) {
+      dialUnsub = useGameStore.subscribe((s, prev) => {
+        const changed =
+          s.session.scope.elevationRad !== prev.session.scope.elevationRad ||
+          s.session.scope.windageRad !== prev.session.scope.windageRad;
+        if (changed && engagedStation >= 0) {
+          groups.set(engagedStation, []);
+          sightIn?.clearGroupCentroid(engagedStation);
+          setSightInGroup((g) => (g ? { ...g, shots: 0 } : g));
+        }
+      });
+    }
+
 
     // ---- reticle overlay (redraws only when zoom / size / unit change) ------
     // (declared above `resize`, which invalidates this key — see below.)
@@ -867,7 +1282,7 @@ export function ScopeView({
       }
       // Reactive steel (task 1.5a): advance each swinging plate's C++ physics and
       // mirror its pose into the shared plate InstancedMesh; retire on settle.
-      if (reactions.size > 0) {
+      if (range && reactions.size > 0) {
         for (const [id, entry] of reactions) {
           entry.reaction.step(dt);
           const pose = entry.reaction.getPose();
@@ -898,15 +1313,16 @@ export function ScopeView({
       }
       // Wind field (task 1.7a): advance the live curl-noise field's clock once
       // per frame while in Realistic mode (monotonic — never rewound). Built
-      // lazily by `ensureWindField()` the first time it's needed.
-      if (store().settings.windRealism === 'realistic') {
+      // lazily by `ensureWindField()` the first time it's needed. Skipped on the
+      // sight-in bay (mean-only wind there, task 2.3c2).
+      if (!isSightIn && store().settings.windRealism === 'realistic') {
         const field = ensureWindField();
         field?.advance(st.t);
       }
       // Wind flags/socks (task 1.7b): read the live local wind at each marker
-      // and yaw/droop/flutter accordingly (Steady mode just shows the dialed
-      // mean everywhere, since `currentWindAt` returns it unchanged there).
-      updateWindMarkers(dt, st.t, store().settings.windMarkerStyle, currentWindAt);
+      // and yaw/droop/flutter accordingly (Steady mode — and the sight-in bay —
+      // just show the dialed mean everywhere via `windAtForMarkers`).
+      updateWindMarkers(dt, st.t, store().settings.windMarkerStyle, windAtForMarkers);
       // Impact FX (task 1.5c): grow/fade dust puffs and recycle finished ones.
       updateImpactFx(dt);
       // Bullet trace (task 1.5b): advance the tracer, or hide it if toggled off.
@@ -924,7 +1340,7 @@ export function ScopeView({
       // straight to the screen, same as before 1.7c existed (also the
       // cheaper path, no offscreen pass to pay for while it's parked).
       if (store().settings.mirageEnabled) {
-        const mirageWind = currentWindAt({ x: 0, y: EYE_HEIGHT_M, z: -MIRAGE_REFERENCE_DISTANCE_M });
+        const mirageWind = windAtForMarkers({ x: 0, y: EYE_HEIGHT_M, z: -MIRAGE_REFERENCE_DISTANCE_M });
         renderSceneWithMirage(scene, camera, {
           dt,
           fovDeg: camera.fov,
@@ -954,17 +1370,34 @@ export function ScopeView({
       for (const target of plateTargets.values()) target.delete();
       plateTargets.clear();
       windField?.delete();
+      dialUnsub();
+      for (const entry of sightInSimCache.values()) entry.sim.delete();
       disposeWindMarkers();
       disposeMirage();
       disposeImpactFx();
       disposeBulletTrace();
       audio.dispose();
-      range.dispose();
+      range?.dispose();
+      sightIn?.dispose();
       renderer.dispose();
       for (const sim of simCache.values()) sim.delete();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Inspect (D10): when opened, snapshot the engaged target's face canvas (art +
+  // splats + centroid) into the overlay canvas, head-on and large. Read-only.
+  useEffect(() => {
+    if (!inspectOpen) return;
+    const dest = inspectCanvasRef.current;
+    const src = faceCanvasRef.current();
+    if (!dest || !src) return;
+    const size = Math.round(Math.min(window.innerWidth, window.innerHeight) * 0.82);
+    dest.width = size;
+    dest.height = size;
+    const ctx = dest.getContext('2d');
+    if (ctx) ctx.drawImage(src, 0, 0, size, size);
+  }, [inspectOpen]);
 
   return (
     <div
@@ -1069,7 +1502,7 @@ export function ScopeView({
             environment, commit, and the engagement HUD. `unitsPrimary` still
             drives every readout's display system (set in Settings). */}
         <div>
-          {magnification.toFixed(1)}× · {systemLabel(unitsPrimary)} · Range A
+          {magnification.toFixed(1)}× · {systemLabel(unitsPrimary)} · {rangeDef.name}
         </div>
         <label style={{ display: 'block', marginTop: 4 }}>
           zoom ×{magnification.toFixed(1)}{' '}
@@ -1089,7 +1522,7 @@ export function ScopeView({
             min={0}
             max={2}
             step={0.05}
-            defaultValue={0.75}
+            defaultValue={0}
             onChange={(e) => (wobbleAmpRef.current = Number(e.target.value))}
           />
         </label>
@@ -1199,58 +1632,106 @@ export function ScopeView({
           )}
         </div>
 
-        {/* Commit / target select (task 1.6c, D2): engage the plate under the
-            crosshair — refills the shot budget for that plate. */}
-        <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
-          <div>
-            target:{' '}
-            {currentTarget
-              ? `#${currentTarget.plateInstanceId} @ ${formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary).value.toFixed(0)} ${formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary).label}`
-              : 'none committed'}
-          </div>
-          <button onClick={() => commitRef.current()} style={{ marginTop: 4 }}>
-            Commit
-          </button>
-        </div>
-
-        {/* Engagement HUD (task 1.6c, D2/D3): shots remaining, the last spotter
-            call, and running score. */}
-        <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
-          <div>shots left: {shotBudget}</div>
-          <div>
-            last call:{' '}
-            {lastCall
-              ? (() => {
-                  const off = formatOffsetForDisplay(lastCall.offsetM, unitsPrimary);
-                  return `${lastCall.hit ? 'HIT' : 'MISS'} ${lastCall.clock} o'clock (${off.value.toFixed(unitsPrimary === 'MIL' ? 0 : 1)} ${off.label})`;
-                })()
-              : '—'}
-          </div>
-          {/* Effective-wind readout (task 1.7b, D6): what the last shot's
-              bullet actually saw once gusts are in play — the local mean
-              speed/direction sampled along its path, plus what it cost in
-              windage. Realistic mode only; hidden until a shot's been fired. */}
-          {windRealism === 'realistic' && lastEffectiveWind && (
-            <div>
-              wind seen:{' '}
-              {(() => {
-                const spd = formatSpeedForDisplay(lastEffectiveWind.speedMps, unitsPrimary);
-                const clock = formatClockPosition(degToClock(lastEffectiveWind.directionDeg));
-                const off = formatAngleForDisplay(Math.abs(lastEffectiveWind.windOffsetRad), unitsPrimary);
-                const side = lastEffectiveWind.windOffsetRad < 0 ? 'L' : 'R';
-                return `~${spd.value.toFixed(0)} ${spd.label} @ ${clock} → ${off.value.toFixed(unitsPrimary === 'MIL' ? 1 : 2)} ${off.label} ${side}`;
-              })()}
+        {/* Sight-in bay (task 2.3c2/2.3d): read-the-grid zeroing. Dial the turret
+            to centre the group, then Confirm; Clean for a fresh face; Inspect for
+            a head-on close-up. */}
+        {isSightInHud && (
+          <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
+            <div>Sight-in — read the grid, dial to centre the group, Confirm.</div>
+            <div style={{ opacity: 0.9 }}>
+              {!activeRifle
+                ? 'no rifle selected (Loadout)'
+                : (() => {
+                    const zr = activeRifle.playerZero?.zeroRangeM;
+                    if (zr == null) return 'not zeroed';
+                    const z = formatDistanceForDisplay(zr, unitsPrimary);
+                    return `zeroed at ${z.value.toFixed(0)} ${z.label}`;
+                  })()}
             </div>
-          )}
-          <div>
-            first-round: {score.firstRoundHits}/{score.targetsEngaged} · hits: {score.hits}/{score.shotsFired}
+            {sightInGroup ? (
+              <div>
+                group: {sightInGroup.shots} shot{sightInGroup.shots === 1 ? '' : 's'} · 1 square ≈{' '}
+                {unitsPrimary === 'MIL'
+                  ? `${(0.2 * (100 / sightInGroup.nominalDistance)).toFixed(1)} mil`
+                  : `${(100 / sightInGroup.nominalDistance).toFixed(1)} MOA`}{' '}
+                @ {sightInGroup.nominalDistance}
+              </div>
+            ) : (
+              <div style={{ opacity: 0.7 }}>fire a group to begin</div>
+            )}
+            {sightInGroup && sightInGroup.shots > 0 && sightInGroup.shots < 3 && (
+              <div style={{ color: '#e8c95a' }}>let the group build — 3+ shots before you trust the centre</div>
+            )}
+            {windState.speedMps > 0.5 && <div style={{ color: '#e8c95a' }}>zero in calm conditions</div>}
+            <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+              <button onClick={() => confirmZeroRef.current()} disabled={!activeRifle || !sightInGroup}>
+                Confirm zero
+              </button>
+              <button onClick={() => setInspectOpen(true)} disabled={!sightInGroup}>
+                Inspect
+              </button>
+              <button onClick={() => cleanRef.current()}>Clean target</button>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* DOPE side panel (task 1.6d, D3): closed by default, stacked in this
-            same left-margin column so it can never overlap the scope glass or
-            the dial/fire controls — see DopePanel.tsx. */}
-        <DopePanel />
+        {/* Steel range engagement HUD — hidden on the sight-in bay. */}
+        {!isSightInHud && (
+          <>
+            {/* Commit / target select (task 1.6c, D2): engage the plate under the
+                crosshair — refills the shot budget for that plate. */}
+            <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
+              <div>
+                target:{' '}
+                {currentTarget
+                  ? `#${currentTarget.plateInstanceId} @ ${formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary).value.toFixed(0)} ${formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary).label}`
+                  : 'none committed'}
+              </div>
+              <button onClick={() => commitRef.current()} style={{ marginTop: 4 }}>
+                Commit
+              </button>
+            </div>
+
+            {/* Engagement HUD (task 1.6c, D2/D3): shots remaining, the last spotter
+                call, and running score. */}
+            <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
+              <div>shots left: {shotBudget}</div>
+              <div>
+                last call:{' '}
+                {lastCall
+                  ? (() => {
+                      const off = formatOffsetForDisplay(lastCall.offsetM, unitsPrimary);
+                      return `${lastCall.hit ? 'HIT' : 'MISS'} ${lastCall.clock} o'clock (${off.value.toFixed(unitsPrimary === 'MIL' ? 0 : 1)} ${off.label})`;
+                    })()
+                  : '—'}
+              </div>
+              {/* Effective-wind readout (task 1.7b, D6): what the last shot's
+                  bullet actually saw once gusts are in play — the local mean
+                  speed/direction sampled along its path, plus what it cost in
+                  windage. Realistic mode only; hidden until a shot's been fired. */}
+              {windRealism === 'realistic' && lastEffectiveWind && (
+                <div>
+                  wind seen:{' '}
+                  {(() => {
+                    const spd = formatSpeedForDisplay(lastEffectiveWind.speedMps, unitsPrimary);
+                    const clock = formatClockPosition(degToClock(lastEffectiveWind.directionDeg));
+                    const off = formatAngleForDisplay(Math.abs(lastEffectiveWind.windOffsetRad), unitsPrimary);
+                    const side = lastEffectiveWind.windOffsetRad < 0 ? 'L' : 'R';
+                    return `~${spd.value.toFixed(0)} ${spd.label} @ ${clock} → ${off.value.toFixed(unitsPrimary === 'MIL' ? 1 : 2)} ${off.label} ${side}`;
+                  })()}
+                </div>
+              )}
+              <div>
+                first-round: {score.firstRoundHits}/{score.targetsEngaged} · hits: {score.hits}/{score.shotsFired}
+              </div>
+            </div>
+
+            {/* DOPE side panel (task 1.6d, D3): closed by default, stacked in this
+                same left-margin column so it can never overlap the scope glass or
+                the dial/fire controls — see DopePanel.tsx. */}
+            <DopePanel />
+          </>
+        )}
       </div>
       {/* HOLD (breath) — left thumb */}
       <div
@@ -1315,6 +1796,44 @@ export function ScopeView({
       >
         FIRE
       </button>
+      {/* Inspect (D10): a read-only head-on close-up of the engaged target
+          (grid + splats + group centroid) — dismiss to return to the scope. */}
+      {inspectOpen && (
+        <div
+          onClick={() => setInspectOpen(false)}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 30,
+            background: 'rgba(10,14,18,0.92)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12,
+          }}
+        >
+          <canvas
+            ref={inspectCanvasRef}
+            style={{ maxWidth: '82vmin', maxHeight: '82vmin', background: '#fff', borderRadius: 4 }}
+          />
+          <button
+            onClick={() => setInspectOpen(false)}
+            style={{
+              fontFamily: 'monospace',
+              fontSize: 15,
+              color: '#e8eef4',
+              background: 'rgba(40,110,170,0.85)',
+              border: '2px solid #e8eef4',
+              borderRadius: 8,
+              padding: '10px 20px',
+              cursor: 'pointer',
+            }}
+          >
+            Close
+          </button>
+        </div>
+      )}
     </div>
   );
 }

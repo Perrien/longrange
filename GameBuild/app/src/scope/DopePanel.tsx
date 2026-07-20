@@ -18,11 +18,13 @@
 import { useEffect, useState } from 'react';
 import { solveTrajectory, spinRateFromTwist, type AtmosphereInput } from '../engine-bridge';
 import { loadBtkModule } from '../engine-bridge/wasm-module';
-import type { BtkModule } from '../engine-bridge/types';
+import type { BtkModule, TrajectoryTable } from '../engine-bridge/types';
+import { solveGear } from '../engine-bridge/gear-solve';
+import { gearSolveContext, type GearSolveContext } from '../game/active-gear';
 import { windToVec } from '../game/firing-solution';
 import { formatDopeRow, type DopeRow } from '../game/dope-row';
 import { getGameLoad, DEFAULT_GAME_LOAD_ID, SCOPE_ZERO_RANGE_M, SIGHT_HEIGHT_M } from '../game/loads';
-import { yardsToMeters } from '../units';
+import { yardsToMeters, formatDistanceForDisplay } from '../units';
 import { useGameStore } from '../state/store';
 
 // Same ISA atmosphere ScopeView solves against (validation/loads.json conditions).
@@ -40,8 +42,13 @@ export function DopePanel() {
   const [open, setOpen] = useState(false);
   const wind = useGameStore((s) => s.session.wind);
   const unitsPrimary = useGameStore((s) => s.settings.unitsPrimary);
+  // Active gear (task 2.3e, D2): the table becomes the BELIEVED (box) solve for
+  // the selected rifle+lot at the rifle's stored zero — what the player's data
+  // book would say, never the hidden truth.
+  const inventory = useGameStore((s) => s.inventory);
   const [module, setModule] = useState<BtkModule | null>(null);
   const [rows, setRows] = useState<DopeRow[]>([]);
+  const [zeroRangeM, setZeroRangeM] = useState<number>(SCOPE_ZERO_RANGE_M);
   const [error, setError] = useState<string | null>(null);
 
   // Load the engine (cached singleton — ScopeView already loads it; this just
@@ -61,28 +68,59 @@ export function DopePanel() {
     };
   }, []);
 
-  // Re-solve whenever the panel is open and the wind changes (closed panels
-  // don't burn cycles re-solving on every wind tweak).
+  // Re-solve whenever the panel is open and the wind / active gear / zero
+  // changes (closed panels don't burn cycles re-solving on every wind tweak).
   useEffect(() => {
     if (!open || !module) return;
     try {
-      const gameLoad = getGameLoad(DEFAULT_GAME_LOAD_ID);
-      const load = {
-        ...gameLoad.load,
-        spinRateRadPerSec: spinRateFromTwist(gameLoad.load.muzzleVelocityMps, gameLoad.twistM),
-      };
       const windVec = windToVec(wind.speedMps, wind.directionDeg);
-      const table = solveTrajectory(module, load, ISA_ATMOSPHERE, windVec, {
-        zeroRangeM: SCOPE_ZERO_RANGE_M,
-        maxRangeM: MAX_RANGE_M,
-        stepM: STEP_M,
-        sightHeightM: SIGHT_HEIGHT_M,
-      });
+      // Gear-driven DOPE (task 2.3e, D2): the BELIEVED table for the active
+      // rifle+lot, zeroed at the rifle's stored zero (else the cartridge
+      // default). Box-true fallback (Increment-1 behaviour) with no gear or a
+      // stale catalog id.
+      const rifle = inventory.rifles.find((r) => r.id === inventory.activeRifleId);
+      const lot = inventory.ammoLots.find((l) => l.id === inventory.activeLotId);
+      let ctx: GearSolveContext | null = null;
+      if (rifle && lot) {
+        try {
+          ctx = gearSolveContext(rifle, lot, unitsPrimary);
+        } catch (err) {
+          console.error('DOPE: gear context failed, using box-true fallback', err);
+        }
+      }
+      let table: TrajectoryTable;
+      if (ctx) {
+        table = solveGear(module, {
+          rifle: ctx.rifle,
+          lot: ctx.lot,
+          rifleRanges: ctx.rifleRanges,
+          lotRanges: ctx.lotRanges,
+          atmosphere: ISA_ATMOSPHERE,
+          wind: windVec,
+          zeroRangeM: ctx.zeroRangeM,
+          maxRangeM: MAX_RANGE_M,
+          stepM: STEP_M,
+          sightHeightM: SIGHT_HEIGHT_M,
+        }).believedTable;
+      } else {
+        const gameLoad = getGameLoad(DEFAULT_GAME_LOAD_ID);
+        const load = {
+          ...gameLoad.load,
+          spinRateRadPerSec: spinRateFromTwist(gameLoad.load.muzzleVelocityMps, gameLoad.twistM),
+        };
+        table = solveTrajectory(module, load, ISA_ATMOSPHERE, windVec, {
+          zeroRangeM: SCOPE_ZERO_RANGE_M,
+          maxRangeM: MAX_RANGE_M,
+          stepM: STEP_M,
+          sightHeightM: SIGHT_HEIGHT_M,
+        });
+      }
+      setZeroRangeM(ctx ? ctx.zeroRangeM : SCOPE_ZERO_RANGE_M);
       setRows(table.map(formatDopeRow));
     } catch (e: unknown) {
       setError(String(e));
     }
-  }, [open, module, wind.speedMps, wind.directionDeg]);
+  }, [open, module, wind.speedMps, wind.directionDeg, inventory, unitsPrimary]);
 
   return (
     <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
@@ -135,8 +173,10 @@ export function DopePanel() {
             </table>
           )}
           <div style={{ marginTop: 4, color: '#9aa5b1', fontSize: 10 }}>
-            Elev/Wind in {unitsPrimary === 'MIL' ? 'mil' : 'MOA'} · 2″ sight-height model applied (task 1.6a) — scope
-            come-ups, not bore-line drops.
+            {(() => {
+              const z = formatDistanceForDisplay(zeroRangeM, unitsPrimary);
+              return `Elev/Wind in ${unitsPrimary === 'MIL' ? 'mil' : 'MOA'} · zero ${z.value.toFixed(0)} ${z.label} · 2″ sight height — scope come-ups, not bore-line drops.`;
+            })()}
           </div>
         </div>
       )}

@@ -31,11 +31,25 @@ function rowStyle(active: boolean): React.CSSProperties {
   };
 }
 
+const deleteBtnStyle: React.CSSProperties = {
+  fontFamily: 'monospace',
+  fontSize: 12,
+  color: '#e8a0a0',
+  background: 'rgba(180,40,40,0.15)',
+  border: '1px solid rgba(232,160,160,0.45)',
+  borderRadius: 5,
+  padding: '5px 9px',
+  cursor: 'pointer',
+  flexShrink: 0,
+};
+
 export function LoadoutOverlay({ onClose }: { onClose: () => void }) {
   const unitsPrimary = useGameStore((s) => s.settings.unitsPrimary);
   const { rifles, ammoLots, activeRifleId, activeLotId } = useGameStore((s) => s.inventory);
   const selectRifle = useGameStore((s) => s.selectRifle);
   const selectLot = useGameStore((s) => s.selectLot);
+  const deleteRifle = useGameStore((s) => s.deleteRifle);
+  const deleteLot = useGameStore((s) => s.deleteLot);
 
   const empty = rifles.length === 0 && ammoLots.length === 0;
 
@@ -92,7 +106,23 @@ export function LoadoutOverlay({ onClose }: { onClose: () => void }) {
                 <div style={{ fontSize: 15 }}>{model.name}</div>
                 <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>{model.className}</div>
               </div>
-              <span style={{ fontSize: 13, opacity: active ? 1 : 0.4 }}>{active ? '✓ active' : 'select'}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 13, opacity: active ? 1 : 0.4 }}>{active ? '✓ active' : 'select'}</span>
+                <button
+                  style={deleteBtnStyle}
+                  onClick={(e) => {
+                    // Don't let the row's select toggle fire on a delete tap.
+                    e.stopPropagation();
+                    // Destroys this instance's hidden characteristics + zero for
+                    // good — a re-acquire rolls a brand-new rifle.
+                    if (window.confirm(`Delete this ${model.name}? Its zero and individual characteristics are lost permanently.`)) {
+                      deleteRifle(r.id);
+                    }
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           );
         })}
@@ -112,7 +142,20 @@ export function LoadoutOverlay({ onClose }: { onClose: () => void }) {
                   {load.product} · box {mv.value.toFixed(0)} {mv.label}
                 </div>
               </div>
-              <span style={{ fontSize: 13, opacity: active ? 1 : 0.4 }}>{active ? '✓ active' : 'select'}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 13, opacity: active ? 1 : 0.4 }}>{active ? '✓ active' : 'select'}</span>
+                <button
+                  style={deleteBtnStyle}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`Delete this ${load.cartridgeName} ${load.grade} lot? Its lot characteristics are lost permanently.`)) {
+                      deleteLot(l.id);
+                    }
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           );
         })}

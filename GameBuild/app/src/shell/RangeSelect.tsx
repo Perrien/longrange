@@ -1,12 +1,17 @@
-// Range select — the branded landing screen (task 1.8a, D1/D8).
+// Range select — the branded landing screen (task 1.8a, D1/D8; registry-driven
+// in task 2.3a).
 //
 // This is the cold-launch screen: no separate splash in front of it. It shows
-// the crosshair logo + "LongRange" title above a single tappable card for the
-// one range that exists today (Range A, 50–500 yd steel). Selecting it calls
-// `onSelect('range-a')`, which App wires to setRangeId + enter Scope.
+// the crosshair logo + "LongRange" title above one tappable card per range in
+// the registry (`range/ranges.ts`) — Range A (steel) and the Zero Range
+// (sight-in) today; future ranges appear automatically as the registry grows.
+// Selecting a card calls `onSelect(range.id)`, which App wires to setRangeId +
+// enter Scope.
 //
-// Deliberately simple: no grayed-out "coming soon" slots for ranges that don't
-// exist yet (D8). Plain inline styles, matching every other component here.
+// Deliberately simple: no grayed-out "coming soon" slots (D8). Plain inline
+// styles, matching every other component here.
+
+import { listRanges } from '../range/ranges';
 
 export function RangeSelect({
   onSelect,
@@ -42,27 +47,30 @@ export function RangeSelect({
         style={{ width: 128, height: 128, imageRendering: 'auto' }}
       />
       <h1 style={{ margin: 0, fontSize: 34, fontWeight: 700, letterSpacing: 1 }}>LongRange</h1>
-      <button
-        onClick={() => onSelect('range-a')}
-        style={{
-          marginTop: 8,
-          // Large, finger-friendly tap target for iPad.
-          minWidth: 280,
-          maxWidth: '80vw',
-          padding: '20px 28px',
-          background: 'rgba(40,110,170,0.85)',
-          color: '#fff',
-          border: '2px solid #e8eef4',
-          borderRadius: 10,
-          fontFamily: 'monospace',
-          fontSize: 18,
-          cursor: 'pointer',
-          WebkitUserSelect: 'none',
-          userSelect: 'none',
-        }}
-      >
-        Range A — 50 to 500 yd steel
-      </button>
+      {listRanges().map((range) => (
+        <button
+          key={range.id}
+          onClick={() => onSelect(range.id)}
+          style={{
+            marginTop: 8,
+            // Large, finger-friendly tap target for iPad.
+            minWidth: 280,
+            maxWidth: '80vw',
+            padding: '20px 28px',
+            background: 'rgba(40,110,170,0.85)',
+            color: '#fff',
+            border: '2px solid #e8eef4',
+            borderRadius: 10,
+            fontFamily: 'monospace',
+            fontSize: 18,
+            cursor: 'pointer',
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+          }}
+        >
+          {range.shortLabel}
+        </button>
+      ))}
       <button
         onClick={onOpenStore}
         style={{

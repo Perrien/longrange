@@ -21,6 +21,7 @@ import { StoreScreen } from './shell/StoreScreen';
 import { LoadoutOverlay } from './shell/LoadoutOverlay';
 import { ScopeView } from './scope/ScopeView';
 import { DevTools } from './debug/DevTools';
+import { getRangeDefinition } from './range/ranges';
 import { useGameStore } from './state/store';
 
 type PlayerView = 'rangeSelect' | 'scope';
@@ -41,7 +42,12 @@ export function App() {
         <>
           <RangeSelect
             onSelect={(id) => {
-              setRangeId(id);
+              // Route selection through the range registry (task 2.3a): resolve
+              // the definition (guards unknown ids) before entering the scope.
+              // The scene branch on `sceneType` lands in 2.3c; both ranges enter
+              // the scope here so Range A behaves exactly as before.
+              const range = getRangeDefinition(id);
+              setRangeId(range.id);
               setView('scope');
             }}
             onOpenStore={() => setStoreOpen(true)}

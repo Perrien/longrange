@@ -56,6 +56,16 @@ export interface ResolveShotParams {
   /** Plates in the target rack (coplanar at distanceM). */
   plates: ShotPlate[];
   bulletDiameterM: number;
+  /** The rifle's hidden bore/scope zero offset (rad): h = windage, v = elevation
+   *  (task 2.3b, D6). Extra correction the player must supply — a fresh rifle has
+   *  a non-zero offset and so misses until zeroed. Defaults to {0,0} (Increment-1
+   *  box-true behaviour: a "provided zero" rifle). Arrives as a plain number pair
+   *  from `engine-bridge/gear-solve`; never rendered (§4.8). */
+  zeroOffsetRad?: { h: number; v: number };
+  /** The player's confirmed zero correction (rad), a stored baseline added to
+   *  whatever the player dials/holds (task 2.3b, D6). Defaults to {0,0} (no zero
+   *  stored yet). After zeroing this cancels the bore offset at all ranges. */
+  playerZero?: { elevationRad: number; windageRad: number };
 }
 
 function nearestPlate(pt: PlanePoint, plates: ShotPlate[]): ShotPlate | null {
@@ -94,12 +104,21 @@ export function resolveShot(p: ResolveShotParams): ShotResult {
     elevRad: Math.atan2(crosshair.y - center.y, p.distanceM),
     windRad: Math.atan2(crosshair.x - center.x, p.distanceM),
   };
+  // applied = aim + dial + stored player zero (the zero baseline adds to what the
+  // player applies this shot); requiredEff = trajectory correction + the rifle's
+  // bore/scope zero offset (the offset is extra correction the shot needs). D6.
+  const playerZero = p.playerZero ?? { elevationRad: 0, windageRad: 0 };
+  const zeroOffset = p.zeroOffsetRad ?? { h: 0, v: 0 };
   const applied: Correction = {
-    elevRad: aimError.elevRad + p.dial.elevRad,
-    windRad: aimError.windRad + p.dial.windRad,
+    elevRad: aimError.elevRad + p.dial.elevRad + playerZero.elevationRad,
+    windRad: aimError.windRad + p.dial.windRad + playerZero.windageRad,
   };
   const required = requiredCorrectionRad(p.solve.dropM, p.solve.windageM, p.distanceM);
-  const offset = centerOffsetM(applied, required, p.distanceM);
+  const requiredEff: Correction = {
+    elevRad: required.elevRad + zeroOffset.v,
+    windRad: required.windRad + zeroOffset.h,
+  };
+  const offset = centerOffsetM(applied, requiredEff, p.distanceM);
 
   const impact: PlanePoint = {
     x: center.x + offset.x + p.scatter.x,

@@ -21,7 +21,8 @@
 // call — the Store UI never does.
 import type { Load } from '../engine-bridge/types';
 import type { LotTruthRanges, RifleTruthRanges } from './hidden-truth';
-import { moaToRad } from '../units/angle';
+import { moaToRad, milToRad } from '../units/angle';
+import { inchesToMeters } from '../units/length';
 import catalogData from './catalog.data.json';
 
 /** The catalog version every acquired record is stamped with (D10). */
@@ -145,6 +146,26 @@ export function isUnlocked(_catalogId: string): boolean {
   return true;
 }
 
+/** Whether a cartridge is rimfire — drives the recommended zero distance
+ *  (task 2.3, D8: rimfire zeroes at 50, centrefire at 100). Derived from the
+ *  catalog class string so a future rimfire cartridge is covered automatically. */
+export function isRimfireCartridge(cartridgeId: string): boolean {
+  return rawCartridge(cartridgeId).class.toLowerCase().includes('rimfire');
+}
+
+/** Barrel twist as a rate in meters/turn, parsed from the rifle's twist string
+ *  (e.g. "1:8.0" → one turn per 8 inches → inchesToMeters(8)). Drives spin drift
+ *  in the solve + the hit-sim's spin (task 2.3b). Truth-neutral geometry, not a
+ *  hidden value. */
+export function catalogTwistM(rifleCatalogId: string): number {
+  const m = getRifleModel(rifleCatalogId);
+  const parts = m.twist.split(':').map((s) => Number(s.trim()));
+  const [turns, inches] = parts;
+  if (parts.length !== 2 || !Number.isFinite(turns) || !Number.isFinite(inches) || turns === 0)
+    throw new Error(`catalog: cannot parse twist '${m.twist}' for '${rifleCatalogId}'`);
+  return inchesToMeters(inches / turns);
+}
+
 // --- Adapters to the 2.1b hidden-truth model --------------------------------
 
 /** Hidden ranges for a rifle model (the tier's precision band + design-set zero
@@ -153,7 +174,11 @@ export function catalogRifleRanges(rifleCatalogId: string): RifleTruthRanges {
   const m = getRifleModel(rifleCatalogId);
   const c = rawCartridge(m.cartridgeId);
   const prec = c.rifle.inherentPrecisionMoa[m.tier];
-  const zeroSd = catalogData.designSet.zeroOffsetSdMrad;
+  // zeroOffsetSdMrad is in MILLIRADIANS — convert to radians (the truth model's
+  // unit). Using it raw made a fresh rifle's bore misalignment ~1000× too large
+  // (tens of degrees → shots metres off at 100 m); milToRad fixes it (~0.29 mrad
+  // ≈ 1 MOA ≈ 9 cm at 100 m, matching the plan's fit check).
+  const zeroSd = milToRad(catalogData.designSet.zeroOffsetSdMrad);
   return {
     mvOffset: { nominal: 0, sd: c.rifle.barrelToBarrelMvSpreadMps },
     zeroH: { nominal: 0, sd: zeroSd },

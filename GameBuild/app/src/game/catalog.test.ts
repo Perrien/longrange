@@ -104,6 +104,17 @@ describe('derived hidden-truth ranges (2.1b compatibility)', () => {
       expect(bulk.meanMvShift.sd).toBeGreaterThan(match.meanMvShift.sd);
     }
   });
+
+  it('zero-offset SD is in RADIANS at ~1 MOA scale, not raw mrad (regression: 1000× unit bug)', () => {
+    // zeroOffsetSdMrad is 0.29 mrad ≈ 1 MOA ≈ 0.00029 rad. A fresh rifle's worst-
+    // case (±3σ) misalignment must stay a few cm at 100 m — NOT tens of degrees.
+    const r = catalogRifleRanges('65cm-custom');
+    expect(r.zeroH.sd).toBeCloseTo(0.00029, 6);
+    expect(r.zeroV.sd).toBeCloseTo(0.00029, 6);
+    expect(r.zeroH.sd).toBeLessThan(0.001); // << 1 mrad; would be ~0.29 rad if unconverted
+    // ±3σ at 100 m is a handful of cm (on paper), not metres.
+    expect(3 * r.zeroV.sd * 100).toBeLessThan(0.15);
+  });
 });
 
 describe('believed vs. true (D6) and oracle consistency (D2)', () => {

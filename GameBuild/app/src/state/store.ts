@@ -17,7 +17,7 @@ import { create } from 'zustand';
 import { milToRad, moaToRad } from '../units';
 import { yardsToMeters } from '../units';
 import type { ShotResult } from '../game/shot';
-import type { AmmoLot, RifleInstance } from '../persistence';
+import type { AmmoLot, RifleInstance, PlayerZero } from '../persistence';
 import {
   buildAmmoLot,
   buildRifleInstance,
@@ -279,6 +279,37 @@ export interface GameStore {
   selectRifle(instanceId: string | null): void;
   /** Set the active ammo lot (by record id, or null to clear). */
   selectLot(lotId: string | null): void;
+  /** Remove an owned rifle instance (owner QoL, 2026-07-19). Destroys its hidden
+   *  draws + any confirmed zero permanently (a re-acquire rolls a NEW instance).
+   *  Clears the active selection if it pointed at the deleted rifle. Persists
+   *  via the existing inventory→save wiring. No-op for an unknown id. */
+  deleteRifle(instanceId: string): void;
+  /** Remove an owned ammo lot (same semantics as deleteRifle). */
+  deleteLot(lotId: string): void;
+  /** Store the confirmed zero for a rifle instance (task 2.3, D5/D6): writes its
+   *  `playerZero` (elevation/windage correction + the SI distance it was confirmed
+   *  at). Persists via the existing inventory→save wiring. No-op for an unknown id. */
+  setPlayerZero(rifleId: string, zero: PlayerZero): void;
+  /** Confirm the current turret as (part of) a rifle's zero (task 2.3d, D5/D6).
+   *  Because `resolveShot` applies the stored zero as a baseline UNDER the dial
+   *  (`applied = aim + dial + playerZero`), the turret after any confirm is dialed
+   *  RELATIVE to the stored zero — so a confirm must COMPOSE (`new = old + dial`),
+   *  never replace (replacing dropped the old baseline and shifted the very next
+   *  shot by exactly that amount — the 2026-07-19 re-confirm bug).
+   *
+   *  `requiredRad` is the come-up HANDOFF (fidelity fix, same day): the trajectory
+   *  correction the solve demanded at the confirmed distance under the rifle's OLD
+   *  zero reference. That part of the dial is absorbed by the NEW trajectory zero
+   *  (`zeroRangeM`), not the angular baseline, so it is subtracted:
+   *  `pz_new = pz_old + dial − required` — leaving `playerZero` a pure bore-offset
+   *  corrector. Defaults to {0,0} (no reference change). Composes, stamps
+   *  `zeroRangeM`, and resets the turret to 0/0 in one atomic set. No-op for an
+   *  unknown id. */
+  confirmZero(
+    rifleId: string,
+    zeroRangeM: number,
+    requiredRad?: { elevRad: number; windRad: number },
+  ): void;
   /** Replace the whole inventory (used by persistence hydration). */
   applyInventory(inventory: InventoryState): void;
 }
@@ -443,6 +474,62 @@ export const useGameStore = create<GameStore>()((set) => ({
     set((s) => ({ inventory: { ...s.inventory, activeRifleId: instanceId } })),
 
   selectLot: (lotId) => set((s) => ({ inventory: { ...s.inventory, activeLotId: lotId } })),
+
+  deleteRifle: (instanceId) =>
+    set((s) => ({
+      inventory: {
+        ...s.inventory,
+        rifles: s.inventory.rifles.filter((r) => r.id !== instanceId),
+        activeRifleId: s.inventory.activeRifleId === instanceId ? null : s.inventory.activeRifleId,
+      },
+    })),
+
+  deleteLot: (lotId) =>
+    set((s) => ({
+      inventory: {
+        ...s.inventory,
+        ammoLots: s.inventory.ammoLots.filter((l) => l.id !== lotId),
+        activeLotId: s.inventory.activeLotId === lotId ? null : s.inventory.activeLotId,
+      },
+    })),
+
+  setPlayerZero: (rifleId, zero) =>
+    set((s) => ({
+      inventory: {
+        ...s.inventory,
+        rifles: s.inventory.rifles.map((r) =>
+          r.id === rifleId ? { ...r, playerZero: { ...zero } } : r,
+        ),
+      },
+    })),
+
+  confirmZero: (rifleId, zeroRangeM, requiredRad) =>
+    set((s) => {
+      if (!s.inventory.rifles.some((r) => r.id === rifleId)) return s;
+      const req = requiredRad ?? { elevRad: 0, windRad: 0 };
+      const { elevationRad, windageRad } = s.session.scope;
+      return {
+        inventory: {
+          ...s.inventory,
+          rifles: s.inventory.rifles.map((r) =>
+            r.id === rifleId
+              ? {
+                  ...r,
+                  playerZero: {
+                    elevationRad: (r.playerZero?.elevationRad ?? 0) + elevationRad - req.elevRad,
+                    windageRad: (r.playerZero?.windageRad ?? 0) + windageRad - req.windRad,
+                    zeroRangeM,
+                  },
+                }
+              : r,
+          ),
+        },
+        session: {
+          ...s.session,
+          scope: { ...s.session.scope, elevationRad: 0, windageRad: 0 },
+        },
+      };
+    }),
 
   applyInventory: (inventory) => set({ inventory }),
 }));

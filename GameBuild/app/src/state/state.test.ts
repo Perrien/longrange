@@ -460,6 +460,108 @@ describe('inventory / loadout (task 2.2b)', () => {
     st.resetSession();
     expect(useGameStore.getState().inventory.rifles).toHaveLength(1);
   });
+
+  it('deleteRifle removes the instance and clears the active selection if it was active', () => {
+    const st = useGameStore.getState();
+    const keep = st.acquireRifle('65cm-custom', { rng });
+    const drop = st.acquireRifle('65cm-custom', { rng });
+    st.selectRifle(drop);
+    st.deleteRifle(drop);
+    const inv = useGameStore.getState().inventory;
+    expect(inv.rifles.map((r) => r.id)).toEqual([keep]);
+    expect(inv.activeRifleId).toBeNull(); // active pointed at the deleted rifle
+    // Deleting a NON-active rifle leaves the selection alone; unknown id no-ops.
+    st.selectRifle(keep);
+    st.deleteRifle('no-such-rifle');
+    expect(useGameStore.getState().inventory.activeRifleId).toBe(keep);
+    expect(useGameStore.getState().inventory.rifles).toHaveLength(1);
+  });
+
+  it('deleteLot removes the lot and clears the active selection if it was active', () => {
+    const st = useGameStore.getState();
+    const keep = st.acquireLot('65cm-match', { rng });
+    const drop = st.acquireLot('65cm-bulk', { rng });
+    st.selectLot(drop);
+    st.deleteLot(drop);
+    const inv = useGameStore.getState().inventory;
+    expect(inv.ammoLots.map((l) => l.id)).toEqual([keep]);
+    expect(inv.activeLotId).toBeNull();
+  });
+});
+
+describe('confirmZero (task 2.3d — the re-confirm compose fix)', () => {
+  const rng = () => 0.5;
+
+  it('a fresh rifle: confirm stores the current turret + zeroRangeM and resets the turret', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng });
+    st.dialElevationClicks(6); // 0.6 mrad
+    st.dialWindageClicks(-3); // −0.3 mrad
+    st.confirmZero(rid, 91.44);
+    const state = useGameStore.getState();
+    const pz = state.inventory.rifles[0].playerZero!;
+    expect(pz.elevationRad).toBeCloseTo(6 * MIL_CLICK_RAD, 15);
+    expect(pz.windageRad).toBeCloseTo(-3 * MIL_CLICK_RAD, 15);
+    expect(pz.zeroRangeM).toBe(91.44);
+    expect(state.session.scope.elevationRad).toBe(0);
+    expect(state.session.scope.windageRad).toBe(0);
+  });
+
+  it('a rifle with a stored zero: confirm COMPOSES the touch-up dial onto the old zero (never replaces)', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng });
+    // Prior zero (e.g. from an earlier session) — the ~0.6 mil the bug dropped.
+    st.setPlayerZero(rid, { elevationRad: milToRad(0.6), windageRad: milToRad(-0.2), zeroRangeM: 91.44 });
+    // Touch-up: one click each, then re-confirm on the 200 target.
+    st.dialElevationClicks(1);
+    st.dialWindageClicks(1);
+    st.confirmZero(rid, 182.88);
+    const state = useGameStore.getState();
+    const pz = state.inventory.rifles[0].playerZero!;
+    expect(pz.elevationRad).toBeCloseTo(milToRad(0.6) + MIL_CLICK_RAD, 15);
+    expect(pz.windageRad).toBeCloseTo(milToRad(-0.2) + MIL_CLICK_RAD, 15);
+    expect(pz.zeroRangeM).toBe(182.88);
+    expect(state.session.scope.elevationRad).toBe(0);
+    expect(state.session.scope.windageRad).toBe(0);
+  });
+
+  it('subtracts the come-up handoff: pz_new = pz_old + dial − required (fidelity fix)', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng });
+    // Zeroed at 100; the player walks to the 200 target: the dial they centre
+    // with = a 0.1 mil bore touch-up + the REAL 0.5 mil come-up 100→200. The
+    // come-up part belongs to the new trajectory zero, not the angular baseline.
+    st.setPlayerZero(rid, { elevationRad: milToRad(0.3), windageRad: 0, zeroRangeM: 91.44 });
+    st.setElevationRad(milToRad(0.6));
+    st.confirmZero(rid, 182.88, { elevRad: milToRad(0.5), windRad: 0 });
+    const state = useGameStore.getState();
+    const pz = state.inventory.rifles[0].playerZero!;
+    expect(pz.elevationRad).toBeCloseTo(milToRad(0.3) + milToRad(0.6) - milToRad(0.5), 15);
+    expect(pz.windageRad).toBe(0);
+    expect(pz.zeroRangeM).toBe(182.88);
+    expect(state.session.scope.elevationRad).toBe(0);
+  });
+
+  it('re-confirming with no new dial keeps the zero unchanged', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng });
+    st.dialElevationClicks(4);
+    st.confirmZero(rid, 91.44);
+    st.confirmZero(rid, 91.44); // turret is 0/0 now — zero must not move
+    const pz = useGameStore.getState().inventory.rifles[0].playerZero!;
+    expect(pz.elevationRad).toBeCloseTo(4 * MIL_CLICK_RAD, 15);
+    expect(pz.windageRad).toBe(0);
+  });
+
+  it('an unknown rifle id is a no-op (turret untouched)', () => {
+    const st = useGameStore.getState();
+    st.acquireRifle('65cm-custom', { rng });
+    st.dialElevationClicks(2);
+    st.confirmZero('no-such-rifle', 91.44);
+    const state = useGameStore.getState();
+    expect(state.inventory.rifles[0].playerZero).toBeUndefined();
+    expect(state.session.scope.elevationRad).toBeCloseTo(2 * MIL_CLICK_RAD, 15);
+  });
 });
 
 describe('gear persistence (task 2.2b — the DEFAULT_SAVE-wipe fix)', () => {
