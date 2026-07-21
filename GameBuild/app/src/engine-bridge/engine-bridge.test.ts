@@ -64,6 +64,19 @@ describe('engine-bridge/solveTrajectory', () => {
     expect(table[4].windageM).toBeGreaterThan(Math.abs(table[0].windageM));
     expect(Math.abs(table[4].windageM)).toBeGreaterThan(0.1);
   });
+
+  it('a crosswind still deflects the bullet AT the zero range itself (regression: zero must never auto-compensate for live wind)', () => {
+    const wind: WindVec = { x: 4.4704, y: 0, z: 0 }; // 10 mph from left → +x drift
+    // zeroRangeM === maxRangeM: this is exactly the case where the zero solver,
+    // if it were fed the live wind, would find a yaw that cancels the crosswind's
+    // drift right at this distance — silently erasing it from the table.
+    const table = bridge.solveTrajectory(LOAD, ATMOSPHERE, wind, {
+      zeroRangeM: 100,
+      maxRangeM: 100,
+      stepM: 100,
+    });
+    expect(table[0].windageM).toBeGreaterThan(0.01);
+  });
 });
 
 describe('engine-bridge/solveTrajectory sight height over bore (task 1.6a)', () => {
@@ -123,6 +136,14 @@ describe('engine-bridge/computeZero', () => {
     // A few tenths of a mrad of up-angle; windage ~0 with no wind.
     expect(z.elevationRad).toBeGreaterThan(0);
     expect(z.elevationRad).toBeLessThan(0.01);
+    expect(Math.abs(z.windageRad)).toBeLessThan(1e-3);
+  });
+
+  it('never solves a wind-compensating yaw, even with a strong crosswind loaded (regression)', () => {
+    const strongCrosswind: WindVec = { x: 8.9408, y: 0, z: 0 }; // 20 mph
+    const z = bridge.computeZero(LOAD, ATMOSPHERE, strongCrosswind, 100);
+    // The zero is a fixed bore-line reference — yaw stays ~0 regardless of the
+    // wind passed in; only the subsequent flight (solveTrajectory) sees the wind.
     expect(Math.abs(z.windageRad)).toBeLessThan(1e-3);
   });
 });

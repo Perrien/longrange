@@ -4,6 +4,11 @@
 // a deliberately minimal look-around (drag to pan, slider to zoom) just so the
 // whole range can be inspected; the real scope pipeline, wobble, and touch feel
 // arrive in task 1.3 (reusing the task-0.9 aim spike). No ballistics yet.
+//
+// Stage 3 of Design/Plans/test-range-environment-plan.md generalized this to
+// an optional `buildScene` (defaults to `RangeScene`, unchanged) + `label`, so
+// DevTools can reuse the same free-look/frame-time harness for `TestRangeScene`
+// while tuning trees/ground-cover — no shooting required to see the world.
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RangeScene } from './RangeScene';
@@ -13,12 +18,28 @@ const BASE_FOV_DEG = 26; // "1×" vertical FOV; view FOV = BASE / mag
 const MAG_MIN = 1;
 const MAG_MAX = 20;
 
-export function RangeView() {
+export interface RangeViewScene {
+  dispose(): void;
+  update?(dt: number, timeS: number, windVec: { x: number; y: number; z: number }): void;
+}
+
+export function RangeView({
+  label = 'Range A · 50–500 yd',
+  buildScene = (scene: THREE.Scene) => new RangeScene(scene),
+}: {
+  label?: string;
+  buildScene?: (scene: THREE.Scene) => RangeViewScene;
+} = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fpsRef = useRef<HTMLSpanElement>(null);
   const [mag, setMag] = useState(1.5);
   const magRef = useRef(mag);
   magRef.current = mag;
+  // Snapshot at mount only (default `buildScene` is a fresh closure every
+  // render) — the effect below stays a mount-once effect (deps `[]`, as
+  // before Stage 3) instead of tearing down and rebuilding the whole THREE
+  // scene every time `mag` (or any other render-triggering state) changes.
+  const buildSceneRef = useRef(buildScene);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -26,7 +47,7 @@ export function RangeView() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     const scene = new THREE.Scene();
-    const range = new RangeScene(scene);
+    const range = buildSceneRef.current(scene);
 
     const camera = new THREE.PerspectiveCamera(BASE_FOV_DEG / magRef.current, 1, 0.5, 3000);
     camera.position.set(0, EYE_HEIGHT_M, 0);
@@ -81,20 +102,26 @@ export function RangeView() {
     canvas.addEventListener('pointerup', onUp);
     canvas.addEventListener('pointercancel', onUp);
 
-    // Render loop with a smoothed frame-time readout.
+    // Render loop with a smoothed frame-time readout. `update?.()` gets a fixed
+    // test wind (no HUD control here — this harness is for eyeballing the
+    // world, not shooting) so Stage 4's cloud drift has something to animate.
+    const TEST_WIND_VEC = { x: 1, y: 0, z: 0 };
     let raf = 0;
     let last = performance.now();
+    let elapsedS = 0;
     let emaMs = 16;
     let hudAccum = 0;
     function frame(now: number) {
       const dt = now - last;
       last = now;
+      elapsedS += dt / 1000;
       emaMs = emaMs * 0.9 + dt * 0.1;
       hudAccum += dt;
       if (hudAccum > 250 && fpsRef.current) {
         hudAccum = 0;
         fpsRef.current.textContent = `${emaMs.toFixed(1)} ms · ${(1000 / emaMs).toFixed(0)} fps`;
       }
+      range.update?.(dt / 1000, elapsedS, TEST_WIND_VEC);
       camera.fov = BASE_FOV_DEG / magRef.current;
       camera.updateProjectionMatrix();
       renderer.render(scene, camera);
@@ -143,7 +170,7 @@ export function RangeView() {
         }}
       >
         <div>
-          Range A · 50–500 yd · <span ref={fpsRef}>— ms</span>
+          {label} · <span ref={fpsRef}>— ms</span>
         </div>
         <label style={{ display: 'block', marginTop: 4 }}>
           zoom ×{mag.toFixed(1)}{' '}

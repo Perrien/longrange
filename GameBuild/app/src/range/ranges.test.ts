@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { getRangeDefinition, listRanges } from './ranges';
 
 describe('range registry', () => {
-  it('lists both ranges in landing order (range-a first)', () => {
+  it('lists all ranges in landing order (range-a first)', () => {
     const ids = listRanges().map((r) => r.id);
-    expect(ids).toEqual(['range-a', 'sight-in']);
+    expect(ids).toEqual(['range-a', 'sight-in', 'test-range']);
   });
 
   it('resolves Range A as a non-zeroable steel range with no fixed stations', () => {
@@ -22,6 +22,14 @@ describe('range registry', () => {
     expect(r.zeroable).toBe(true);
     expect(r.unitCharacter).toBe('both');
     expect(r.stations.map((s) => s.nominalDistance)).toEqual([50, 100, 200]);
+  });
+
+  it('resolves the test range as a non-zeroable test-range scene with no fixed stations', () => {
+    const r = getRangeDefinition('test-range');
+    expect(r.sceneType).toBe('test-range');
+    expect(r.zeroable).toBe(false);
+    expect(r.unitCharacter).toBe('both');
+    expect(r.stations).toHaveLength(0);
   });
 
   it('lays the sight-in stations out 50-left / 100-centre / 200-right (D4)', () => {

@@ -188,5 +188,5 @@ parallel or after.
 2. Spot-check the numbers against Litz/McCoy and the `muzzle-velocity.md` SD brackets;
    note any that fail the sanity check.
 3. Populate the 2.2 catalog: each field as **nominal + SD** per decision D3
-   ([`execution/increment-2.1-plan.md`](./execution/increment-2.1-plan.md)); close/annotate
+   ([`../archive/increment-2.1-plan.md`](../archive/increment-2.1-plan.md)); close/annotate
    gaps **G5** and **G6** in [`../Wiki/_gaps.md`](../Wiki/_gaps.md).

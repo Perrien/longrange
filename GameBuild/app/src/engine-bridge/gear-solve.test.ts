@@ -130,6 +130,27 @@ describe('engine-bridge/gear-solve/solveGear', () => {
     expect(Object.keys(off).sort()).toEqual(['h', 'v']);
   });
 
+  it('a live crosswind still deflects the true table AT the zero range (regression: zero must never auto-compensate for wind)', () => {
+    const wind: WindVec = { x: 5.8, y: 0, z: 0 }; // ~13 mph from left
+    const zeroM = yardsToMeters(100);
+    // Firing at the SAME distance the rifle is zeroed at is exactly the case where
+    // a wind-aware zero-solve would (wrongly) find a yaw that cancels this wind's
+    // drift right at that range, making POI look unaffected by wind.
+    const res = solveGear(module, {
+      rifle,
+      lot,
+      rifleRanges,
+      lotRanges,
+      atmosphere: ISA,
+      wind,
+      zeroRangeM: zeroM,
+      maxRangeM: zeroM,
+      stepM: zeroM,
+    });
+    const last = res.trueTable[res.trueTable.length - 1];
+    expect(Math.abs(last.windageM)).toBeGreaterThan(0.01);
+  });
+
   it('createGearScatter yields finite dispersed impacts and a tighter group for match vs bulk (task 2.3d)', () => {
     const bulkLot: AmmoLot = { ...lot, id: 'lot-bulk', catalogId: '65cm-bulk' };
     const matchSim = createGearScatter(module, { rifle, lot, rifleRanges, lotRanges, atmosphere: ISA, targetRangeM: 91.44 });

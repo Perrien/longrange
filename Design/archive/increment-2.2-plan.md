@@ -58,8 +58,8 @@
   (`ScopeView`) uses `getGameLoad(DEFAULT_GAME_LOAD_ID)`. **Non-goal: 2.2 does not change how
   the Increment-1 loop solves** — the selected instance doesn't feed the live solve until 2.3.
 - **Starting catalog data is already produced (owner, 2026-07-16).**
-  [`../catalog-starting-values.md`](../catalog-starting-values.md) (readable) +
-  [`../catalog-seed.json`](../catalog-seed.json) (engine-ready, imperial + SI, mapped to the
+  [`../bullet-catalog/catalog-starting-values.md`](../bullet-catalog/catalog-starting-values.md) (readable) +
+  [`../bullet-catalog/catalog-seed.json`](../bullet-catalog/catalog-seed.json) (engine-ready, imperial + SI, mapped to the
   hidden-truth fields) cover **7 cartridges** (.22 LR, .223/5.56, 6.5 CM, .308, .300 WM,
   .338 LM, .50 BMG), **match + bulk** each, with rifle-model attrs (barrel, twist + gating,
   weight, recoil, barrel life, MV/inch), per-instance/per-lot hidden ranges (nominal + SD),
@@ -71,7 +71,7 @@
 ## 2. Architecture at a glance
 
 ```
-game/catalog.data.json  (trimmed from Design/catalog-seed.json — the shipped cartridges)
+game/catalog.data.json  (trimmed from Design/bullet-catalog/catalog-seed.json — the shipped cartridges)
          │   rifle models + ammo loads: believed (box) values + hidden RANGES {nominal, sd} + model attrs
          ▼
 game/catalog.ts  ── typed loader + two adapters ───────────────────────────────┐

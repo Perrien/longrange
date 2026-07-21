@@ -23,6 +23,9 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RangeScene, PLATE_THICKNESS_M, setChainInstance, type PlateInstance } from '../range/RangeScene';
 import { RANGE_A_GROUND } from '../range/range-a-config';
+import { TestRangeScene } from '../range/TestRangeScene';
+import { TEST_RANGE_GROUND } from '../range/test-range-config';
+import type { SteelSceneApi } from '../range/steel-scene-api';
 import { SightInScene, type SightInTargetInstance } from '../range/SightInScene';
 import { snapshotSightIn } from '../range/sight-in-config';
 import { getRangeDefinition } from '../range/ranges';
@@ -178,6 +181,9 @@ export function ScopeView({
   const rangeId = useGameStore((s) => s.session.rangeId);
   const rangeDef = getRangeDefinition(rangeId);
   const isSightInHud = rangeDef.sceneType === 'sight-in';
+  // Test Range is a sandbox, not an engagement — no commit step, no shot-count
+  // limit (the gong auto-commits with an unlimited budget on scene load).
+  const isTestRangeHud = rangeDef.sceneType === 'test-range';
   // Sight-in inventory (task 2.3d): the active rifle drives the zero readout +
   // whether Confirm can store a zero.
   const inventory = useGameStore((s) => s.inventory);
@@ -247,8 +253,9 @@ export function ScopeView({
     // sight-in bay (SightInScene). Both reuse the magnified camera, aim/wobble/
     // breath/recoil, zoom, and reticle below — only the world + the fire path
     // differ. `range` is null on the sight-in bay and vice-versa.
-    const isSightIn = getRangeDefinition(store().session.rangeId).sceneType === 'sight-in';
-    let range: RangeScene | null = null;
+    const sceneType = getRangeDefinition(store().session.rangeId).sceneType;
+    const isSightIn = sceneType === 'sight-in';
+    let range: SteelSceneApi | null = null;
     let sightIn: SightInScene | null = null;
     let sightInLayout: ReturnType<typeof snapshotSightIn> | null = null;
     if (isSightIn) {
@@ -258,6 +265,18 @@ export function ScopeView({
       store().setWind({ speedMps: 0, directionDeg: 0 });
       sightInLayout = snapshotSightIn(store().settings.unitsPrimary);
       sightIn = new SightInScene(scene, sightInLayout);
+    } else if (sceneType === 'test-range') {
+      range = new TestRangeScene(scene);
+      // It's a sandbox, not an engagement: auto-commit the one gong with an
+      // unlimited budget (Infinity - 1 stays Infinity) so there's no commit
+      // step and no shot-count limit — see plan Stage 1 follow-up.
+      const gong = range.plates[0];
+      if (gong) store().commitTarget(gong.instanceId, gong.distanceM, Number.POSITIVE_INFINITY);
+      // Calm by default (owner request 2026-07-21): the Test Range is for
+      // learning the fundamentals without wind in the way, same as the
+      // sight-in bay's D4 default above — no wind flags/controls either (see
+      // the markerSpecs/isTestRangeHud gating below).
+      store().setWind({ speedMps: 0, directionDeg: 0 });
     } else {
       range = new RangeScene(scene);
     }
@@ -266,12 +285,18 @@ export function ScopeView({
     initImpactFx(scene);
     initBulletTrace(scene);
     // Wind flags/socks (task 1.7b): built once at the store's CURRENT style;
-    // `updateWindMarkers` rebuilds lazily if the player switches style later. On
-    // the sight-in bay keep only the markers that fit the shorter lane (D4).
-    const markerSpecs =
+    // `updateWindMarkers` rebuilds lazily if the player switches style later.
+    // Every scene keeps only the markers that fit its own lane length (Test
+    // Range Stage 1) — on a short lane the far markers would float mid-forest.
+    // The Test Range itself gets none at all (owner request 2026-07-21): it's
+    // a calm sandbox, so a flag reading zero wind is just clutter.
+    const laneLenM =
       isSightIn && sightInLayout
-        ? WIND_MARKERS.filter((m) => m.distanceM <= sightInLayout!.ground.lengthM - 10)
-        : WIND_MARKERS;
+        ? sightInLayout.ground.lengthM
+        : sceneType === 'test-range'
+          ? TEST_RANGE_GROUND.laneLengthM
+          : RANGE_A_GROUND.laneLengthM;
+    const markerSpecs = sceneType === 'test-range' ? [] : WIND_MARKERS.filter((m) => m.distanceM <= laneLenM - 10);
     initWindMarkers(scene, markerSpecs, store().settings.windMarkerStyle);
     // Mirage shimmer (task 1.7c): a post-process pass between this world render
     // and the reticle's separate 2D overlay canvas (untouched by this).
@@ -401,6 +426,14 @@ export function ScopeView({
         y: meanVec.y + gustScale * gust.y,
         z: meanVec.z + gustScale * gust.z,
       };
+    }
+
+    // The dialed MEAN wind as a world vector — feeds a scene's optional
+    // per-frame environment animation (Test Range Stage 1's `range?.update?.()`
+    // hook; Stage 4 uses it to drift clouds with the dialed wind).
+    function meanWindVec() {
+      const w = store().session.wind;
+      return windToVec(w.speedMps, w.directionDeg);
     }
 
     // On the sight-in bay the flags show the dialed MEAN only (task 2.3c2, D4:
@@ -1186,7 +1219,7 @@ export function ScopeView({
       const cx = w / 2;
       const cy = h / 2;
       const radiusPx = 0.4 * Math.min(w, h); // matches the 40vmin scope mask
-      const geo = buildReticle(unit, fovRadForMag(mag), h, radiusPx);
+      const geo = buildReticle(unit, fovRadForMag(mag), h, radiusPx, mag);
 
       rctx.strokeStyle = 'rgba(20,20,20,0.9)';
       rctx.fillStyle = 'rgba(20,20,20,0.95)';
@@ -1325,6 +1358,9 @@ export function ScopeView({
       updateWindMarkers(dt, st.t, store().settings.windMarkerStyle, windAtForMarkers);
       // Impact FX (task 1.5c): grow/fade dust puffs and recycle finished ones.
       updateImpactFx(dt);
+      // Per-scene environment animation (Test Range Stage 1; no-op on
+      // RangeScene/sight-in). Stage 4 wires cloud drift here.
+      range?.update?.(dt, st.t, meanWindVec());
       // Bullet trace (task 1.5b): advance the tracer, or hide it if toggled off.
       if (store().settings.traceEnabled) updateBulletTrace(st.t);
       else hideBulletTrace();
@@ -1581,56 +1617,61 @@ export function ScopeView({
 
         {/* Wind control (task 1.6c, D6): 0–20 mph speed slider + 12-o'clock
             direction dial. `directionDeg` is the direction the wind blows FROM
-            (WindState convention); the dial shows it as a clock face. */}
-        <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
-          <div>
-            wind {formatSpeedForDisplay(windState.speedMps, unitsPrimary).value.toFixed(unitsPrimary === 'MIL' ? 1 : 0)}{' '}
-            {formatSpeedForDisplay(windState.speedMps, unitsPrimary).label}
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={unitsPrimary === 'MIL' ? mphToMps(20) : 20}
-            step={unitsPrimary === 'MIL' ? 0.5 : 1}
-            value={formatSpeedForDisplay(windState.speedMps, unitsPrimary).value}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              setWind({ speedMps: unitsPrimary === 'MIL' ? v : mphToMps(v) });
-            }}
-            style={{ width: 140 }}
-          />
-          {/* Wind direction stays clock + degrees regardless of Met/Imp — neither
-              is a metric/imperial distinction, so it's not part of the toggle. */}
-          <div style={{ marginTop: 4 }}>
-            dir {degToClock(windState.directionDeg).toFixed(0)} o'clock / {windState.directionDeg.toFixed(0)}°
-          </div>
-          <input
-            type="range"
-            min={1}
-            max={12}
-            step={1}
-            value={degToClock(windState.directionDeg)}
-            onChange={(e) => setWind({ directionDeg: clockToDeg(Number(e.target.value)) })}
-            style={{ width: 140 }}
-          />
-          {/* Wind preset picker (task 1.7b, D3): the per-engagement wind
-              CHARACTER, an in-scene environment control kept here with the wind
-              speed/direction. The Steady/Realistic toggle + marker style + mirage
-              moved to the Settings screen (task 2.1d); the picker shows only when
-              Realistic is enabled there. */}
-          {windRealism === 'realistic' && (
-            <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span style={{ opacity: 0.8 }}>preset:</span>
-              <select value={windPreset} onChange={(e) => setWindPreset(e.target.value)}>
-                {(availablePresets.length > 0 ? availablePresets : [windPreset]).map((preset) => (
-                  <option key={preset} value={preset}>
-                    {preset}
-                  </option>
-                ))}
-              </select>
+            (WindState convention); the dial shows it as a clock face. Hidden on
+            the Test Range (owner request 2026-07-21): it's a sandbox for the
+            fundamentals, not an engagement — wind is dialed to calm on load
+            (see the effect below) and the controls/flags stay out of the way. */}
+        {!isTestRangeHud && (
+          <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
+            <div>
+              wind {formatSpeedForDisplay(windState.speedMps, unitsPrimary).value.toFixed(unitsPrimary === 'MIL' ? 1 : 0)}{' '}
+              {formatSpeedForDisplay(windState.speedMps, unitsPrimary).label}
             </div>
-          )}
-        </div>
+            <input
+              type="range"
+              min={0}
+              max={unitsPrimary === 'MIL' ? mphToMps(20) : 20}
+              step={unitsPrimary === 'MIL' ? 0.5 : 1}
+              value={formatSpeedForDisplay(windState.speedMps, unitsPrimary).value}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setWind({ speedMps: unitsPrimary === 'MIL' ? v : mphToMps(v) });
+              }}
+              style={{ width: 140 }}
+            />
+            {/* Wind direction stays clock + degrees regardless of Met/Imp — neither
+                is a metric/imperial distinction, so it's not part of the toggle. */}
+            <div style={{ marginTop: 4 }}>
+              dir {degToClock(windState.directionDeg).toFixed(0)} o'clock / {windState.directionDeg.toFixed(0)}°
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={12}
+              step={1}
+              value={degToClock(windState.directionDeg)}
+              onChange={(e) => setWind({ directionDeg: clockToDeg(Number(e.target.value)) })}
+              style={{ width: 140 }}
+            />
+            {/* Wind preset picker (task 1.7b, D3): the per-engagement wind
+                CHARACTER, an in-scene environment control kept here with the wind
+                speed/direction. The Steady/Realistic toggle + marker style + mirage
+                moved to the Settings screen (task 2.1d); the picker shows only when
+                Realistic is enabled there. */}
+            {windRealism === 'realistic' && (
+              <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ opacity: 0.8 }}>preset:</span>
+                <select value={windPreset} onChange={(e) => setWindPreset(e.target.value)}>
+                  {(availablePresets.length > 0 ? availablePresets : [windPreset]).map((preset) => (
+                    <option key={preset} value={preset}>
+                      {preset}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Sight-in bay (task 2.3c2/2.3d): read-the-grid zeroing. Dial the turret
             to centre the group, then Confirm; Clean for a fresh face; Inspect for
@@ -1679,23 +1720,27 @@ export function ScopeView({
         {!isSightInHud && (
           <>
             {/* Commit / target select (task 1.6c, D2): engage the plate under the
-                crosshair — refills the shot budget for that plate. */}
-            <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
-              <div>
-                target:{' '}
-                {currentTarget
-                  ? `#${currentTarget.plateInstanceId} @ ${formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary).value.toFixed(0)} ${formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary).label}`
-                  : 'none committed'}
+                crosshair — refills the shot budget for that plate. Not shown on
+                the Test Range sandbox (auto-committed, unlimited budget). */}
+            {!isTestRangeHud && (
+              <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
+                <div>
+                  target:{' '}
+                  {currentTarget
+                    ? `#${currentTarget.plateInstanceId} @ ${formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary).value.toFixed(0)} ${formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary).label}`
+                    : 'none committed'}
+                </div>
+                <button onClick={() => commitRef.current()} style={{ marginTop: 4 }}>
+                  Commit
+                </button>
               </div>
-              <button onClick={() => commitRef.current()} style={{ marginTop: 4 }}>
-                Commit
-              </button>
-            </div>
+            )}
 
             {/* Engagement HUD (task 1.6c, D2/D3): shots remaining, the last spotter
-                call, and running score. */}
+                call, and running score. Shots-remaining is hidden on the Test Range
+                sandbox — there is no limit there. */}
             <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
-              <div>shots left: {shotBudget}</div>
+              {!isTestRangeHud && <div>shots left: {shotBudget}</div>}
               <div>
                 last call:{' '}
                 {lastCall

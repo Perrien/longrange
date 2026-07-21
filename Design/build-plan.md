@@ -19,9 +19,12 @@
 > in [`execution/PROGRESS.md`](./execution/PROGRESS.md); each increment is broken
 > into session-sized, individually-verified tasks. Increments 0 and 1 are **complete**
 > (tagged `inc0-complete` / `inc1-complete`; their per-task plan docs were removed once
-> closed — history lives in `PROGRESS.md` and git tags). The active plan is
-> [`increment-2`](./execution/increment-2.md); Increments 3–6 are planned
-> just-in-time per [`execution/increments-3-6.md`](./execution/increments-3-6.md).
+> closed — history lives in `PROGRESS.md` and git tags). **The staged, in-order
+> increment plan was retired 2026-07-21** — see `feature-catalog.md`'s intro and
+> CLAUDE.md's Working agreement. Increment 2's detailed plan is archived at
+> [`archive/increment-2.md`](./archive/increment-2.md); Increments 3–6's coarse
+> breakdown is at [`archive/increments-3-6.md`](./archive/increments-3-6.md).
+> `Design/feature-catalog.md` now decides what gets built next.
 > The executing agent starts with the protocol, not with this document's §11.
 
 ---

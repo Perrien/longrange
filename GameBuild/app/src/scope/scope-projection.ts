@@ -20,8 +20,11 @@
 
 import { milToRad, moaToRad, radToMil, radToMoa } from '../units';
 
-/** Optic magnification range (catalog §C3; matches store ZOOM_MIN/MAX). */
-export const SCOPE_MAG_MIN = 4.5;
+/** Optic magnification range (catalog §C3; matches store ZOOM_MIN/MAX). Floor
+ *  is 1× (true unaided-eye view) rather than 0× — FOV = BASE_FOV / magnification,
+ *  so 0× is an infinite FOV (owner asked 2026-07-21 whether the floor could go
+ *  to 0; 1× is the lowest value that keeps this finite and physically meaningful). */
+export const SCOPE_MAG_MIN = 1.0;
 export const SCOPE_MAG_MAX = 35;
 /** Vertical field of view at 1×, degrees. Scope FOV = this / magnification.
  *  (Same base as the task-0.9 aim spike so feel carries over.) */

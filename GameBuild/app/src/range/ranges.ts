@@ -11,7 +11,7 @@
 // (it is not a fixed-station bay).
 
 /** Which scene builder renders a range. */
-export type RangeSceneType = 'steel-racks' | 'sight-in';
+export type RangeSceneType = 'steel-racks' | 'sight-in' | 'test-range';
 
 /** How a range relates to units. `both` = works in either system (the world is
  *  laid out off `unitsPrimary` at entry, D3); the other values are reserved for
@@ -69,8 +69,21 @@ const SIGHT_IN: RangeDefinition = {
   ],
 };
 
+// Test Range (2026-07-21): 100-yd wooded sandbox. Prototype for the environment
+// system (terrain/trees/sky/mountains/clouds) that will later be applied to the
+// other ranges, and the permanent proving ground for new target types.
+const TEST_RANGE: RangeDefinition = {
+  id: 'test-range',
+  name: 'Test Range',
+  shortLabel: 'Test Range — 100 yd wooded',
+  unitCharacter: 'both',
+  sceneType: 'test-range',
+  zeroable: false, // zeroing flow is hard-wired to the sight-in scene
+  stations: [],
+};
+
 /** Every range, in landing-screen order. */
-const RANGES: readonly RangeDefinition[] = [RANGE_A, SIGHT_IN];
+const RANGES: readonly RangeDefinition[] = [RANGE_A, SIGHT_IN, TEST_RANGE];
 
 const BY_ID = new Map(RANGES.map((r) => [r.id, r]));
 

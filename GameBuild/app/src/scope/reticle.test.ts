@@ -109,4 +109,21 @@ describe('buildReticle', () => {
       }
     }
   });
+
+  it('drops all hash marks below RETICLE_HASH_MIN_MAG, keeps them at/above it', () => {
+    for (const unit of ['MIL', 'MOA'] as ReticleUnit[]) {
+      const belowMin = buildReticle(unit, fovRadForMag(2.9), H, RADIUS, 2.9);
+      expect(belowMin.ticksX).toHaveLength(0);
+      expect(belowMin.ticksY).toHaveLength(0);
+      expect(belowMin.maxValue).toBe(0);
+
+      const atMin = buildReticle(unit, fovRadForMag(3), H, RADIUS, 3);
+      expect(atMin.ticksX.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('omitting magnification defaults to showing hash marks (back-compat)', () => {
+    const r = buildReticle('MIL', fovRadForMag(1), H, RADIUS);
+    expect(r.ticksX.length).toBeGreaterThan(0);
+  });
 });

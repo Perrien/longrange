@@ -89,16 +89,28 @@ export function setupZeroedSimulator(
     atmosphere.pressurePa ?? 0,
   );
   const windVec = new module.Vector3D(wind.x, wind.y, wind.z);
+  const calmVec = new module.Vector3D(0, 0, 0);
   // Zero to the LINE OF SIGHT (sightHeightM above the muzzle) at the zero range,
   // not the bore line (task 1.6a). sightHeightM=0 keeps the bore-line behavior
   // the golden-vector oracle and the 0.4 debug table depend on.
   const target = new module.Vector3D(0, sightHeightM, -zeroRangeM);
   const sim = new module.BallisticsSimulator();
-  const owned = [bullet, atmos, windVec, target, sim];
+  const owned = [bullet, atmos, windVec, calmVec, target, sim];
 
   sim.setInitialBullet(bullet);
   sim.setAtmosphere(atmos);
-  sim.setWind(windVec);
+
+  // The zero is a FIXED bore-to-reticle relationship, never something the physics
+  // silently re-solves for whatever wind happens to be live. computeZero() finds
+  // pitch AND yaw that null the miss at the target — if the current wind is loaded
+  // first, it finds a yaw that cancels that wind's drift at the zero range, which
+  // means live wind stops affecting POI at that exact distance every time it's
+  // (re)computed. Solving against calm air instead keeps yaw pinned to the bore
+  // line, so wind never gets invisibly compensated away. If a player deliberately
+  // zeroes while wind is blowing, that's their dialed correction (captured as
+  // `playerZero` at confirm time, ScopeView's `confirmZero`) — a conscious choice
+  // the game never overrides, not a physics auto-correction.
+  sim.setWind(calmVec);
 
   // computeZero returns a COPIED bullet handle — delete it immediately; the
   // simulator retains the zeroed state internally (and resets to it).
@@ -111,6 +123,10 @@ export function setupZeroedSimulator(
     load.spinRateRadPerSec ?? 0,
   );
   zeroed.delete();
+
+  // Now load the REAL wind for the flight the caller is about to simulate —
+  // computeZero's resetToInitial() doesn't touch wind_, so this sticks.
+  sim.setWind(windVec);
 
   return { sim, owned };
 }
@@ -158,7 +174,10 @@ export function solveTrajectory(
   }
 }
 
-/** Solve just the zeroed launch angles for a load/atmosphere/wind at a range. */
+/** Solve just the zeroed launch angles for a load/atmosphere at a range. `wind`
+ *  no longer influences the result — `setupZeroedSimulator` always solves the
+ *  zero against calm air (see its comment) — kept in the signature only because
+ *  it's threaded through to the shared setup helper. */
 export function computeZero(
   module: BtkModule,
   load: Load,

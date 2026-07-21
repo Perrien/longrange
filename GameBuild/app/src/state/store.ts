@@ -142,7 +142,9 @@ export const MIL_CLICK_RAD = milToRad(0.1);
 /** MOA turret detent: 1/4 MOA per click. */
 export const MOA_CLICK_RAD = moaToRad(0.25);
 
-export const ZOOM_MIN = 4.5;
+// Floor is 1× (true unaided-eye view), not 0× — see scope-projection.ts's
+// SCOPE_MAG_MIN comment (FOV = BASE_FOV / magnification is infinite at 0×).
+export const ZOOM_MIN = 1.0;
 export const ZOOM_MAX = 35;
 export const DEFAULT_MAGNIFICATION = 10;
 export const DEFAULT_SHOT_BUDGET = 3;

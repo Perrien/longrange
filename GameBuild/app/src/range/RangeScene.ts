@@ -412,8 +412,10 @@ function makeUnitBermGeometry(): THREE.BufferGeometry {
   return geo;
 }
 
-/** White board with black distance text, drawn to a canvas texture. */
-function makeSignTexture(text: string): THREE.CanvasTexture {
+/** White board with black distance text, drawn to a canvas texture. Exported so
+ * TestRangeScene (Stage 1 of the environment plan) can reuse the same board
+ * look for its one sign instead of duplicating the canvas helper. */
+export function makeSignTexture(text: string): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 128;

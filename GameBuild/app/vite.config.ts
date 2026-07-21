@@ -51,8 +51,10 @@ export default defineConfig({
       },
       workbox: {
         // mp3 added for the shot/ping/ricochet SFX (task 1.5d) so audio works
-        // offline; clips live in public/audio/ (~96 KB total).
-        globPatterns: ['**/*.{js,css,html,png,svg,woff2,webmanifest,mp3}'],
+        // offline; clips live in public/audio/ (~96 KB total). jpg added for the
+        // Test Range environment module's PBR ground/bark/rock textures (Stage 2)
+        // — offline-first is a hard constraint, so they must precache too.
+        globPatterns: ['**/*.{js,css,html,png,svg,woff2,webmanifest,mp3,jpg}'],
         // The WASM-embedding JS bundle exceeds Workbox's 2 MiB default.
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
       },

@@ -1,375 +1,461 @@
-# LongRange — Feature Catalog (the complete "what")
+# LongRange — Feature Catalog & Build Tracker
 
-`Status: draft 1`  ·  `Date: 2026-07-13`
+`Status: restructured as a build tracker 2026-07-21 (was "draft 1" pre-build vision doc, 2026-07-13); built entries grouped into one Built section 2026-07-21`
 
-> **Purpose.** A single, complete list of everything the game should eventually do —
-> the *what*, not the *how* or the *when*. This document is written to be handed to a
-> planning model that will decide architecture, framework, port/rebuild strategy, and
-> **feature priority / dependencies / sequencing** (see
-> [`build-plan-prompt.md`](./archive/build-plan-prompt.md) — the prompt that drove it;
-> its output is [`build-plan.md`](./build-plan.md)).
+> **Purpose.** The single list of every feature the game should eventually have, and
+> its current build status. Each entry has a **title**, a **short description**, and
+> either **Notes** (requirements / design decisions / code approach, for anything not
+> yet built) or a **Built** line (completion date + the significant code changes it
+> introduced — new modules, views, data-layer changes). Keep entries lean: small
+> changes to an already-built feature don't need documenting here — that's what git
+> history and `PROGRESS.md` task rows are for. When a feature ships, move its entry
+> down into the **Built** section rather than deleting it, so this stays a complete
+> map of the game. Not-built and partially-built entries stay in their category
+> (§A–J) so open work is easy to scan; fully built entries live in one place at the
+> bottom, grouped by the category they came from.
 >
-> It deliberately does **not** prescribe milestones or a v1 cut. The existing M0–M5
-> ordering in [`phase-2-plan.md`](./archive/phase-2-plan.md) is **reference, not binding**;
-> the planning model re-derives sequencing from this catalog and the constraints below.
+> This document used to also carry the pre-build vision brief (rationale, framework
+> handoff prompt) that produced [`build-plan.md`](./build-plan.md) — that job is done.
+> What's below is the live "what's built / what's left" reference. For the ballistics
+> correctness spec, see [`../Wiki/Home.md`](../Wiki/Home.md); for the architecture/stack
+> decisions, see `build-plan.md`; for day-to-day task state, see
+> [`execution/PROGRESS.md`](./execution/PROGRESS.md) (the authoritative build log this
+> catalog was condensed from, 2026-07-21).
 >
-> Companion docs: [`game-design.md`](./archive/game-design.md) (vision/rationale, archived),
-> [`phase-2-plan.md`](./archive/phase-2-plan.md) (prior milestone plan, archived),
-> [`btk-assessment-and-path-forward.md`](./btk-assessment-and-path-forward.md) (engine
-> inventory + the deployment reality), and [`../Wiki/Home.md`](../Wiki/Home.md) (the
-> ballistics correctness spec + teaching source).
-
-## How to read this
-
-Each item is tagged:
-
-- **[FIXED]** — an owner constraint the planning model **may not override**. These are
-  non-negotiable inputs.
-- **[PREF]** — the owner's stated lean. The model may weigh it against effort/design,
-  but should flag explicitly if it recommends departing.
-- **[MODEL]** — explicitly the planning model's call (scope, ordering, or approach).
-
-Items without a tag are simply features in the full vision — desired, priority TBD by
-the model.
-
-"*exists in BTK*" marks capability already present in the bundled BallisticsToolkit
-engine/front-ends; "*Bucket A*" marks a fidelity extension not yet in BTK; the rest is
-new game-layer work ("Bucket B"). See the assessment doc for the full inventory.
+> **The staged increment plan is retired as an ordered roadmap (2026-07-21).** The
+> `increment-2*.md` / `increments-3-6.md` docs are no longer "build in this order" —
+> **this catalog decides what gets built next.** Those docs still hold real, locked
+> decisions and research data (D-numbered decisions, Done-when specs, catalog seed
+> mappings), so they've moved to [`archive/`](./archive/) rather than being deleted,
+> and individual entries below link into them where that detail is still needed.
 
 ---
 
-## 0. Hard constraints (non-negotiable) — [FIXED]
+## 0. Hard constraints — [FIXED]
 
-These bound every architecture and framework decision. They are *why* the project
-exists in its chosen form; the model must satisfy all of them.
+Non-negotiable, binding on everything below (all currently satisfied by the shipped
+architecture; still the guardrail for anything still to build):
 
-1. **Target devices:** must run well on **iPad and iPhone**, installable to the home
-   screen, and **launch offline**.
-2. **No paid Apple Developer account; no weekly re-signing.** This is the constraint
-   that ruled out sideloaded native iOS. Any proposed stack must deploy to the target
-   devices without an Apple paid account and without periodic re-provisioning.
-3. **Client-side persistence, no required backend.** All game state (progression,
-   inventory, DOPE, settings) lives on-device, schema-versioned, with **export/import
-   to a JSON file** for backup / device transfer / profile sharing. Leave a clean seam
-   for optional future cloud sync, but v-anything must work with zero server.
-4. **Simulation-first fidelity.** Model the real factors faithfully; **in-game
-   knowledge must transfer to reality.** Where gameplay and a cited Wiki article
-   disagree, the article + its source is the arbiter (or the discrepancy is logged).
-5. **Correctness is validated, not asserted.** The [`../Wiki/`](../Wiki/Home.md)
-   articles + their primary sources (Litz, McCoy, FM 23-10) are the behavioral spec;
-   BTK is a runnable second implementation usable as a **golden-vector oracle**. The
-   build must preserve a way to validate trajectory outputs against these.
-6. **Angular units:** cover **MIL and MOA equally**, with conversions side-by-side.
-   **Units:** support both **metric and imperial**, with conversions.
-7. **No money economy** (design principle — access is skill-gated, not purchased).
-8. **No hunting, no animals.** Targets are steel + human silhouettes only.
+1. Runs on **iPad/iPhone**, installable, **launches offline**. *(Satisfied — PWA since Increment 0.)*
+2. **No paid Apple dev account, no re-signing.** *(Satisfied by the web/PWA choice.)*
+3. **Client-side persistence, no required backend**; export/import to JSON; a clean seam
+   for optional future cloud sync.
+4. **Simulation-first fidelity** — in-game knowledge must transfer to reality; where
+   gameplay and a cited [Wiki](../Wiki/Home.md) article disagree, the article + source wins.
+5. **Correctness validated, not asserted** — Wiki + primary sources (Litz, McCoy, FM 23-10)
+   are the behavioral spec; BTK is a golden-vector oracle where it already implements a factor.
+6. **MIL and MOA equally**, metric and imperial both, conversions shown side-by-side.
+7. **No money economy** — access is skill-gated, not purchased.
+8. **No hunting, no animals** — steel + human silhouettes only.
 
 ---
 
 ## A. Ballistics & physics fidelity
 
-The factor set the simulation must expose. Cross-referenced to the Wiki correctness
-spec.
+#### Custom / measured drag models (CDM) + McDrag
+A Cd-vs-Mach curve path plus a McDrag geometry predictor, anchored on McCoy's measured
+.50 Ball M33 curve — enables honest ELR / past-a-mile.
+**Not built** — planned Increment 5. No BTK oracle exists for this; the Wiki article
+(`custom-drag-models.md`, unwritten) is the sole correctness arbiter and is a required
+gate before implementation (catalog §L).
 
-**Already modeled (BTK, keep + validate):**
+#### Bullet core & shape modeling → BC + full stability
+Layered material densities → mass/CG/moments of inertia → feeds BC and a full
+stability factor (beyond simplified Miller); makes "which core/shape" physically grounded.
+**Not built** — planned Increment 5, gated on `bullet-anatomy-stability.md` (unwritten).
 
-- Point-mass trajectory — drop, drift, **time of flight**, retained velocity/energy
-  (RK2 point-mass integrator, SI internally). *exists*
-- **G1 / G7 drag** by ballistic coefficient. *exists* —
-  [drag-and-drag-models](../Wiki/drag-and-drag-models.md),
-  [ballistic-coefficient](../Wiki/ballistic-coefficient.md)
-- **Atmosphere:** temperature, pressure, humidity, altitude, speed of sound (ISA). *exists*
-- **Wind:** evolving multi-octave **curl-noise wind field**, sampled along the path. *exists*
-- **Spin drift** (Litz empirical, continuous along trajectory). *exists*
-- **Aerodynamic / crosswind jump** (Litz muzzle figure generalized downrange). *exists*
-- **Gyroscopic stability** — corrected Miller Sg + ideal-twist solver. *exists* —
-  [gyroscopic-stability](../Wiki/gyroscopic-stability.md),
-  [barrel-twist-rate](../Wiki/barrel-twist-rate.md)
-- **Transonic behavior** — cartridges have a range band where they stay supersonic;
-  crossing transonic degrades both accuracy and drag-model reliability. *(partially
-  emergent from the solver; see truing note in §D)*
-- **Dispersion → hit probability** — Monte-Carlo (up to 50k), CEP, mean radius, radial
-  SD; driven by MV SD, BC SD, wind σ, and rifle angular precision. *exists*
+#### Coriolis
+Well-sourced smaller addition (latitude + azimuth inputs, default-off).
+**Not built** — planned Increment 3, gated on `coriolis-effect.md` (unwritten).
 
-**Fidelity extensions the owner wants (Bucket A — not in BTK):**
+#### Incline / decline (angle) fire
+Launch/target elevation with real gravity decomposition (default-off); needed for
+valley/field missions.
+**Not built** — planned Increment 3, gated on `angle-incline-shooting.md` (unwritten).
 
-- **Custom / measured drag models (CDM)** — a Cd-vs-Mach curve path, plus a **McDrag**
-  geometry predictor; anchor/validate on McCoy's measured **.50 Ball M33** curve.
-  Enables honest ELR / .50-past-a-mile.
-- **Bullet core & shape modeling** — layered material densities → weight, center of
-  gravity, moments of inertia (Ip, It) → feed BC and a **full** stability factor
-  (beyond simplified Miller). Makes "which core/shape" a physically grounded choice.
-- **Coriolis** — well-sourced smaller addition.
-- **Incline / decline (angle) fire** — launch/target elevation, cosine correction;
-  needed for valley/field missions.
-- **Temperature sensitivity of muzzle velocity — [owner request].** Ammunition MV
-  shifts with propellant temperature (warm powder burns faster → higher MV → less drop;
-  cold → the reverse). Each load carries a **temp-sensitivity characteristic**
-  (temp-sensitive vs. temp-stable powders), so a DOPE card trued on a warm day goes off
-  on a cold one — a realistic reason to re-confirm and a reward for temp-stable match
-  ammo. Distinct from the *air-density* temperature effect on drag (§A atmosphere): this
-  acts at the muzzle, that acts downrange. Feeds the hidden-truth ammo model (§D) and
-  interacts with the weather conditions (§E5).
+#### Temperature sensitivity of muzzle velocity
+Per-load temp-sensitivity characteristic (temp-stable vs. temp-sensitive powders) so a
+DOPE card trued on a warm day drifts on a cold one — distinct from air-density's effect
+on drag. Feeds the hidden-truth ammo model (§D) and interacts with weather (§E).
+**Not built** — planned Increment 4.
+
+---
 
 ## B. The firing-solution shot loop (the heart)
 
-The moment the whole game orbits.
+*(no open items — both features currently planned for this category are built; see the Built section.)*
 
-- **Core loop:** pick rifle+ammo → know your gear (zero + DOPE) → face a target
-  (range it, read wind, account for angle & air density) → **dial or hold** → send →
-  reactive feedback → correct within a shot budget.
-- **Two correction methods, player-selectable per shot:** (1) **dial** the turrets
-  (elevation + windage), or (2) **hold** over/under and for wind using the reticle.
-- **Adjustable wind** (speed + direction) so each target must be re-solved.
-- **Supporting UI:** DOPE chart viewer, wind indicators (flags / socks / mirage),
-  rangefinder or reticle-ranging overlay, angle readout, dial/hold HUD showing current
-  values, shot result, and remaining shots in the budget.
-- **[CANDIDATE / deferred — not scheduled]** In-reticle **bullet-flight trace** (watch
-  the projectile arc through the scope, spotter/observation aid). Owner decision
-  2026-07-14: log now, schedule in a later increment. Intended fidelity: **per-shot
-  true path** (the trace follows that shot's sampled MV/dispersion so the visible arc
-  matches the actual impact) — not a nominal cue. Caveat: the engine's `MatchSimulator`
-  returns only the impact point, so this needs an engine/bridge call that returns the
-  *sampled* per-shot trajectory; task 1.4 does not build or preserve it.
+---
 
 ## C. Gear systems
 
-### C1. Rifles / cartridges
-A spectrum spanning the whole difficulty/range ladder:
+#### Reticle pattern library (Christmas-tree / BDC-grid + custom-authoring workflow)
+A second reticle pattern beyond today's MIL/MOA hash — a Christmas-tree (windage-hold
+grid) and/or BDC-grid (vertical holdover stadia) pattern — plus a repeatable way to
+author further patterns, including owner-designed ones.
+**Not built** — planned Increment 6, after FFP (per the owner's stated lean; carries
+forward the "not yet built" note on the Configurable optic entry in the Built section,
+§C). **Notes:** the current reticle (`scope/reticle.ts`, drawn in
+`scope/ScopeView.tsx`) is **vector Canvas-2D**, not a texture — tick positions are
+recomputed every zoom change from angular math (`pxPerUnit` in
+`scope/scope-projection.ts`), which is what keeps FFP subtensions exact at any
+magnification (4.5–35×). Recommended authoring approach for new patterns, including a
+self-designed Christmas tree: define it as a **list of line/point coordinates in mil
+(or MOA) offsets from center** — e.g. "cross-hair spans, then a horizontal hold bar at
+-2 mil elevation running ±4 mil windage, another at -4 mil running ±3 mil…" — the same
+shape the existing MIL/MOA cadence table takes, so it inherits the exact scaling math
+for free. A raster **PNG could be made to auto-scale** (treat it as a sprite whose
+world-size is driven by the same `pxPerUnit` factor as the ticks), but that needs new
+texture-loading code the renderer doesn't have today, and raster art will blur/alias at
+the top of a 35× zoom range in a way vector lines never do — not recommended given the
+zoom range. Practical workflow: sketch the design at a known reference size (e.g. "20
+mil wide, 30 mil tall from center") in any tool (SVG, Illustrator, even a dimensioned
+sketch on a mil-grid), then hand off the segment endpoints as mil-offset coordinates for
+a developer to add as a new pattern entry alongside `CADENCE` in `reticle.ts`.
 
-- **Rimfire** — .22 LR (short-range precision, surprisingly wind-sensitive; a teacher).
-- **Intermediate / tactical** — .223/5.56, 6.5 Creedmoor, .308 Win (transonic wall
-  ~1000 yd).
-- **Magnums** — .300 Win Mag, .338 Lapua (reach to ~a mile).
-- **ELR / anti-materiel** — .375/.408 CheyTac, **.50 BMG** (supersonic past 2000 yd).
-  *Upper bound: anti-materiel, not artillery.*
+#### Magnum & ELR cartridge tier
+.300 Win Mag, .338 Lapua, .375/.408 CheyTac, .50 BMG — the reach-to-a-mile and
+anti-materiel end of the spectrum (upper bound: anti-materiel, not artillery).
+**Not built** — planned as progression tiers in Increments 3 (magnums) and 5 (ELR/.50).
+Starting data for these three (rifle-model attrs, hidden ranges, believed vs. true
+MV/BC) already exists in [`bullet-catalog/catalog-seed.json`](./bullet-catalog/catalog-seed.json)
+/ [`catalog-starting-values.md`](./bullet-catalog/catalog-starting-values.md) — it just
+hasn't been trimmed into `game/catalog.data.json` yet (only 4 of the 7 researched
+cartridges are shipped).
 
-Each cartridge is meaningful because it has a range band where it stays supersonic.
-Each rifle carries **per-instance hidden variation** (see §D).
+#### Handloading
+Author a load — custom bullet shape/core (needs the Bucket A bullet editor) + powder
+charge — tuned to a specific rifle for low SD. Must be developed (vary charge,
+chronograph, find the node); per-rifle; reduces vertical dispersion only (wind call
+untouched) — end-game ELR optimization, not a default win button.
+**Not built** — planned Increment 5.
 
-### C2. Ammunition
-- **Factory catalog** — several loads per cartridge, each with box specs (MV, BC), a
-  realistic (higher) shot-to-shot **SD**, and a **temperature-sensitivity rating** (§A)
-  — off-the-shelf loads run the range from temp-stable match to temp-sensitive bulk.
-  Convenient, adequate for most shots.
-- **Handloading** — author a load: **custom bullet shape + core** (depends on the
-  Bucket A bullet editor / McDrag) and **powder charge**, tuned to a specific rifle for
-  low SD. Balanced *not* by price but by realistic friction:
-  - Must be *developed* (vary charge, chronograph, find the node); a poor workup shoots
-    worse than factory.
-  - Per-rifle (no universal god-load).
-  - Only reduces *vertical* dispersion — the **wind call is untouched**, so handloads
-    matter mainly for the hardest shots (small/extreme). Handloading = **end-game ELR
-    optimization**, not a default win button. Also a *learning tool* (removes gear's
-    vertical contribution so you can isolate wind).
-
-### C3. Optic — one configurable scope (no scope catalog) — [PREF]
-With no money economy, a scope "shop" adds little; one configurable scope exposes every
-mechanic that matters:
-
-- **Magnification range** ≈ **4.5–35×** (plinking → ELR). More × aids target ID and
-  mil-ranging but is capped by **mirage** (grows with zoom, already modeled) and
-  narrower FOV — a tradeoff, not a free win. *(Could split into two ranges later.)*
-- **Canted base — on/off toggle.** The **ELR elevation gate**: a mile+ needs ~30+ MRAD
-  / 100+ MOA of come-up that can exceed internal elevation travel; a canted base lets
-  you dial that far, otherwise you "run out of up" ~1 mile.
-- **Reticle — 3 patterns:** (1) fine/minimal (dialing-focused); (2) mil/MOA hash
-  (ranging + moderate holdover); (3) Christmas-tree / BDC grid (holdover-heavy).
-- **Focal plane — FFP and SFP.** FFP: holds & mil-ranging correct at any zoom. SFP:
-  subtensions true only at one magnification — a genuine gotcha to teach.
-  **[PREF]** owner leans FFP first (invariant subtensions are simpler to implement
-  correctly and are the long-range norm); SFP as a later budget/hunting-scope option.
+---
 
 ## D. Hidden truth & the DOPE loop (the game's identity)
 
-The mechanic that distinguishes this from a ballistic calculator.
+#### DOPE nodes + confidence + chronograph + data book + range environment system
+Confirm a real come-up at a distance (a **node**: physical fact + measured dials +
+shots + conditions); a chronograph (any range, toggle on) measures true MV
+(avg/SD/ES); a Data Book overlay shows the baseline believed curve vs. confirmed nodes
+with confidence tiers, and box-vs-measured MV. Also ships a shared, config-driven range
+environment (mountains/trees/textured ground, ported from BTK's `Landscape.js`) that
+retrofits every existing range and dresses a new dedicated DOPE-ladder range.
+**Not built** — planned 2.4, split 2.4a–f; **D1–D10 locked with owner 2026-07-20**, build
+not yet started (owner paused active build 2026-07-21; the increment plan is retired as
+an ordered roadmap, §K). Full decisions in
+[`archive/increment-2.4-plan.md`](./archive/increment-2.4-plan.md).
 
-- **Per-instance hidden truth.** Each rifle *copy* gets fixed unknown biases (MV
-  offset, zero offset, inherent angular precision); each ammo *lot* gets a true
-  mean-MV shift + SD + true BC (+ BC SD). These are the **fixed unknowns** the player
-  discovers, distinct from the **random per-shot spread** (the irreducible cone) the
-  engine already models. Buying a second copy of the same rifle behaves differently and
-  must be re-zeroed / re-DOPE'd.
-- **Zeroing flow** — fire a group at a known distance, center the zero on the group
-  (teaches "don't chase individual shots").
-- **Computed DOPE (primary).** The WASM solver generates baseline come-ups for any load
-  + condition on the fly (no hand-authored charts). This mirrors real modern practice —
-  handheld solvers like the **Kestrel 5700 Elite with Applied Ballistics**, the
-  **Garmin Foretrex 701**, or apps (**Hornady 4DOF**, **Strelok Pro**). Computed
-  solutions are standard, most trustworthy while supersonic, confirmed by shooting near
-  transonic.
-- **Tabulated DOPE — also available (owner request).** The player can **freeze the
-  trued curve into a static come-up table / card** for a baseline condition and shoot
-  off *that* without invoking the solver each shot — the way a shooter runs off a
-  printed **DOPE card**, an armband data book, or a **custom "come-up" turret tape**
-  (etched elevation dial). Purpose: relaxed longer-range plinking without pulling up the
-  in-game computer for every shot. Realistic tradeoff to teach: a frozen table drifts as
-  air density / angle deviate from its baseline, so it's convenient but not always
-  exact. Both modes coexist; the computer is for solving, the card is for running.
-- **Solver truing to confirmed nodes — two levers.** A **node** is a distance at which
-  the player has confirmed the true correction by shooting it (`range, true come-up,
-  N shots`). The solver adjusts its model to pass through the player's nodes, so
-  *untested* ranges shift toward this rifle+ammo's reality too. Matching real
-  methodology, truing uses **two levers on two ends of the curve**:
-  1. **Effective muzzle velocity** — trued from a **near/mid node** (dominates the
-     near-to-mid trajectory).
-  2. **Effective BC / drag scale** — trued from a **far node** near transonic
-     (dominates the far end; advertised BC is often optimistic and varies with the
-     barrel's stability). *(This is why truing needs a near + a far node — it is not
-     MV-only.)*
-- **Consistency sets confidence.** With high MV SD, one impact is a noisy sample — more
-  shots are needed to trust a node; low-SD match ammo confirms a node in fewer shots.
-  This surfaces the cone math and makes good gear valuable.
-- **Starter data (optional).** An engine-generated "factory card" the player can copy
-  and then true into their own saved profile — a real-world onramp and anti-grind valve.
-- **Reticle ranging.** Every target carries a known physical size; the player measures
-  apparent size against reticle subtensions to estimate range
-  (`Range_m = size_m × 1000 ÷ mils`, or `size_in × 95.5 ÷ MOA`). FFP makes the read true
-  at any zoom. Learn/verify it on labeled KD ranges; it becomes necessary on UKD
-  missions. — [range-estimation](../Wiki/range-estimation.md),
-  [mil-dots-subtensions](../Wiki/mil-dots-subtensions.md)
+#### Solver truing (two-lever: chronograph → MV, node → BC)
+Fits the model to the player's confirmed reality: effective MV comes from a
+chronograph reading directly (a real measurement); effective BC/drag-scale is then fit
+from a confirmed node (farthest / near-transonic preferred) once MV is pinned.
+Without a chronograph, a node instead solves MV alone (BC held at catalog) and stays
+provisional — a single no-chrono node can't separate an MV error from a BC error. A
+node's own measured value is never overwritten by a recompute; only unmeasured
+distances ride the retrued curve.
+**Not built** — planned 2.5. Lever-order decisions (D11–D13) locked with owner
+2026-07-21 ahead of full 2.5 planning — see
+[`archive/increment-2.4-plan.md`](./archive/increment-2.4-plan.md) §8 and
+[`archive/increment-2.md`](./archive/increment-2.md) §2.5.
+
+#### Tabulated DOPE cards
+Freeze the trued curve into a static come-up table/turret tape for a baseline
+condition, run off it without invoking the solver each shot (like a printed DOPE card);
+honest tradeoff — the card drifts as conditions deviate from its baseline.
+**Not built** — planned Increment 4, after truing exists to freeze.
+
+#### Starter / factory data card
+An engine-generated "factory card" the player can copy and then true into their own
+profile — a real-world onramp and anti-grind valve.
+**Not built** — unscheduled (no increment assigned yet; optional).
+
+#### Reticle ranging
+Measure a known-size target's apparent size against reticle subtensions to estimate
+range (`size×1000÷mils` / `size_in×95.5÷MOA`); FFP keeps the read true at any zoom.
+**Not built** — planned 2.6.
+
+---
 
 ## E. Ranges & environments
 
-### E1. Practice ranges — Known Distance (learn & build DOPE)
-Structured, labeled, fixed increments. Zero, build DOPE, learn dialing & holdover.
-- **Range A:** targets every **50 yd out to 500**.
-- **Range B:** targets every **100 yd out to 1000**.
-- **Range C (ELR):** **500 / 1000 / 1500 / 2000 / 2500**.
+#### DOPE range (dedicated ladder range)
+One generous (~2 MOA) gong per century station out to the cartridge's catalog
+effective range; freely available (not skill-gated); full range-environment dressing
+as the showcase range.
+**Not built** — planned 2.4c.
 
-### E2. Mission ranges — Unknown Distance (apply it)
-- Targets **not labeled** by distance, **not at set increments**, irregularly placed.
-- **Terrain & angle:** e.g. shooter partway up a valley side, targets above and below →
-  incline/decline (cosine).
-- **Ranging:** known-size targets (mil-dot) **or** a laser rangefinder.
+#### Range B — Known Distance (100–1000 yd), skill-gated
+Unlocks after KD mastery on Range A.
+**Not built** — planned 2.7.
 
-### E3. Environments — [owner: all four in the full set]
-- **Mountains** (steep angles, thin air, switchy valley wind)
-- **Light forest** (harder wind reads, obscured targets)
-- **Grassland hills** (rolling, mixed distances)
-- **Desert** (heat mirage, long open sightlines, thermal effects)
+#### Range C — ELR (500/1000/1500/2000/2500)
+**Not built** — planned Increment 5.
 
-### E4. Known-size ranging props
-Scenery that doubles as ranging references, each carrying true dimensions in metadata:
-**cars, park benches, trash cans, signage, doorways/windows**, plus the human
-silhouettes. Grounded in FM 23-10 doctrine (vehicles, doorways, windows, ~10 ft lane
-width, etc.). — [range-estimation](../Wiki/range-estimation.md)
+#### Mission / UKD ranges
+Unlabeled, irregularly placed targets; terrain + incline/decline; ranging via
+known-size props or a laser rangefinder unlock.
+**Not built** — planned Increment 3.
 
-### E5. Weather & light conditions — [owner request]
-Selectable conditions beyond wind, each with honest effects (not just visual mood) so
-reading the day is part of the puzzle:
+#### Shared range-environment rendering system
+Config-driven module (sky/fog/lights/textured ground/instanced mountains/instanced
+trees) ported from BTK's steel-sim `Landscape.js`, retrofit onto every range.
+**Not built** — planned 2.4b (blocks the DOPE range's visual debut).
 
-- **Clear & windless** — baseline; strong sun drives **mirage** (already modeled),
-  which aids wind reading but limits usable magnification.
-- **Cloudy / overcast** — flatter, diffuse light; **less mirage** (weaker thermals), so
-  you lose that wind-reading cue and lean more on flags/socks; changes target contrast
-  and apparent target ID.
-- **Drizzle / rain** — reduced visibility and target contrast; cooler, more humid, often
-  lower-pressure air → **denser air → more drop/drift** (ties to the atmosphere model in
-  §A); heavier precip further degrades sighting. *(Direct aerodynamic effect of raindrops
-  on the bullet is negligible and can be omitted; the honest effects are air density +
-  visibility.)*
-- **Night with range lighting** — low-light shooting on lit ranges: artificial,
-  directional light, harder target ID and reticle-ranging, **no mirage** cue. Teaches
-  low-light fundamentals. *(Optional / lower priority — nice-to-have.)*
+#### Four mission biomes (mountains, light forest, grassland hills, desert)
+Distinct terrain/wind/visibility character per biome (thin air + switchy valley wind;
+obscured targets; rolling mixed distances; heat mirage + long sightlines).
+**Not built** — planned across Increment 3 (grassland, mountains) and Increment 6
+(light forest, desert).
 
-These interact with the biomes (§E3) — e.g. desert heat maximizes mirage; a cold
-overcast mountain morning suppresses it and stacks denser air on top of thinner
-altitude air. Conditions should be selectable in free-play and set (or randomized) per
-mission.
+#### Known-size ranging props
+Scenery doubling as ranging references with true dimensions in metadata (cars, park
+benches, trash cans, signage, doorways/windows), per FM 23-10 doctrine.
+**Not built** — planned Increment 3 (UKD ranges).
+
+#### Weather & light conditions
+Selectable conditions (clear/overcast/drizzle/night-lit) with honest mechanical
+effects — mirage intensity, air density via the existing atmosphere model, visibility/
+contrast — not just visual mood.
+**Not built** — planned Increment 4.
+
+---
 
 ## F. Targets & scoring
 
-- **Reactive steel — keep and expand.** BTK's swinging steel is the felt payoff. Add
-  poppers, dueling trees, plate racks, swingers/spinners, dropping plates, and
-  **no-shoot / hostage** plates for discipline.
-- **Human silhouettes** — head & torso, realistic or **IDPA-style** scoring zones.
-  **[FIXED]** no animals / no hunting (drop BTK's boar/prairie-dog modes).
-- **Sizing in MOA/MRAD** so difficulty normalizes across range; physical size still
-  drives mil-ranging.
-- **Scoring:** steel hit/miss, time-to-hit, points weighted by target MOA & range;
-  silhouette zone scoring. **Headline metric: first-round-hit probability** — the
-  meaningful long-range measure and the thing good prep should maximize.
+#### Steel target menagerie
+Poppers, dueling trees, plate racks, swingers/spinners, dropping plates, hostage/
+no-shoot plates for discipline.
+**Not built** — planned Increment 6.
+
+#### Human silhouettes + IDPA zone scoring
+Head/torso zones; realistic or IDPA-style scoring; no-shoot plates share this scoring path.
+**Not built** — planned Increment 3.
+
+#### Scoring & first-round-hit probability
+Hit/miss, time-to-hit, points weighted by target MOA & range; **first-round-hit
+probability** is the headline long-range metric, computed via Monte-Carlo against the
+player's trued params vs. hidden truth.
+**Partially built** — basic engagement/hit tracking + shot budget shipped 2026-07-15
+(task 1.6b, Increment 1). Not built: MOA/range-weighted points and the FRH-probability
+headline metric, which need the mission runner — planned Increment 3.
+
+---
 
 ## G. Missions & progression
 
-- **Mission structure (UKD / field):** hit an *X-MOA* target at *Y* range within a shot
-  budget; unlabeled, irregularly placed targets; difficulty laddered by range band
-  (500 → 1000 → 1 mile → ELR) and environmental uncertainty; at least one **angled
-  valley** scenario.
-- **Progression — [PREF] both:** a **skill-gated unlock ladder** (master fundamentals
-  on KD ranges → unlock field missions and longer-range gear/cartridges) **plus** a
-  **free-play sandbox** of anything unlocked. Progression = personal skill and records,
-  not currency.
-- **Spotter** — optional unlock that narrows wind uncertainty / calls corrections.
-- **Barrel life — [PREF] owner leans omit early.** Optional soft resource: hot
-  magnums/.50s erode throats, accuracy degrades with round count, replacing a barrel is
-  the only sink. Discourages "biggest gun for everything." Not required; low priority.
+#### Mission structure (UKD / field)
+Hit an X-MOA target at Y range within a shot budget; unlabeled irregular placement;
+difficulty laddered by range band + environmental uncertainty; ≥1 angled valley scenario.
+**Not built** — planned Increment 3.
+
+#### Skill-gated progression ladder
+Master fundamentals on KD ranges → unlock field missions + longer-range gear/cartridges;
+progression tracks personal skill/records, never currency.
+**Partially built** — free-play on Range A exists today (Increment 1); the actual
+gate (Range B unlock rule off recorded performance) is **not built**, planned 2.7.
+
+#### Spotter unlock
+Narrows wind uncertainty / calls corrections once unlocked.
+**Not built** — planned Increment 6.
+
+#### Barrel life (optional soft resource)
+Hot magnums/.50s erode throats; accuracy degrades with round count; a new barrel is
+the only sink. Owner leans **omit early** — low priority.
+**Not built** — planned Increment 6, owner-optional (may stay omitted).
+
+---
 
 ## H. Persistence & platform
 
-*(Governed by the hard constraints in §0.3.)*
+#### Full export/import (v-anything)
+Export/import the complete save — instances, lots, nodes, trued params, progression —
+as JSON, reproducing the data book exactly on a second device.
+**Not built** — planned 2.8 (exit task for the whole increment); today's export/import
+only covers what schema v2 already carries.
 
-- Client-side, schema-versioned save (IndexedDB or equivalent), durable on installed
-  iOS PWAs; request persistent storage as belt-and-suspenders.
-- **Export/import** the full save (rifles, ammo lots, DOPE, progression) as JSON.
-- Per-device in v-anything; leave a clean seam for optional future cloud sync (BaaS).
-- Installable to the home screen; launches full-screen and offline.
+---
 
 ## I. UI, teaching & onboarding
 
-- **DOPE data-book viewer** — the player's confirmed nodes + the trued curve, with the
-  option to **generate a static come-up card / turret table** to run off (per §D).
-- **Onboarding that teaches from first principles**, leveraging the Wiki as source
-  material; define terms on first use; link to a glossary. The game doubles as a
-  learning resource (the owner is new to long-range shooting).
-- Clear presentation of MIL/MOA and metric/imperial side by side (per §0.6).
+#### Data Book screen
+Full-screen overlay: baseline believed curve vs. confirmed nodes (confidence + shot
+count + conditions), a "generate a static come-up card" option, box-vs-measured MV.
+**Not built** — planned 2.4f.
+
+#### Onboarding & teaching flow
+Learn-from-first-principles flow drawing on the Wiki as source material; terms defined
+on first use, linked to a glossary.
+**Not built** — planned Increment 6.
+
+---
 
 ## J. Multiplayer — [PREF] deferred
 
-- Peer-to-peer remote play exists in BTK (F-Class sim, PeerJS + WebRTC). Not a v1
-  concern; a candidate to revisit post-core.
+Peer-to-peer remote play exists in BTK (F-Class sim, PeerJS + WebRTC) but isn't a v1
+concern.
+**Not built** — no increment assigned; a candidate to revisit post-core.
+
+---
+
+## Built
+
+Fully shipped features, grouped by the category they came from. Small follow-on
+changes to these aren't tracked here — see git history and `PROGRESS.md` task rows.
+
+### A. Ballistics & physics fidelity
+
+#### Core ballistics engine (point-mass trajectory, drag, atmosphere, wind, spin drift, aero jump, gyroscopic stability, dispersion/CEP)
+The physics foundation: RK2 point-mass integrator, G1/G7 drag, full ISA atmosphere,
+curl-noise wind field, Litz spin-drift + aero-jump, corrected-Miller gyroscopic
+stability, Monte-Carlo dispersion (CEP/mean-radius/radial SD).
+**Built** — 2026-07-13 (Increment 0). Inherited from BTK into an owned
+`GameBuild/engine/` copy; validated by a 36-case/402-row golden-vector harness diffed
+against pristine `BallisticsToolkit/`. No feature work here — this is the oracle-gated
+base every other ballistics feature sits on.
+
+### B. The firing-solution shot loop (the heart)
+
+#### Core dial-or-hold shot loop
+Pick rifle+ammo → know your gear (zero + DOPE) → face a target → dial or hold →
+send → reactive feedback, within a shot budget. Player chooses dial (turrets) or hold
+(reticle) per shot; wind is adjustable so every target re-solves.
+**Built** — 2026-07-16 (Increment 1, tagged `inc1-complete`). Scope render pipeline +
+FFP reticle (`scope/ScopeView.tsx`, `scope/scope-projection.ts`), firing-solution
+plumbing (`engine-bridge/`, dispersion Monte-Carlo), reactive steel + distance-delayed
+audio + impact FX, wind controls/HUD/shot-budget/scoring, DOPE side panel
+(`game/dope-row.ts`).
+
+#### In-scope bullet-flight trace
+Watch the projectile's true sampled arc through the scope as it flies to impact
+(per-shot, not a nominal cue).
+**Built** — 2026-07-14 (task 1.5b, owner-confirmed on device). Was logged as
+deferred in the original vision brief, then brought forward into Increment 1 — this
+entry corrects that.
+
+### C. Gear systems
+
+#### Gear catalog architecture + rimfire/intermediate cartridges
+Data-driven rifle/ammo catalog: cartridges, rifle grade tiers, factory ammo lots (box
+MV/BC/SD), acquisition + inventory. Currently seeded with **.22 LR, .223, .308, 6.5 CM**
+(rimfire → transonic-wall intermediate) across **hunting / factoryMatch / custom**
+rifle grades.
+**Built** — 2026-07-17 (2.2a/b, code-complete; 2.2d TruthInspector awaiting owner
+sign-off). `game/catalog.data.json` + `catalog.ts`, `game/acquire.ts`, inventory store
+slice + Loadout UI. Trimmed from the full 7-cartridge research set in
+[`bullet-catalog/`](./bullet-catalog/) (`catalog-seed.json` + `catalog-starting-values.md`)
+— the remaining 3 (magnum/ELR tier) are the §C "Magnum & ELR cartridge tier" entry above.
+
+#### Configurable optic — FFP, one reticle, 4.5–35× zoom
+Owner's one-scope decision (no scope catalog): pinch-zoom magnification, FFP reticle
+with exact zoom-independent MIL/MOA subtensions.
+**Built** — 2026-07-14 (task 1.3, owner-confirmed on device). `scope/scope-projection.ts`
+(LINEAR/equidistant model), FFP reticle geometry, 0.9-era touch aim/wobble/breath/recoil
+carried into the real pipeline.
+**Not yet built:** canted-base toggle (the ELR elevation-travel gate, needed ~1 mile+,
+Increment 5); a second and third reticle pattern (mil/MOA hash exists; Christmas-tree/
+BDC-grid holdover reticle does not); SFP mode (Increment 6, after FFP — owner's stated lean).
+
+### D. Hidden truth & the DOPE loop (the game's identity)
+
+#### Per-instance hidden truth model
+Each rifle copy gets fixed unknown biases (MV offset, zero offset, inherent angular
+precision); each ammo lot gets a true mean-MV shift + SD + true BC (+SD) — the fixed
+unknowns the player discovers, distinct from the per-shot spread the engine already models.
+**Built** — 2026-07-17 (2.1, owner-confirmed on device). `game/hidden-truth.ts`
+(per-field normalized draws mapped to truth on demand, no RNG seed), save schema v2,
+a no-leak guard (`hidden-truth.guard.test.ts`) enforced so UI/scene code can never
+import the truth module directly.
+
+#### Zeroing flow
+Fire a group at a known distance, read the true dispersion, center the zero on the
+group centroid, confirm — teaches "don't chase individual shots."
+**Built** — 2026-07-19 (2.3a–d, owner-confirmed on device). New sight-in range
+(`range/SightInScene.ts`), `game/active-gear.ts` (gear-solve context), Confirm-zero
+compose math (`pz_new = pz_old + dial − required`), don't-chase/calm hints.
+
+#### Computed DOPE + true-vs-believed solve split
+The WASM solver generates baseline come-ups on the fly from box specs (no hand-authored
+charts) — the *believed* solve the player sees. Separately, the engine now also solves
+the hidden-truth *true* trajectory, so an unzeroed rifle visibly misses and a zeroed one
+centers, with the believed-vs-true downrange gap as the residual puzzle.
+**Built** — 2026-07-19 (2.3e, code-complete, **awaiting final owner device sign-off**).
+`engine-bridge/gear-solve.ts` (truth→solve seam, `solveGear()` returning both
+`trueTable`/`believedTable`), Range A wired to true impact + believed `DopePanel`.
+
+### E. Ranges & environments
+
+#### Range A — Known Distance (50–500 yd)
+Structured, labeled steel every 50 yd; the first shippable slice's home range.
+**Built** — 2026-07-16 (Increment 1). `range/range-a-config.ts`, `range/RangeScene.ts`.
+
+#### Sight-in / zeroing range
+Three immobile paper targets (50/100/200) for the zeroing flow (§D).
+**Built** — 2026-07-19 (2.3c). `range/SightInScene.ts` + sight-in target config/texture.
+
+#### Test Range (environment sandbox + target proving ground)
+Owner-requested side-thread, outside the numbered increment/task sequence: a
+100 yd calm-wind range (no wind flags/controls — a fundamentals sandbox, not an
+engagement) that doubles as the proving ground for the shared config-driven
+environment module (textured terrain, sky/fog/lighting, instanced
+trees/bushes/rocks/grass tufts) ahead of retrofitting it onto the DOPE range
+(§E "Shared range-environment rendering system"). Plan: `Design/Plans/
+test-range-environment-plan.md`.
+**Built** — 2026-07-21 (all 4 plan stages code-complete). `range/TestRangeScene.ts`,
+`range/environment/*` (`terrain.ts`, `sky.ts`, `lighting.ts`, `trees.ts`,
+`ground-cover.ts`, `mountains.ts`, `clouds.ts`, `index.ts`'s `buildEnvironment`
+orchestrator), dev harness in `range/RangeView.tsx` + a "Test Range" tab in
+`debug/DevTools.tsx`. Code complete and verified (typecheck/tests/build clean)
+through Stage 4 (mountains + drifting clouds, driven by the dialed wind); awaiting
+owner on-device confirmation to close the plan. See `Design/execution/
+PROGRESS.md` for the full iteration log.
+
+### F. Targets & scoring
+
+#### Reactive steel + persistent hit marks
+Struck plates swing/knock down (momentum-driven); a persistent per-plate paint layer
+records where hits land instead of only a transient dust puff.
+**Built** — swing/reaction 2026-07-14 (task 1.5a, Increment 1); persistent paint
+2026-07-18 (TS-A/B code-complete, TS-C/D code-complete — **all four awaiting final
+owner sign-off on gates + device**). C++ per-target paint buffer → per-plate
+`DataArrayTexture`, `range/plate-geometry.ts`, `engine-bridge/steel-target.ts`.
+
+### H. Persistence & platform
+
+#### Client-side save + offline PWA install
+IndexedDB-backed, schema-versioned save; installable to the home screen, launches
+full-screen offline; durable on iPad.
+**Built** — 2026-07-13 (Increment 0), extended with a v1→v2 migration
+2026-07-17 (2.1a) for rifles/lots/hidden-truth/playerZero.
+
+### I. UI, teaching & onboarding
+
+#### In-scope DOPE panel
+Live believed come-up table for the active rifle+lot, readable mid-session.
+**Built** — 2026-07-19 (2.3e). `scope/DopePanel.tsx`.
+
+#### MIL/MOA + metric/imperial side-by-side display
+**Built** for every screen that exists today (DOPE panel, HUD, scope). A full audit
+across every future screen is planned as an Increment 6 task, once all screens exist.
 
 ---
 
 ## K. Explicitly the planning model's call — [MODEL]
 
-The model decides all of the following and must justify its choices against §0:
-
-- **Stack above the engine** — framework, rendering approach, and language.
-- **Reuse strategy** — extend BTK in place, port selected pieces to a new stack, or
-  rebuild from scratch; and **how much of the C++/WASM engine to reuse vs. re-port**
-  (the physics core is ~3.4k lines and portable; the ~37.6k-line JS front-end is the
-  stack-specific bulk). Whatever the choice, preserve a validation path (§0.5).
-- **Feature priority, dependencies, and sequencing** — including what constitutes the
-  first shippable slice. The prior M0–M5 plan is reference only.
-- **Where each feature above lands** in that sequence, and which are cut or simplified
-  for the first release vs. deferred.
+Stack, reuse strategy, feature priority/sequencing, and what lands in the first
+shippable slice were all decided in [`build-plan.md`](./build-plan.md); nothing here
+reopens that.
 
 ## L. Correctness specs & validation
 
-- **The Wiki is the behavioral spec; BTK is a golden-vector oracle** for every factor it
-  already implements (§A "already modeled"). Diff trajectory outputs (drop, drift, spin
-  drift, TOF, retained velocity) against engine-generated vectors, cross-checked against
-  McCoy's measured **.50 Ball M33** curve and the Litz worked examples cited in the Wiki
-  (per §0.5).
-- **The four Bucket-A extensions have NO BTK oracle.** Custom/McDrag drag, bullet core &
-  shape → BC + full stability, Coriolis, and incline/decline fire are **absent from
-  BTK**, so there is no second implementation to diff against. For these, the **Wiki
-  article + its primary source is the sole correctness arbiter.**
-- **Their spec articles are not yet written — but the sources are in hand.** Primary
-  sources are already acquired and **page-routed** in
-  [`../Documentation/source-map.md`](../Documentation/source-map.md) (Litz Ch4 incline /
-  Ch7 Coriolis / Ch17–18 bullet anatomy; McCoy Ch4 McDrag & drag / §3.4 angle / §6.6 form
-  factors / §8.8 Coriolis) and logged in [`../Wiki/_gaps.md`](../Wiki/_gaps.md) as
-  Phase-2 engine tasks. **No source acquisition is required.**
-- **[MODEL] Schedule each of these four spec articles as an implementation gate for its
-  feature** — author the correctness article from the in-hand sources right before /
-  alongside building that engine feature (demand-driven, per the working agreement), and
-  validate the implementation against it. Writing them is **not** a precondition to the
-  plan itself, only to shipping the feature they specify.
+The Wiki is the behavioral spec; BTK is the golden-vector oracle for every factor it
+already implements. The four Bucket-A extensions (§A: custom drag/McDrag, bullet core/
+shape, Coriolis, incline fire) have **no BTK oracle** — their unwritten Wiki articles
+are the sole correctness arbiter and are a **required gate**: no implementation task
+for a gated feature may precede its article being `reviewed`. Sources are already
+acquired and page-routed in [`../Documentation/source-map.md`](../Documentation/source-map.md).
 
 ## M. Deliberately out of scope
 
-- Hunting / animals; artillery-scale beyond anti-materiel; a money economy; a scope
-  catalog (one configurable optic instead); a required server/backend for v1.
+Hunting/animals; artillery-scale beyond anti-materiel; a money economy; a scope
+catalog (one configurable optic instead); a required server/backend.

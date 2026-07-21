@@ -1,12 +1,23 @@
 # Execution Protocol — how the coding agent works this plan
 
-`Status: active`  ·  `Date: 2026-07-13`  ·  `Audience: the executing AI coding agent`
+`Status: active`  ·  `Date: 2026-07-13`  ·  `Addendum: 2026-07-21 — increment plan retired as ordered roadmap`  ·  `Audience: the executing AI coding agent`
 
 > **Read this first, every session.** This file defines *how* you work. *What* to
 > build is defined by [`../build-plan.md`](../build-plan.md) (architecture &
 > decisions) and the increment task docs in this folder. You execute **one task at a
 > time**, verify it, log it, and stop at any red flag. You do not improvise
 > architecture.
+>
+> **2026-07-21 addendum:** the owner retired the staged, in-order increment plan as
+> the build roadmap after Increment 2 was largely built. `Design/feature-catalog.md`
+> now decides what to build next — it is not tied to increment sequencing. The
+> increment task docs referenced below (`increment-2*.md`, `increments-3-6.md`)
+> moved to `Design/archive/`; they still hold real, locked decisions (D-numbered
+> decisions, Done-when specs) and are linked from the relevant `feature-catalog.md`
+> entry when that feature is picked up — read the rest of this protocol (task
+> verification, stop rules, PROGRESS.md discipline) against **whichever feature the
+> owner asks for**, substituting "the feature-catalog entry + its linked archive doc
+> (if any)" everywhere below that says "the increment doc."
 
 ---
 
@@ -17,7 +28,7 @@
 | Project context, conventions | `/CLAUDE.md` |
 | What the game must do (features, hard constraints) | `Design/feature-catalog.md` |
 | Architecture, stack, reuse strategy, increment goals | `Design/build-plan.md` |
-| **Your current work queue** | `Design/execution/increment-N.md` (N = current increment in `PROGRESS.md`) |
+| **Your current work queue** | `Design/feature-catalog.md` (the staged increment plan is retired as an ordered roadmap, 2026-07-21 — old increment docs are archived at `Design/archive/increment-*.md`, still linked from individual catalog entries for locked decisions) |
 | What's done / in flight / blocked | `Design/execution/PROGRESS.md` |
 | Ballistics correctness (formulas, behavior) | `Wiki/*.md` articles + their cited sources — **the article always wins over code, including BTK** |
 
@@ -192,8 +203,11 @@ and the owner has done the play-check on the iPad. Then:
 
 - For Increments 1→2: proceed to the next detailed task doc.
 - For Increments 3–6: first **run the just-in-time planning procedure** in
-  [`increments-3-6.md`](./increments-3-6.md) §JIT to produce `increment-N.md`,
-  get owner sign-off on it, and only then start building.
+  [`../archive/increments-3-6.md`](../archive/increments-3-6.md) §JIT to produce
+  `increment-N.md`, get owner sign-off on it, and only then start building. (Only
+  applies if the owner explicitly asks to resume the staged plan for a later
+  increment — see the 2026-07-21 addendum above; the default mode is
+  feature-catalog-driven.)
 
 ## 9. Working with the C++ engine (Sonnet-specific notes)
 

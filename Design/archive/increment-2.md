@@ -42,8 +42,8 @@ defaulted on v1 saves); those settings round-trip through persistence; grep-styl
 that no UI/HUD module imports hidden-truth internals.
 
 ## 2.2 Gear catalog + inventory
-> **Catalog starting data (2026-07-16):** use [`../catalog-starting-values.md`](../catalog-starting-values.md)
-> (readable) and [`../catalog-seed.json`](../catalog-seed.json) (engine-ready, imperial + SI,
+> **Catalog starting data (2026-07-16):** use [`../bullet-catalog/catalog-starting-values.md`](../bullet-catalog/catalog-starting-values.md)
+> (readable) and [`../bullet-catalog/catalog-seed.json`](../bullet-catalog/catalog-seed.json) (engine-ready, imperial + SI,
 > mapped to the hidden-truth fields) for the teaching-ladder cartridges (.22 LR, .223/5.56,
 > 6.5 CM, .308, .300 WM, .338 LM, .50 BMG). Distilled from the two secondary reports
 > `Documentation/{Ammo,Rifle}Research.txt` (**work from the `.txt`, not the image-based
@@ -96,6 +96,12 @@ turrets.
 >   v1 leans auto-by-cartridge×system.
 
 ## 2.4 Computed DOPE + data book v1
+> **Detailed plan:** [`increment-2.4-plan.md`](./increment-2.4-plan.md) (decisions D1–D10 locked
+> 2026-07-20). Splits this task into **2.4a** (node model + confidence rule + catalog
+> effective-range), **2.4b** (reusable range-environment system — BTK mountains/trees/textures,
+> retrofitted to all ranges), **2.4c** (dedicated dual-scale DOPE range), **2.4d** (confirm-node
+> flow), **2.4e** (chronograph — owner addition 2026-07-20), and **2.4f** (data book UI).
+
 DOPE service: solver-generated come-up table from *box + player zero* (the
 baseline the player believes); data book UI listing per rifle+lot: baseline
 curve, confirmed nodes, current conditions. Node recording: at a rack, after
@@ -121,15 +127,23 @@ derives from SD — unit-tested).
 > - Same **entry-time unit resolution** + **no live-morph** rules as 2.3.
 
 ## 2.5 Two-lever truing
-`truing.ts`: given nodes, fit (1) **effective MV** primarily from the nearest
-node ≤ ~600 yd, (2) **BC/drag scale** from the farthest node (near transonic
-preferred); solver then uses trued params for untested ranges. Implementation:
-simple 2-parameter least-squares over node residuals via repeated engine solves
-(worker); no closed form needed.
-**Done when:** vitest with synthetic truth — construct a hidden truth, confirm
-nodes at 300 + 900 yd, truing recovers effective MV within ±5 fps and drag scale
-within ±2%, and predicted come-up at an untested 600 yd is closer to truth than
-the box prediction in ≥95% of 100 seeded trials.
+`truing.ts`: **effective MV** is sourced from a chronograph reading (2.4e
+`ChronoSummary`) when one exists for the rifle+lot — a direct measurement, not a
+fit. **BC/drag scale** is then fit from a confirmed node (farthest node, near
+transonic preferred) with MV held fixed. Without a chronograph reading,
+effective MV is instead solved from a confirmed node with BC held at the
+catalog value, and that fit is flagged provisional regardless of shot count.
+Truing never overwrites a node's own measured value — only distances with no
+recorded node ride the recomputed curve. Implementation: least-squares over
+node residuals via repeated engine solves (worker); no closed form needed.
+Decision record: `increment-2.4-plan.md` §8 (D11–D13, locked with owner
+2026-07-21).
+**Done when:** vitest with synthetic truth — construct a hidden truth, chrono a
+string (pins MV), confirm a node at 900 yd, truing recovers drag scale within
+±2%, and predicted come-up at an untested 600 yd is closer to truth than the
+box prediction in ≥95% of 100 seeded trials; a no-chrono, single-node case
+(confirm a node at 300 yd, no chrono string) recovers effective MV within ±5 fps
+and the fit is flagged provisional.
 
 ## 2.6 Reticle ranging on KD
 Known-size metadata on plates (already sized in scene config); ranging UI: player

@@ -19,16 +19,17 @@
 
 import { useState, type ReactNode } from 'react';
 import { RangeView } from '../range/RangeView';
+import { TestRangeScene } from '../range/TestRangeScene';
 import { DropTable } from './DropTable';
 import { PersistencePanel } from './PersistencePanel';
 import { TruthInspector } from './TruthInspector';
 import { ScopeView } from '../scope/ScopeView';
 
-type DevView = 'game' | 'range' | 'scope' | 'debug' | 'truth';
+type DevView = 'game' | 'range' | 'test-range' | 'scope' | 'debug' | 'truth';
 
 export function DevTools({ game }: { game: ReactNode }) {
   const [view, setView] = useState<DevView>('game');
-  const fullscreen = view === 'game' || view === 'range' || view === 'scope';
+  const fullscreen = view === 'game' || view === 'range' || view === 'test-range' || view === 'scope';
 
   return (
     <div>
@@ -52,6 +53,9 @@ export function DevTools({ game }: { game: ReactNode }) {
         <button onClick={() => setView('range')} disabled={view === 'range'}>
           Range A
         </button>
+        <button onClick={() => setView('test-range')} disabled={view === 'test-range'}>
+          Test Range
+        </button>
         <button onClick={() => setView('scope')} disabled={view === 'scope'}>
           Scope
         </button>
@@ -65,6 +69,12 @@ export function DevTools({ game }: { game: ReactNode }) {
       {/* Default: the real player flow (range select → Scope, with Menu button). */}
       {view === 'game' && game}
       {view === 'range' && <RangeView />}
+      {/* Stage 3 (test-range-environment-plan.md §3.3): free-look preview of the
+          Test Range's environment (trees/ground-cover tuning) without shooting
+          a session — same frame-time HUD + drag-to-look as the Range A tab. */}
+      {view === 'test-range' && (
+        <RangeView label="Test Range · 100 yd" buildScene={(s) => new TestRangeScene(s)} />
+      )}
       {/* Standalone Scope with no onOpenMenu — the pre-1.8 dev preview (no Menu
           button, so no Settings overlay from this tab; use the Game tab for that). */}
       {view === 'scope' && <ScopeView />}

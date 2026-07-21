@@ -65,6 +65,12 @@ export const SUBMINOR_HALF_PX = 3;
 export const MINOR_HALF_PX = 5;
 export const MAJOR_HALF_PX = 11;
 
+/** Below this magnification, `buildReticle` drops all hash marks/labels (the
+ *  crosshair itself is drawn separately in ScopeView and is unaffected) —
+ *  owner feedback 2026-07-21: at low power the fine cadence is more clutter
+ *  than useful information, so keep just the crosshair below 3×. */
+export const RETICLE_HASH_MIN_MAG = 3;
+
 /** One hash mark on a stadia line. */
 export interface Tick {
   /** Signed subtension value in the reticle unit (…, -2, -1, 1, 2, … mil/MOA). */
@@ -137,20 +143,25 @@ function buildAxis(
 
 /**
  * Build the reticle tick geometry for the current view. `maxOffsetPx` is the
- * scope-circle radius in CSS px — ticks are clipped to it.
+ * scope-circle radius in CSS px — ticks are clipped to it. `magnification`
+ * (optional, defaults to always showing hash marks) drops all ticks below
+ * `RETICLE_HASH_MIN_MAG` — the crosshair itself is drawn separately by the
+ * caller and is unaffected by this.
  */
 export function buildReticle(
   unit: ReticleUnit,
   fovRad: number,
   viewportHeightPx: number,
   maxOffsetPx: number,
+  magnification: number = Infinity,
 ): ReticleGeometry {
   const pxPerUnit = unit === 'MIL'
     ? pixelsPerMil(fovRad, viewportHeightPx)
     : pixelsPerMoa(fovRad, viewportHeightPx);
   const { bands, isMajor } = CADENCE[unit];
-  const ticksX = buildAxis(pxPerUnit, maxOffsetPx, bands, isMajor);
-  const ticksY = buildAxis(pxPerUnit, maxOffsetPx, bands, isMajor);
+  const showHashMarks = magnification >= RETICLE_HASH_MIN_MAG;
+  const ticksX = showHashMarks ? buildAxis(pxPerUnit, maxOffsetPx, bands, isMajor) : [];
+  const ticksY = showHashMarks ? buildAxis(pxPerUnit, maxOffsetPx, bands, isMajor) : [];
   const maxValue = ticksX.reduce((m, t) => Math.max(m, Math.abs(t.value)), 0);
   return { unit, pxPerUnit, ticksX, ticksY, maxValue };
 }

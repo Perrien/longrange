@@ -22,14 +22,20 @@ building the game on BTK, shipped as a web/PWA** (chosen so it runs on iPad/iPho
 with no paid Apple account and no weekly re-signing).
 
 **Build plan produced (2026-07-13) — start here.** The *what* is consolidated in
-`Design/feature-catalog.md` (authoritative feature set + hard constraints + validation
-rules). The *how* is now decided in **`Design/build-plan.md`**: keep the C++/WASM
+`Design/feature-catalog.md` — now a **living feature list + build-status tracker**
+(restructured 2026-07-21: every feature tagged built-with-date-and-changes or
+not-built-with-notes, condensed from the increment plans + `PROGRESS.md`), plus the
+hard constraints + validation rules. The *how* is now decided in **`Design/build-plan.md`**: keep the C++/WASM
 physics core (extended in an owned `GameBuild/engine/` copy; pristine `BallisticsToolkit/` stays
 the golden-vector oracle) and build the game fresh as a TypeScript + React + Three.js +
-Vite PWA. Execution is broken into verified, session-sized tasks for a coding agent
-under **`Design/execution/`** — agents doing build work start at
+Vite PWA. Execution was originally broken into verified, session-sized tasks for a
+coding agent under **`Design/execution/`** — agents doing build work start at
 `Design/execution/execution-protocol.md` and `Design/execution/PROGRESS.md`.
-Superseded docs live in `Design/archive/`.
+**The staged increment plan is retired as an ordered roadmap (2026-07-21, see Working
+agreement)**: `Design/feature-catalog.md` now decides what gets built next, and the
+increment plan docs (`increment-2*.md`, `increments-3-6.md`) moved to
+`Design/archive/`, still referenced from individual catalog entries for their locked
+decisions and Done-when specs. Superseded docs also live in `Design/archive/`.
 
 The project owner is **new to long-range shooting**, so the Wiki doubles as a
 learning resource; explanations build from first principles. The Wiki is now a
@@ -58,7 +64,7 @@ to building.
   landing, offline install) — all owner-signed on device. Per-task plan docs for
   Increments 0–1 were removed once closed (history in `PROGRESS.md` + git tags).
   **Increment 2 in progress — planning.** Task **2.1** (hidden-truth model + save schema
-  v2) is planned in detail in `Design/execution/increment-2.1-plan.md` (decisions D1–D6
+  v2) is planned in detail in `Design/archive/increment-2.1-plan.md` (decisions D1–D6
   locked 2026-07-16), split into 2.1a (schema v2 + migration + settings carry-over), 2.1b
   (hidden-truth model), 2.1c (wire + no-leak guard), and 2.1d (Settings screen). Key
   decision: hidden truth is stored as **per-field normalized draws mapped to truth on
@@ -120,15 +126,14 @@ LongRange/
 │   ├── app/           ← the PWA: TypeScript + React + Three.js + Vite (created in task 0.4)
 │   └── validation/    ← golden-vector harness + fixtures (oracle diff vs BallisticsToolkit/)
 ├── Design/            ← Phase-2 decisions & plans
-│   ├── feature-catalog.md                  ← AUTHORITATIVE feature set + hard constraints + validation rules
+│   ├── feature-catalog.md                  ← LIVING feature list + build-status tracker (built-w/-date vs not-built-w/-notes) + hard constraints
 │   ├── build-plan.md                       ← AUTHORITATIVE architecture / stack / reuse / sequencing plan
 │   ├── btk-assessment-and-path-forward.md  ← engine assessment + web/PWA decision (evidence record)
-│   ├── execution/                          ← the coding agent's working layer (START HERE for build work)
+│   ├── execution/                          ← agent working rules + live task log (no active increment plan — see archive/)
 │   │   ├── execution-protocol.md           ← agent working rules, guardrails, stop rules, offline-env rules
-│   │   ├── PROGRESS.md                     ← task state, environment capabilities, owner install queue
-│   │   ├── increment-2.md                  ← detailed, verified task doc for the active increment (0 & 1 complete; their plans removed, history in PROGRESS.md + git tags)
-│   │   └── increments-3-6.md               ← coarse breakdowns + just-in-time planning procedure
-│   └── archive/                            ← superseded docs (phase-2-plan, game-design, build-plan-prompt)
+│   │   └── PROGRESS.md                     ← task state, environment capabilities, owner install queue
+│   ├── bullet-catalog/                     ← cartridge/rifle research data (seed JSON + readable values), all 7 teaching-ladder cartridges; 4 shipped, 3 (magnum/ELR) still pending
+│   └── archive/                            ← superseded docs (phase-2-plan, game-design, build-plan-prompt) + retired increment plan docs (increment-2*.md, increments-3-6.md) — feature-catalog.md links into these for locked decisions
 ├── Documentation/     ← GROUND TRUTH: source articles, PDFs, datasets
 │   ├── README.md
 │   ├── sources.md     ← manifest of sources + quality/OCR notes
@@ -177,6 +182,15 @@ is validated against, and the source material for in-game teaching.
   factor set is documented" rule is **retired** — the engine exists and has already
   made most modeling choices. Do not treat exhaustive Wiki coverage as a gate to
   building.
+- **The staged increment plan is retired as an ordered build roadmap (2026-07-21).**
+  Increments 0–2 were executed in order; the owner then stepped back from following
+  the plan increment-by-increment. `Design/feature-catalog.md` is now the live
+  source for what to build next — it is not tied to increment sequencing. The old
+  increment plan docs (`increment-2*.md`, `increments-3-6.md`) moved to
+  `Design/archive/` — they're not deleted because their locked decisions (D-numbered
+  decisions, Done-when specs) and research data are still correct and still needed;
+  individual `feature-catalog.md` entries link directly into them. `PROGRESS.md`
+  (history of what was actually built) is unaffected and stays in `Design/execution/`.
 - **Wiki is demand-driven:** write or upgrade an article when a milestone, a game
   mechanic, or a validation need calls for it (as `range-estimation` was pulled
   forward for the ranging mechanic). Prioritize v1 + teaching topics; let the rest
