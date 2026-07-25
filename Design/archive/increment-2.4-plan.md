@@ -1,6 +1,6 @@
 # Increment 2.4 plan — Computed DOPE + data book v1 (+ chronograph + range environment)
 
-`Status: decisions D1–D10 LOCKED with owner 2026-07-20 — ready to build 2.4a on owner authorization; owner is pausing active build for a while (2026-07-21) — D11–D13 (§8, 2.5 truing lever order) added ahead of that pause so they aren't lost` · `Date: 2026-07-20 (2.4a–f) / 2026-07-21 (§8 addendum)`
+`Status: decisions D1–D10 LOCKED with owner 2026-07-20 — ready to build 2.4a on owner authorization; owner is pausing active build for a while (2026-07-21) — D11–D13 (§8, 2.5 truing lever order) added ahead of that pause so they aren't lost; D14 (manual MV/BC override precedence) added 2026-07-24` · `Date: 2026-07-20 (2.4a–f) / 2026-07-21 (§8 addendum) / 2026-07-24 (D14)`
 `Covers:` PROGRESS task **2.4** (computed DOPE + data book v1), split into **2.4a / 2.4b / 2.4c /
 2.4d / 2.4e / 2.4f**. Scope grew two owner-directed additions this session: a **reusable range
 environment system** (BTK-style mountains/trees/textured ground, all ranges) and a **chronograph**
@@ -343,3 +343,15 @@ as two separate badges, a data-book row shows a single merged label: **provision
 node hasn't reached its shot-count threshold or the curve isn't yet chrono-anchored; **confirmed**
 only when both hold. Rows with no node at all remain the plain computed baseline — no confidence
 label, or a distinct "computed" tag (settle the exact treatment when 2.4f is actually built).
+
+### D14 — Confirmed node always overrules a manual MV/BC override (locked 2026-07-24)
+A player can hand-edit the effective MV/BC shown in the DOPE table/data book directly (see
+`feature-catalog.md` §D, "Exposed effective MV/BC + manual override") — the real-world technique
+of nudging BC until the computed holdover matches what's actually being held in the field. That
+manual value is a **placeholder**, not a measurement: it carries no distance, shot count, or
+conditions, so the data book's confidence-tier system (D3/D13) can't vouch for it the way it can
+for a node. Once a real confirmed node exists for that rifle+lot, its auto-fit (D11) always
+overwrites the manual value going forward, same as it already overwrites the catalog/box default —
+manual edits never outrank measured data. The manual field stays useful only for previewing/tuning
+*between* confirmed nodes, or for players who prefer the hand-truing feel over confirming a node
+through the shot flow.

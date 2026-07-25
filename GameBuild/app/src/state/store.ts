@@ -17,7 +17,9 @@ import { create } from 'zustand';
 import { milToRad, moaToRad } from '../units';
 import { yardsToMeters } from '../units';
 import type { ShotResult } from '../game/shot';
-import type { AmmoLot, RifleInstance, PlayerZero } from '../persistence';
+import type { AmmoLot, RifleInstance, PlayerZero, DopeNode, ChronoSummary } from '../persistence';
+import { upsertNode, removeNode, pruneNodesForRifle, pruneNodesForLot } from '../game/dope-book';
+import { mergeChronoString, pruneChronoForRifle, pruneChronoForLot } from '../game/chrono';
 import {
   buildAmmoLot,
   buildRifleInstance,
@@ -209,6 +211,30 @@ export const defaultInventory = (): InventoryState => ({
   activeLotId: null,
 });
 
+/** Confirmed DOPE nodes (task 2.4a). A dedicated slice (not folded into
+ *  inventory) so its lifecycle — confirm, delete, cascade-prune on gear delete —
+ *  stays legible. Persisted via the top-level `dopeNodes[]` save field; the
+ *  persistence subscription (persist-settings.ts) watches this slice explicitly.
+ *  Nodes reference both a rifle and a lot id, so they belong to the pairing, not
+ *  to either record — hence a flat array here. */
+export interface DopeState {
+  nodes: DopeNode[];
+}
+
+export const defaultDope = (): DopeState => ({ nodes: [] });
+
+/** Chronograph state (task 2.4e, D10). `deployed` + the live `current` string are
+ *  SESSION-ONLY (a reload resets them); only `summaries` (per rifle+lot, Welford-
+ *  merged) persist. The current string is tied to one rifle+lot so switching gear
+ *  mid-string auto-commits it (see `logChronoReading`). */
+export interface ChronoState {
+  deployed: boolean;
+  current: { rifleId: string; lotId: string; readings: number[] } | null;
+  summaries: ChronoSummary[];
+}
+
+export const defaultChrono = (): ChronoState => ({ deployed: false, current: null, summaries: [] });
+
 // --- Store ------------------------------------------------------------------
 
 export interface GameStore {
@@ -216,6 +242,8 @@ export interface GameStore {
   settings: SettingsState;
   score: ScoreState;
   inventory: InventoryState;
+  dope: DopeState;
+  chrono: ChronoState;
 
   // Scope / turret
   /** Dial elevation by N detents (can be negative). */
@@ -314,6 +342,30 @@ export interface GameStore {
   ): void;
   /** Replace the whole inventory (used by persistence hydration). */
   applyInventory(inventory: InventoryState): void;
+
+  // DOPE nodes (task 2.4a)
+  /** Confirm a DOPE node: replace-by-station (D5 — a re-confirm at the same
+   *  rifle+lot+distance overwrites the prior node), else append. Persists via the
+   *  dope→save wiring. */
+  confirmNode(node: DopeNode): void;
+  /** Delete the confirmed node at a rifle+lot+station (station matched within the
+   *  book's SI epsilon). No-op if none matches. */
+  deleteNode(rifleId: string, lotId: string, distanceM: number): void;
+  /** Replace the whole DOPE slice (used by persistence hydration). */
+  applyDope(dope: DopeState): void;
+
+  // Chronograph (task 2.4e)
+  /** Deploy/stow the chronograph. While deployed, each fired shot logs a reading. */
+  setChronoDeployed(on: boolean): void;
+  /** Log a per-shot muzzle-velocity reading for the active rifle+lot. If the live
+   *  string belongs to a different pairing, it is auto-committed to the summaries
+   *  first, then a fresh string starts. Session-only until committed. */
+  logChronoReading(rifleId: string, lotId: string, mps: number): void;
+  /** Commit (Welford-merge) the live string into the persisted per-rifle+lot
+   *  summary and clear it — the "new string" button. No-op if the string is empty. */
+  commitChronoString(nowIso: string): void;
+  /** Replace the whole chrono slice (used by persistence hydration). */
+  applyChrono(chrono: ChronoState): void;
 }
 
 export const useGameStore = create<GameStore>()((set) => ({
@@ -321,6 +373,8 @@ export const useGameStore = create<GameStore>()((set) => ({
   settings: defaultSettings(),
   score: defaultScore(),
   inventory: defaultInventory(),
+  dope: defaultDope(),
+  chrono: defaultChrono(),
 
   dialElevationClicks: (clicks) =>
     set((s) => ({
@@ -484,6 +538,15 @@ export const useGameStore = create<GameStore>()((set) => ({
         rifles: s.inventory.rifles.filter((r) => r.id !== instanceId),
         activeRifleId: s.inventory.activeRifleId === instanceId ? null : s.inventory.activeRifleId,
       },
+      // Cascade (task 2.4a): a deleted rifle's confirmed nodes go with it, in the
+      // same atomic set — no window where a node points at a gone rifle.
+      dope: { ...s.dope, nodes: pruneNodesForRifle(s.dope.nodes, instanceId) },
+      // Cascade (task 2.4e): drop the rifle's chrono summaries + a live string it owns.
+      chrono: {
+        ...s.chrono,
+        summaries: pruneChronoForRifle(s.chrono.summaries, instanceId),
+        current: s.chrono.current?.rifleId === instanceId ? null : s.chrono.current,
+      },
     })),
 
   deleteLot: (lotId) =>
@@ -492,6 +555,12 @@ export const useGameStore = create<GameStore>()((set) => ({
         ...s.inventory,
         ammoLots: s.inventory.ammoLots.filter((l) => l.id !== lotId),
         activeLotId: s.inventory.activeLotId === lotId ? null : s.inventory.activeLotId,
+      },
+      dope: { ...s.dope, nodes: pruneNodesForLot(s.dope.nodes, lotId) },
+      chrono: {
+        ...s.chrono,
+        summaries: pruneChronoForLot(s.chrono.summaries, lotId),
+        current: s.chrono.current?.lotId === lotId ? null : s.chrono.current,
       },
     })),
 
@@ -534,4 +603,53 @@ export const useGameStore = create<GameStore>()((set) => ({
     }),
 
   applyInventory: (inventory) => set({ inventory }),
+
+  confirmNode: (node) =>
+    set((s) => ({ dope: { ...s.dope, nodes: upsertNode(s.dope.nodes, node) } })),
+
+  deleteNode: (rifleId, lotId, distanceM) =>
+    set((s) => ({
+      dope: { ...s.dope, nodes: removeNode(s.dope.nodes, rifleId, lotId, distanceM) },
+    })),
+
+  applyDope: (dope) => set({ dope }),
+
+  setChronoDeployed: (on) => set((s) => ({ chrono: { ...s.chrono, deployed: on } })),
+
+  logChronoReading: (rifleId, lotId, mps) =>
+    set((s) => {
+      const cur = s.chrono.current;
+      // Same pairing → append to the live string.
+      if (cur && cur.rifleId === rifleId && cur.lotId === lotId) {
+        return {
+          chrono: {
+            ...s.chrono,
+            current: { ...cur, readings: [...cur.readings, mps] },
+          },
+        };
+      }
+      // Gear switched with an in-progress string → commit it, then start fresh.
+      const summaries =
+        cur && cur.readings.length
+          ? mergeChronoString(s.chrono.summaries, cur.rifleId, cur.lotId, cur.readings, new Date().toISOString())
+          : s.chrono.summaries;
+      return {
+        chrono: { ...s.chrono, summaries, current: { rifleId, lotId, readings: [mps] } },
+      };
+    }),
+
+  commitChronoString: (nowIso) =>
+    set((s) => {
+      const cur = s.chrono.current;
+      if (!cur || cur.readings.length === 0) return s;
+      return {
+        chrono: {
+          ...s.chrono,
+          summaries: mergeChronoString(s.chrono.summaries, cur.rifleId, cur.lotId, cur.readings, nowIso),
+          current: null,
+        },
+      };
+    }),
+
+  applyChrono: (chrono) => set({ chrono }),
 }));

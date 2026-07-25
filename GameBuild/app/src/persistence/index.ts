@@ -5,6 +5,8 @@ export type {
   SaveSettings,
   RifleInstance,
   AmmoLot,
+  DopeNode,
+  ChronoSummary,
   PlayerZero,
   RifleDraws,
   LotDraws,

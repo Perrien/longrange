@@ -95,3 +95,60 @@ describe('match-sim/createScatterSimulator', () => {
     expect(true).toBe(true);
   });
 });
+
+// Chronograph reading source (task 2.4e, D10): fire() exposes the shot's true MV
+// (SimulatedShot.actual_mv), drawn per shot from N(nominal_mv, mv_sd) (3σ-clipped,
+// simulator.cpp). These tests pin the REALISM the owner asked for: per-shot MV
+// varies by the lot SD, so the sample average estimates the true mean — better
+// than the box, never exact, tightening with N (diminishing returns).
+describe('match-sim MV readings (chronograph source)', () => {
+  const TRUE_MEAN = LOAD.muzzleVelocityMps; // 826.008 — the sim's nominal_mv
+  const TRUE_SD = DISPERSION.mvSdMps; // 2.7
+
+  function readMv(seed: number, n: number): number[] {
+    const sim = createScatterSimulator(module, LOAD, DISPERSION, RANGE_M, ATMOSPHERE, TWIST_M);
+    try {
+      seedRandom(module, seed);
+      const out: number[] = [];
+      for (let i = 0; i < n; i++) out.push(sim.fire().mvMps);
+      return out;
+    } finally {
+      sim.delete();
+    }
+  }
+
+  it('fire() returns a finite per-shot muzzle velocity', () => {
+    const [mv] = readMv(42, 1);
+    expect(Number.isFinite(mv)).toBe(true);
+    expect(mv).toBeGreaterThan(0);
+  });
+
+  it('a long string estimates the true mean and recovers the lot SD', () => {
+    const mv = readMv(2024, 500);
+    const avg = mv.reduce((s, v) => s + v, 0) / mv.length;
+    const sd = Math.sqrt(mv.reduce((s, v) => s + (v - avg) * (v - avg), 0) / (mv.length - 1));
+    // SE for N=500 is 2.7/√500 ≈ 0.12; allow a generous band.
+    expect(Math.abs(avg - TRUE_MEAN)).toBeLessThan(1.0);
+    // 3σ clip trims variance a hair; sample SD stays close to the lot SD.
+    expect(sd).toBeGreaterThan(TRUE_SD * 0.8);
+    expect(sd).toBeLessThan(TRUE_SD * 1.2);
+    // Genuine per-shot variation (not a constant MV).
+    expect(Math.max(...mv) - Math.min(...mv)).toBeGreaterThan(TRUE_SD);
+  });
+
+  it('averaging more shots gives a better estimate of the true mean (diminishing returns)', () => {
+    // Over many seeded strings, the mean |error| of a 30-shot average must be
+    // smaller than that of a 3-shot average — the standard error shrinks ~1/√N.
+    let err3 = 0;
+    let err30 = 0;
+    const REPEATS = 24;
+    for (let i = 0; i < REPEATS; i++) {
+      const mv = readMv(1000 + i, 30);
+      const avg3 = (mv[0] + mv[1] + mv[2]) / 3;
+      const avg30 = mv.reduce((s, v) => s + v, 0) / 30;
+      err3 += Math.abs(avg3 - TRUE_MEAN);
+      err30 += Math.abs(avg30 - TRUE_MEAN);
+    }
+    expect(err30 / REPEATS).toBeLessThan(err3 / REPEATS);
+  });
+});

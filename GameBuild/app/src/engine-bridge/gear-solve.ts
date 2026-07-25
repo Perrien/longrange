@@ -145,7 +145,7 @@ export interface GearScatterInput {
  * A per-shot scatter simulator built from the gear's TRUE dispersion — the lot's
  * MV/BC SDs + the rifle's inherent-precision cone (task 2.3d). Wind/cant SDs are
  * 0 (mean wind is the deterministic centre's job). Returns a numbers-only
- * `ScatterSimulator` (fire() → {x,y}), so no truth leaks (§4.8). Caller `.delete()`s.
+ * `ScatterSimulator` (fire() → {x,y,mvMps}), so no truth leaks (§4.8). Caller `.delete()`s.
  */
 export function createGearScatter(module: BtkModule, input: GearScatterInput): ScatterSimulator {
   const { load, truth, twistM } = trueLoadOf(input.rifle, input.lot, input.rifleRanges, input.lotRanges);

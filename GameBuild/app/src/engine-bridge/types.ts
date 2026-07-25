@@ -115,6 +115,14 @@ export interface ScatterShot {
   y: number;
 }
 
+/** A ScatterShot plus the fired shot's actual muzzle velocity (m/s) — the
+ * chronograph reading source (task 2.4e). The engine draws each shot's MV from
+ * the lot's true distribution (simulator.cpp: `Random::normal(mean, mv_sd)`,
+ * 3σ-clipped); `resolveShot` only needs {x,y}, the chrono reads `mvMps`. */
+export interface ScatterSample extends ScatterShot {
+  mvMps: number;
+}
+
 // ----------------------------------------------------------------------------
 // Minimal embind surface (only what the bridge uses). Every handle owns native
 // memory and must be `.delete()`d unless returned by reference — that discipline

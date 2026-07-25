@@ -17,6 +17,8 @@ import {
   defaultSettings,
   defaultScore,
   defaultInventory,
+  defaultDope,
+  defaultChrono,
   MIL_CLICK_RAD,
   MOA_CLICK_RAD,
   ZOOM_MIN,
@@ -28,6 +30,7 @@ import {
   loadSettingsInto,
   persistSettingsOnChange,
 } from './index';
+import type { DopeNode } from '../persistence';
 
 /** Build a minimal ShotResult for scoring tests (impact geometry doesn't matter here). */
 const shotResult = (hitPlateId: number | null): ShotResult => ({
@@ -37,6 +40,21 @@ const shotResult = (hitPlateId: number | null): ShotResult => ({
   aimedPlateId: hitPlateId,
 });
 
+/** Build a DopeNode for store tests. */
+const dopeNode = (partial: Partial<DopeNode> = {}): DopeNode => ({
+  rifleId: 'rifle-1',
+  lotId: 'lot-1',
+  distanceM: yardsToMeters(300),
+  elevationRad: 0.003,
+  windageRad: 0,
+  zeroRangeM: yardsToMeters(100),
+  shots: 3,
+  hits: 3,
+  conditions: { windSpeedMps: 0, windDirectionDeg: 0, tempC: 15, pressurePa: 101325 },
+  confirmedAtIso: '2026-07-24T00:00:00.000Z',
+  ...partial,
+});
+
 // Reset the singleton store before each test.
 beforeEach(() => {
   useGameStore.setState({
@@ -44,6 +62,8 @@ beforeEach(() => {
     settings: defaultSettings(),
     score: defaultScore(),
     inventory: defaultInventory(),
+    dope: defaultDope(),
+    chrono: defaultChrono(),
   });
 });
 
@@ -612,5 +632,176 @@ describe('gear persistence (task 2.2b — the DEFAULT_SAVE-wipe fix)', () => {
     await loadSettingsInto(useGameStore, store);
     const after = useGameStore.getState().inventory;
     expect(after).toEqual(before); // same draws, ids, catalogVersion, active selection
+  });
+});
+
+describe('DOPE nodes (task 2.4a)', () => {
+  const rng = () => 0.5;
+
+  it('confirmNode adds a node; re-confirming the same station replaces it (D5)', () => {
+    const st = useGameStore.getState();
+    st.confirmNode(dopeNode({ elevationRad: 0.003 }));
+    st.confirmNode(dopeNode({ elevationRad: 0.005 })); // same rifle+lot+station
+    const nodes = useGameStore.getState().dope.nodes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].elevationRad).toBe(0.005);
+  });
+
+  it('deleteNode removes the matching station only', () => {
+    const st = useGameStore.getState();
+    st.confirmNode(dopeNode({ distanceM: yardsToMeters(300) }));
+    st.confirmNode(dopeNode({ distanceM: yardsToMeters(500) }));
+    st.deleteNode('rifle-1', 'lot-1', yardsToMeters(300));
+    const nodes = useGameStore.getState().dope.nodes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].distanceM).toBeCloseTo(yardsToMeters(500), 9);
+  });
+
+  it('deleteRifle cascades: its nodes are pruned in the same update', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng });
+    st.confirmNode(dopeNode({ rifleId: rid, distanceM: yardsToMeters(300) }));
+    st.confirmNode(dopeNode({ rifleId: 'other-rifle', distanceM: yardsToMeters(300) }));
+    st.deleteRifle(rid);
+    const nodes = useGameStore.getState().dope.nodes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].rifleId).toBe('other-rifle');
+  });
+
+  it('deleteLot cascades: its nodes are pruned in the same update', () => {
+    const st = useGameStore.getState();
+    const lid = st.acquireLot('65cm-match', { rng });
+    st.confirmNode(dopeNode({ lotId: lid }));
+    st.confirmNode(dopeNode({ lotId: 'other-lot', distanceM: yardsToMeters(500) }));
+    st.deleteLot(lid);
+    const nodes = useGameStore.getState().dope.nodes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].lotId).toBe('other-lot');
+  });
+
+  it('resetSession leaves the DOPE book alone (nodes are not session state)', () => {
+    const st = useGameStore.getState();
+    st.confirmNode(dopeNode());
+    st.resetSession();
+    expect(useGameStore.getState().dope.nodes).toHaveLength(1);
+  });
+
+  it('storeToSave carries dopeNodes', () => {
+    const st = useGameStore.getState();
+    st.confirmNode(dopeNode());
+    const save = storeToSave(useGameStore.getState());
+    expect(save.dopeNodes).toHaveLength(1);
+  });
+
+  it('a confirmNode change triggers a persist, and reload rehydrates the book', async () => {
+    const store = new MemorySaveStore();
+    const unsub = persistSettingsOnChange(useGameStore, store);
+    useGameStore.getState().confirmNode(dopeNode({ distanceM: yardsToMeters(400) }));
+    await new Promise((r) => setTimeout(r, 0));
+    unsub();
+
+    const before = useGameStore.getState().dope;
+    // Cold relaunch: clear the book, then hydrate from the store.
+    useGameStore.setState({ dope: defaultDope() });
+    expect(useGameStore.getState().dope.nodes).toHaveLength(0);
+    await loadSettingsInto(useGameStore, store);
+    expect(useGameStore.getState().dope).toEqual(before);
+  });
+});
+
+describe('chronograph (task 2.4e)', () => {
+  const rng = () => 0.5;
+
+  it('setChronoDeployed toggles the deploy flag', () => {
+    const st = useGameStore.getState();
+    expect(st.chrono.deployed).toBe(false);
+    st.setChronoDeployed(true);
+    expect(useGameStore.getState().chrono.deployed).toBe(true);
+  });
+
+  it('logChronoReading builds the live string for a pairing without touching summaries', () => {
+    const st = useGameStore.getState();
+    st.logChronoReading('r1', 'l1', 820);
+    st.logChronoReading('r1', 'l1', 824);
+    const c = useGameStore.getState().chrono;
+    expect(c.current).toEqual({ rifleId: 'r1', lotId: 'l1', readings: [820, 824] });
+    expect(c.summaries).toHaveLength(0); // not persisted until committed
+  });
+
+  it('switching gear mid-string auto-commits the old string, then starts fresh', () => {
+    const st = useGameStore.getState();
+    st.logChronoReading('r1', 'l1', 820);
+    st.logChronoReading('r1', 'l1', 824);
+    st.logChronoReading('r2', 'l2', 900); // different pairing → auto-commit r1/l1
+    const c = useGameStore.getState().chrono;
+    expect(c.summaries).toHaveLength(1);
+    expect(c.summaries[0]).toMatchObject({ rifleId: 'r1', lotId: 'l1', shots: 2, avgMps: 822 });
+    expect(c.current).toEqual({ rifleId: 'r2', lotId: 'l2', readings: [900] });
+  });
+
+  it('commitChronoString merges the live string into the summary and clears it', () => {
+    const st = useGameStore.getState();
+    st.logChronoReading('r1', 'l1', 818);
+    st.logChronoReading('r1', 'l1', 822);
+    st.commitChronoString('2026-07-24T00:00:00.000Z');
+    const c = useGameStore.getState().chrono;
+    expect(c.current).toBeNull();
+    expect(c.summaries).toHaveLength(1);
+    expect(c.summaries[0]).toMatchObject({ rifleId: 'r1', lotId: 'l1', shots: 2, avgMps: 820 });
+    // A second string for the same pairing merges (running total grows).
+    st.logChronoReading('r1', 'l1', 826);
+    st.commitChronoString('2026-07-24T00:01:00.000Z');
+    expect(useGameStore.getState().chrono.summaries[0].shots).toBe(3);
+  });
+
+  it('deleteRifle / deleteLot cascade-prune chrono summaries', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng });
+    const lid = st.acquireLot('65cm-match', { rng });
+    st.logChronoReading(rid, lid, 820);
+    st.logChronoReading('other', 'other', 900);
+    st.commitChronoString('iso'); // commits the CURRENT string ('other'/'other')
+    // Put rid/lid's string back and commit it too.
+    st.logChronoReading(rid, lid, 820);
+    st.commitChronoString('iso');
+    expect(useGameStore.getState().chrono.summaries).toHaveLength(2);
+    st.deleteRifle(rid);
+    expect(useGameStore.getState().chrono.summaries.some((s) => s.rifleId === rid)).toBe(false);
+  });
+
+  it('resetSession leaves the chrono record alone', () => {
+    const st = useGameStore.getState();
+    st.logChronoReading('r1', 'l1', 820);
+    st.commitChronoString('iso');
+    st.resetSession();
+    expect(useGameStore.getState().chrono.summaries).toHaveLength(1);
+  });
+
+  it('storeToSave carries chronoSummaries', () => {
+    const st = useGameStore.getState();
+    st.logChronoReading('r1', 'l1', 820);
+    st.commitChronoString('iso');
+    expect(storeToSave(useGameStore.getState()).chronoSummaries).toHaveLength(1);
+  });
+
+  it('committing persists; reload rehydrates summaries and resets deployed/current', async () => {
+    const store = new MemorySaveStore();
+    const unsub = persistSettingsOnChange(useGameStore, store);
+    const st = useGameStore.getState();
+    st.setChronoDeployed(true);
+    st.logChronoReading('r1', 'l1', 820);
+    st.logChronoReading('r1', 'l1', 824);
+    st.commitChronoString('2026-07-24T00:00:00.000Z'); // summaries change → persist
+    await new Promise((r) => setTimeout(r, 0));
+    unsub();
+
+    // Cold relaunch: fresh chrono, then hydrate.
+    useGameStore.setState({ chrono: defaultChrono() });
+    await loadSettingsInto(useGameStore, store);
+    const c = useGameStore.getState().chrono;
+    expect(c.summaries).toHaveLength(1);
+    expect(c.summaries[0].shots).toBe(2);
+    expect(c.deployed).toBe(false); // session-only — reset on load
+    expect(c.current).toBeNull();
   });
 });

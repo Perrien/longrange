@@ -58,7 +58,7 @@ import {
   disposeBulletTrace,
 } from './BulletTrace';
 import { buildTracePath } from '../game/trace-path';
-import type { BtkModule, TrajectoryTable } from '../engine-bridge/types';
+import type { BtkModule, TrajectoryTable, ScatterSample } from '../engine-bridge/types';
 import { resolveShot, type ShotPlate } from '../game/shot';
 import { windToVec, averageEffectiveWind, requiredCorrectionRad } from '../game/firing-solution';
 import { superposeWind, gustScaleFor } from '../game/wind-superposition';
@@ -77,6 +77,7 @@ import {
   formatClockPosition,
 } from '../units';
 import { DopePanel } from './DopePanel';
+import { ChronoPanel } from './ChronoPanel';
 
 const EYE_HEIGHT_M = 1.6; // matches the Range A look-around
 
@@ -781,13 +782,16 @@ export function ScopeView({
               position: { x: pl.position.x, y: pl.position.y },
               diameterM: pl.diameterM,
             }));
+          // One scatter sample — carries the shot's impact AND its true muzzle
+          // velocity (2.4e); resolveShot uses {x,y}, the chrono reads mvMps.
+          const shot = simAt(rangeM, gearCtx).fire();
           const result = resolveShot({
             eye: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
             aimDir: { x: dir.x, y: dir.y, z: dir.z },
             dial: { elevRad: scope.elevationRad, windRad: scope.windageRad },
             solve: solved,
             distanceM: rangeM,
-            scatter: simAt(rangeM, gearCtx).fire(),
+            scatter: shot,
             plates: rackPlates,
             bulletDiameterM,
             // D6 zero-error terms (task 2.3e): the rifle's hidden bore offset +
@@ -797,6 +801,13 @@ export function ScopeView({
           });
           store().recordShot(result);
           store().decrementBudget();
+
+          // Chronograph (task 2.4e, D10): while deployed, log THIS shot's true
+          // muzzle velocity (the engine's per-shot draw) for the active rifle+lot.
+          // Numbers only — no truth object. Needs gear (nothing to key a box shot to).
+          if (store().chrono.deployed && gearCtx) {
+            store().logChronoReading(gearCtx.rifle.id, gearCtx.lot.id, shot.mvMps);
+          }
 
           // Spotter call (task 1.6c, D3 HUD): hit/miss + clock relative to the
           // engaged plate's centre. Called against the plate the shot was aimed
@@ -1018,8 +1029,8 @@ export function ScopeView({
 
     // Per-shot scatter from the gear's TRUE dispersion (task 2.3d) — cached per
     // station, rebuilt if the active gear changes. {0,0} with no gear.
-    function sightInScatterAt(ctx: GearSolveContext, rangeM: number, stationIndex: number) {
-      if (!engineModule) return { x: 0, y: 0 };
+    function sightInScatterAt(ctx: GearSolveContext, rangeM: number, stationIndex: number): ScatterSample {
+      if (!engineModule) return { x: 0, y: 0, mvMps: 0 };
       const key = `${ctx.rifle.id}|${ctx.lot.id}|${rangeM}`;
       let entry = sightInSimCache.get(stationIndex);
       if (!entry || entry.key !== key) {
@@ -1058,7 +1069,13 @@ export function ScopeView({
               }
             }
             const sz = sightInSolve(target.distanceM, ctx);
-            const scatter = ctx ? sightInScatterAt(ctx, target.distanceM, target.stationIndex) : { x: 0, y: 0 };
+            const sample = ctx ? sightInScatterAt(ctx, target.distanceM, target.stationIndex) : null;
+            const scatter = sample ?? { x: 0, y: 0 };
+            // Chronograph (task 2.4e): log this shot's true MV when deployed with
+            // gear (the gear scatter sample carries mvMps; box fallback has none).
+            if (sample && rifle && lot && store().chrono.deployed) {
+              store().logChronoReading(rifle.id, lot.id, sample.mvMps);
+            }
             const scope = store().session.scope;
             // The target face as a single (large) disc so resolveShot centres the
             // group on it; aim-as-hold + dial + player zero vs the true solution +
@@ -1775,6 +1792,10 @@ export function ScopeView({
                 same left-margin column so it can never overlap the scope glass or
                 the dial/fire controls — see DopePanel.tsx. */}
             <DopePanel />
+
+            {/* Chronograph (task 2.4e, D10): deploy to log a measured MV on every
+                shot; shows measured avg/SD/ES vs the box MV. Same stacked column. */}
+            <ChronoPanel />
           </>
         )}
       </div>

@@ -159,6 +159,24 @@ distances ride the retrued curve.
 [`archive/increment-2.4-plan.md`](./archive/increment-2.4-plan.md) §8 and
 [`archive/increment-2.md`](./archive/increment-2.md) §2.5.
 
+#### Exposed effective MV/BC + manual override ("manual truing")
+Surface the two values currently driving the believed DOPE table (effective MV, BC)
+directly in the table/Data Book — starting at box values, then updating as the
+chronograph feeds MV and confirmed nodes feed BC (see Solver truing, above) — and let
+the player hand-edit either value directly. This is the classic field technique: notice
+the actual required holdover differs from the card (card says 5 MOA at some range, but
+you're actually holding 5.25) and nudge BC (or MV) until the computed table matches.
+Functionally this sets the same effective-MV/BC field that solver truing's node-confirm
+path sets automatically — this just adds a second, direct way to move it, without
+waiting for a confirmed node.
+**Not built** — unscheduled (no increment assigned yet). Sits inside Solver truing
+(above) and would surface in the Data Book screen (§I, `Design/execution/PROGRESS.md`
+2.4f) once both exist. **D14 locked with owner 2026-07-24** (see
+[`archive/increment-2.4-plan.md`](./archive/increment-2.4-plan.md) §8): a confirmed
+node's auto-fit always overwrites a manual MV/BC override — manual edits are an
+unmeasured placeholder, useful for previewing/hand-truing between confirmed nodes, but
+never outrank real measured data.
+
 #### Tabulated DOPE cards
 Freeze the trued curve into a static come-up table/turret tape for a baseline
 condition, run off it without invoking the solver each shot (like a printed DOPE card);
@@ -398,17 +416,25 @@ Owner-requested side-thread, outside the numbered increment/task sequence: a
 100 yd calm-wind range (no wind flags/controls — a fundamentals sandbox, not an
 engagement) that doubles as the proving ground for the shared config-driven
 environment module (textured terrain, sky/fog/lighting, instanced
-trees/bushes/rocks/grass tufts) ahead of retrofitting it onto the DOPE range
-(§E "Shared range-environment rendering system"). Plan: `Design/Plans/
+trees/bushes/rocks/grass tufts, mountains, drifting clouds) ahead of
+retrofitting it onto the DOPE range (§E "Shared range-environment rendering
+system"). Plan (archived, completed): `Design/archive/
 test-range-environment-plan.md`.
-**Built** — 2026-07-21 (all 4 plan stages code-complete). `range/TestRangeScene.ts`,
-`range/environment/*` (`terrain.ts`, `sky.ts`, `lighting.ts`, `trees.ts`,
-`ground-cover.ts`, `mountains.ts`, `clouds.ts`, `index.ts`'s `buildEnvironment`
-orchestrator), dev harness in `range/RangeView.tsx` + a "Test Range" tab in
-`debug/DevTools.tsx`. Code complete and verified (typecheck/tests/build clean)
-through Stage 4 (mountains + drifting clouds, driven by the dialed wind); awaiting
-owner on-device confirmation to close the plan. See `Design/execution/
-PROGRESS.md` for the full iteration log.
+**Built** — 2026-07-22 (all 4 plan stages, owner-confirmed on device; plan
+CLOSED). `range/TestRangeScene.ts`, `range/environment/*` (`terrain.ts`,
+`sky.ts`, `lighting.ts`, `trees.ts`, `ground-cover.ts`, `mountains.ts`,
+`clouds.ts`, `index.ts`'s `buildEnvironment` orchestrator), dev harness in
+`range/RangeView.tsx` + a "Test Range" tab in `debug/DevTools.tsx`. Also picked
+up two scope-wide changes along the way (outside this plan's own scope, made
+while tuning the Test Range): scope zoom floor lowered 4.5×→1× (true
+unaided-eye view; `scope-projection.ts`/`state/store.ts`), and the FFP reticle
+now drops all hash marks/labels below 3× magnification, keeping just the
+crosshair (`scope/reticle.ts`'s `RETICLE_HASH_MIN_MAG`) — both apply to every
+range, not just the Test Range. See `Design/execution/PROGRESS.md` for the full
+iteration log (multiple owner feedback rounds per stage, including a couple of
+real rendering bugs found along the way: an unbound vertex-color attribute that
+was silently zeroing canopy/bush color, and fog saturation washing out the
+distant mountains regardless of their texture).
 
 ### F. Targets & scoring
 

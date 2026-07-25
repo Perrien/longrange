@@ -5,6 +5,8 @@ export {
   defaultSettings,
   defaultScore,
   defaultInventory,
+  defaultDope,
+  defaultChrono,
   MIL_CLICK_RAD,
   MOA_CLICK_RAD,
   ZOOM_MIN,
@@ -25,12 +27,16 @@ export type {
   CommittedTarget,
   ScoreState,
   InventoryState,
+  DopeState,
+  ChronoState,
 } from './store';
 export {
   settingsToSave,
   saveToSettings,
   storeToSave,
   saveToInventory,
+  saveToDope,
+  saveToChrono,
   loadSettingsInto,
   persistSettingsOnChange,
 } from './persist-settings';

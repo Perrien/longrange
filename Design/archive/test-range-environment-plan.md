@@ -1,8 +1,9 @@
 # Test Range — 100-yd wooded sandbox + reusable environment module
 
-**Status: planned (2026-07-21), not started.** Approved implementation plan; execution
-follows the standing rules in `Design/execution/execution-protocol.md` (stop after
-every stage, update `PROGRESS.md`, no git — owner handles git).
+**Status: DONE — owner-confirmed 2026-07-22.** All four stages built and
+confirmed on device (through several feedback rounds each). Archived to
+`Design/archive/test-range-environment-plan.md`; historical build log lives in
+`Design/execution/PROGRESS.md`.
 
 ## Context
 

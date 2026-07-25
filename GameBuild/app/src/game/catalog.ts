@@ -153,6 +153,14 @@ export function isRimfireCartridge(cartridgeId: string): boolean {
   return rawCartridge(cartridgeId).class.toLowerCase().includes('rimfire');
 }
 
+/** The cartridge's design-set effective range in YARDS (task 2.4a, D7) — the
+ *  cap on the DOPE-ladder's stations (`game/dope-book.ts` `ladderStationsM`).
+ *  Authored in yd (D7 provisional: .22 LR 200, .223 600, .308 1000, 6.5 CM 1200);
+ *  the ladder converts to the active display unit. Truth-neutral. */
+export function catalogEffectiveRangeYd(cartridgeId: string): number {
+  return rawCartridge(cartridgeId).effectiveRangeYd;
+}
+
 /** Barrel twist as a rate in meters/turn, parsed from the rifle's twist string
  *  (e.g. "1:8.0" → one turn per 8 inches → inchesToMeters(8)). Drives spin drift
  *  in the solve + the hit-sim's spin (task 2.3b). Truth-neutral geometry, not a

@@ -68,6 +68,61 @@ export interface AmmoLot {
   draws: LotDraws;
 }
 
+/** A confirmed DOPE node (task 2.4a, D2/D5) — a physical fact the player
+ *  recorded: the dials they actually held at a station, the group behind it, and
+ *  the conditions at confirm. Belongs to a rifle+lot PAIRING (keyed by both ids),
+ *  so it lives in a top-level `dopeNodes[]` array, not under one record. The
+ *  angular dials are relative to the rifle's stored zero (`playerZero` sits UNDER
+ *  the dial, so it is excluded by construction — see store `confirmZero`).
+ *
+ *  Additive-optional (2.1 D6 / 2.3a pattern): `dopeNodes?` is validated only when
+ *  present and needs NO schema-version bump — a save predating 2.4a simply omits
+ *  it and the loader defaults to `[]`. */
+export interface DopeNode {
+  rifleId: string;
+  lotId: string;
+  /** SI distance of the station actually shot (a physical fact, meters). */
+  distanceM: number;
+  /** Measured dials at confirm, radians, relative to the stored zero. */
+  elevationRad: number;
+  windageRad: number;
+  /** The zero reference (SI distance) the come-up is against — self-describing so
+   *  the data book can flag the node stale if the rifle is later re-zeroed. */
+  zeroRangeM: number;
+  /** The confirming group: shots fired since the last elevation-dial change, and
+   *  how many struck the engaged plate. */
+  shots: number;
+  hits: number;
+  /** Conditions snapshotted at confirm (the ISA numbers used + wind). */
+  conditions: {
+    windSpeedMps: number;
+    windDirectionDeg: number;
+    tempC: number;
+    pressurePa: number;
+  };
+  confirmedAtIso: string;
+}
+
+/** A chronograph summary for a rifle+lot pairing (task 2.4e, D10) — the measured
+ *  muzzle-velocity statistics the player has recorded, merged across strings
+ *  (Welford). `avgMps`/`sdMps` are ESTIMATES of the lot's true mean/SD (the box
+ *  gives neither honestly), improving with shot count; never the hidden truth.
+ *  Additive-optional (`chronoSummaries?`), no schema-version bump — a save
+ *  predating 2.4e omits it and the loader defaults to `[]`. */
+export interface ChronoSummary {
+  rifleId: string;
+  lotId: string;
+  /** Total chrono'd shots merged into this summary. */
+  shots: number;
+  /** Running mean + sample SD (Welford-combined across strings), m/s. */
+  avgMps: number;
+  sdMps: number;
+  /** Extreme spread bounds (ES = maxMps − minMps), m/s. */
+  minMps: number;
+  maxMps: number;
+  updatedAtIso: string;
+}
+
 export interface SaveData {
   schemaVersion: number;
   updatedAt: string; // ISO timestamp
@@ -80,6 +135,12 @@ export interface SaveData {
    *  bump (2.1 D6 pattern); validated when present, defaulted to null on load. */
   activeRifleId?: string | null;
   activeLotId?: string | null;
+  /** Confirmed DOPE nodes (task 2.4a) — additive-optional, no version bump;
+   *  validated when present, defaulted to `[]` on load. */
+  dopeNodes?: DopeNode[];
+  /** Chronograph summaries per rifle+lot (task 2.4e) — additive-optional, no
+   *  version bump; validated when present, defaulted to `[]` on load. */
+  chronoSummaries?: ChronoSummary[];
 }
 
 export const DEFAULT_SAVE: SaveData = {
@@ -96,6 +157,8 @@ export const DEFAULT_SAVE: SaveData = {
   ammoLots: [],
   activeRifleId: null,
   activeLotId: null,
+  dopeNodes: [],
+  chronoSummaries: [],
 };
 
 export class SaveValidationError extends Error {}
@@ -149,6 +212,46 @@ function validateLot(l: unknown, i: number): void {
   if (typeof o.catalogVersion !== 'number' || !Number.isInteger(o.catalogVersion))
     fail(`${ctx}.catalogVersion must be an integer`);
   validateDraws(o.draws, ctx);
+}
+
+function finiteNumber(v: unknown, ctx: string): void {
+  if (typeof v !== 'number' || !Number.isFinite(v)) fail(`${ctx} must be a finite number`);
+}
+
+function validateDopeNode(n: unknown, i: number): void {
+  const ctx = `dopeNodes[${i}]`;
+  if (typeof n !== 'object' || n === null) fail(`${ctx} not an object`);
+  const o = n as Record<string, unknown>;
+  if (typeof o.rifleId !== 'string') fail(`${ctx}.rifleId missing`);
+  if (typeof o.lotId !== 'string') fail(`${ctx}.lotId missing`);
+  finiteNumber(o.distanceM, `${ctx}.distanceM`);
+  finiteNumber(o.elevationRad, `${ctx}.elevationRad`);
+  finiteNumber(o.windageRad, `${ctx}.windageRad`);
+  finiteNumber(o.zeroRangeM, `${ctx}.zeroRangeM`);
+  finiteNumber(o.shots, `${ctx}.shots`);
+  finiteNumber(o.hits, `${ctx}.hits`);
+  if (typeof o.conditions !== 'object' || o.conditions === null)
+    fail(`${ctx}.conditions missing`);
+  const c = o.conditions as Record<string, unknown>;
+  finiteNumber(c.windSpeedMps, `${ctx}.conditions.windSpeedMps`);
+  finiteNumber(c.windDirectionDeg, `${ctx}.conditions.windDirectionDeg`);
+  finiteNumber(c.tempC, `${ctx}.conditions.tempC`);
+  finiteNumber(c.pressurePa, `${ctx}.conditions.pressurePa`);
+  if (typeof o.confirmedAtIso !== 'string') fail(`${ctx}.confirmedAtIso missing`);
+}
+
+function validateChronoSummary(c: unknown, i: number): void {
+  const ctx = `chronoSummaries[${i}]`;
+  if (typeof c !== 'object' || c === null) fail(`${ctx} not an object`);
+  const o = c as Record<string, unknown>;
+  if (typeof o.rifleId !== 'string') fail(`${ctx}.rifleId missing`);
+  if (typeof o.lotId !== 'string') fail(`${ctx}.lotId missing`);
+  finiteNumber(o.shots, `${ctx}.shots`);
+  finiteNumber(o.avgMps, `${ctx}.avgMps`);
+  finiteNumber(o.sdMps, `${ctx}.sdMps`);
+  finiteNumber(o.minMps, `${ctx}.minMps`);
+  finiteNumber(o.maxMps, `${ctx}.maxMps`);
+  if (typeof o.updatedAtIso !== 'string') fail(`${ctx}.updatedAtIso missing`);
 }
 
 /** Structural validation of an untrusted parsed object (pre-migration). */
@@ -214,4 +317,19 @@ export function validateSaveShape(data: unknown): asserts data is SaveData {
     fail('activeRifleId must be a string or null when present');
   if (d.activeLotId !== undefined && d.activeLotId !== null && typeof d.activeLotId !== 'string')
     fail('activeLotId must be a string or null when present');
+
+  // Confirmed DOPE nodes (task 2.4a). Additive-optional: absent on a pre-2.4a
+  // save; validated element-wise whenever present. Never *required* (no version
+  // bump) — the loader defaults to [].
+  if (d.dopeNodes !== undefined) {
+    if (!Array.isArray(d.dopeNodes)) fail('dopeNodes must be an array when present');
+    d.dopeNodes.forEach((n, i) => validateDopeNode(n, i));
+  }
+
+  // Chronograph summaries (task 2.4e). Additive-optional, same discipline as
+  // dopeNodes — validated element-wise when present, defaulted to [] on load.
+  if (d.chronoSummaries !== undefined) {
+    if (!Array.isArray(d.chronoSummaries)) fail('chronoSummaries must be an array when present');
+    d.chronoSummaries.forEach((c, i) => validateChronoSummary(c, i));
+  }
 }

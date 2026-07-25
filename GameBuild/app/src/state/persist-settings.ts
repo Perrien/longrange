@@ -15,7 +15,7 @@
 // are unit-tested; the async load/subscribe wiring is thin glue for the app shell.
 
 import { DEFAULT_SAVE, type SaveData, type SaveStore } from '../persistence';
-import type { GameStore, InventoryState, SettingsState } from './store';
+import type { GameStore, InventoryState, SettingsState, DopeState, ChronoState } from './store';
 
 /** Project the store's settings onto a SaveData (the schema-v2 persisted fields). */
 export function settingsToSave(settings: SettingsState, base: SaveData = DEFAULT_SAVE): SaveData {
@@ -31,11 +31,11 @@ export function settingsToSave(settings: SettingsState, base: SaveData = DEFAULT
   };
 }
 
-/** Project the full persisted store state (settings + inventory) onto a SaveData.
- *  This is what the app actually writes — carrying gear so a settings change can't
- *  wipe it (task 2.2b). */
+/** Project the full persisted store state (settings + inventory + dope) onto a
+ *  SaveData. This is what the app actually writes — carrying gear so a settings
+ *  change can't wipe it (task 2.2b), and now confirmed DOPE nodes (task 2.4a). */
 export function storeToSave(
-  state: Pick<GameStore, 'settings' | 'inventory'>,
+  state: Pick<GameStore, 'settings' | 'inventory' | 'dope' | 'chrono'>,
   base: SaveData = DEFAULT_SAVE,
 ): SaveData {
   return {
@@ -44,6 +44,8 @@ export function storeToSave(
     ammoLots: state.inventory.ammoLots,
     activeRifleId: state.inventory.activeRifleId,
     activeLotId: state.inventory.activeLotId,
+    dopeNodes: state.dope.nodes,
+    chronoSummaries: state.chrono.summaries,
   };
 }
 
@@ -72,6 +74,18 @@ export function saveToInventory(save: SaveData): InventoryState {
   };
 }
 
+/** Extract the DOPE slice from a loaded SaveData (task 2.4a). A save predating
+ *  the field simply lacks `dopeNodes`, so it defaults to an empty book. */
+export function saveToDope(save: SaveData): DopeState {
+  return { nodes: save.dopeNodes ?? [] };
+}
+
+/** Extract the chrono slice from a loaded SaveData (task 2.4e). Only the summaries
+ *  persist; `deployed`/`current` are session-only and reset on load. */
+export function saveToChrono(save: SaveData): ChronoState {
+  return { deployed: false, current: null, summaries: save.chronoSummaries ?? [] };
+}
+
 /** Zustand store handle (create()'s return): getState + subscribe. */
 type StoreApi = {
   getState(): GameStore;
@@ -86,13 +100,23 @@ export async function loadSettingsInto(store: StoreApi, saveStore: SaveStore): P
   const st = store.getState();
   st.applySettings(saveToSettings(save, st.settings));
   st.applyInventory(saveToInventory(save));
+  st.applyDope(saveToDope(save));
+  st.applyChrono(saveToChrono(save));
 }
 
-/** Persist the save whenever settings OR inventory change. Returns the
- *  unsubscribe handle. (Kept the historical name; it now persists the full save.) */
+/** Persist the save whenever settings, inventory, the DOPE book, OR the chrono
+ *  summaries change. Returns the unsubscribe handle. (Kept the historical name;
+ *  it now persists the full save.) */
 export function persistSettingsOnChange(store: StoreApi, saveStore: SaveStore): () => void {
   return store.subscribe((state, prev) => {
-    if (state.settings !== prev.settings || state.inventory !== prev.inventory) {
+    if (
+      state.settings !== prev.settings ||
+      state.inventory !== prev.inventory ||
+      state.dope !== prev.dope ||
+      // Only summaries persist — per-shot appends to the live string mutate
+      // `chrono.current` (not `.summaries`), so they don't trigger an IDB write.
+      state.chrono.summaries !== prev.chrono.summaries
+    ) {
       void saveStore.save(storeToSave(state));
     }
   });

@@ -193,6 +193,127 @@ describe('migration v1 → v2 (task 2.1a)', () => {
     };
     expect(() => parseSave(JSON.stringify(bad))).toThrow(/zeroRangeM must be a finite number/);
   });
+
+  // Task 2.4a: confirmed DOPE nodes ride the additive-optional top-level
+  // `dopeNodes[]` (no version bump). A save carrying nodes round-trips unchanged
+  // (validated when present, migrate-noop), and a save predating the field still
+  // loads. Permanent corpus for export/import (task 2.8).
+  it('a v2 save carrying dopeNodes round-trips unchanged', () => {
+    const v2WithDopeNodes = {
+      schemaVersion: 2,
+      updatedAt: '2026-07-24T00:00:00.000Z',
+      settings: { unitsPrimary: 'MIL' as const },
+      rifles: [
+        {
+          id: 'rifle-0001',
+          catalogId: '65cm-custom',
+          catalogVersion: 1,
+          draws: { mvOffset: 0.5, zeroH: 0.5, zeroV: 0.5, inherentPrecision: 0.5 },
+        },
+      ],
+      ammoLots: [
+        {
+          id: 'lot-0001',
+          catalogId: '65cm-match',
+          catalogVersion: 1,
+          draws: { meanMvShift: 0.5, mvSd: 0.5, bcError: 0.5, bcSd: 0.5 },
+        },
+      ],
+      dopeNodes: [
+        {
+          rifleId: 'rifle-0001',
+          lotId: 'lot-0001',
+          distanceM: 274.32,
+          elevationRad: 0.0031,
+          windageRad: -0.0004,
+          zeroRangeM: 91.44,
+          shots: 4,
+          hits: 3,
+          conditions: { windSpeedMps: 2.2, windDirectionDeg: 90, tempC: 15, pressurePa: 101325 },
+          confirmedAtIso: '2026-07-24T00:00:00.000Z',
+        },
+      ],
+    };
+    const round = parseSave(serializeSave(v2WithDopeNodes));
+    expect(round).toEqual(v2WithDopeNodes);
+  });
+
+  it('a v2 save predating dopeNodes still loads (field omitted)', () => {
+    const round = parseSave(serializeSave(v2Save));
+    expect(round.dopeNodes).toBeUndefined();
+  });
+
+  it('rejects a dope node with a non-finite distanceM', () => {
+    const bad = {
+      ...v2Save,
+      dopeNodes: [
+        {
+          rifleId: 'r1',
+          lotId: 'l1',
+          distanceM: Number.NaN,
+          elevationRad: 0,
+          windageRad: 0,
+          zeroRangeM: 91.44,
+          shots: 3,
+          hits: 3,
+          conditions: { windSpeedMps: 0, windDirectionDeg: 0, tempC: 15, pressurePa: 101325 },
+          confirmedAtIso: '2026-07-24T00:00:00.000Z',
+        },
+      ],
+    };
+    expect(() => parseSave(JSON.stringify(bad))).toThrow(/distanceM must be a finite number/);
+  });
+
+  // Task 2.4e: chronograph summaries ride the additive-optional top-level
+  // `chronoSummaries[]` (no version bump). A save carrying them round-trips
+  // unchanged; a save predating the field still loads; a bad summary is rejected.
+  it('a v2 save carrying chronoSummaries round-trips unchanged', () => {
+    const v2WithChrono = {
+      schemaVersion: 2,
+      updatedAt: '2026-07-24T00:00:00.000Z',
+      settings: { unitsPrimary: 'MIL' as const },
+      rifles: [],
+      ammoLots: [],
+      chronoSummaries: [
+        {
+          rifleId: 'rifle-0001',
+          lotId: 'lot-0001',
+          shots: 8,
+          avgMps: 821.3,
+          sdMps: 3.4,
+          minMps: 815.0,
+          maxMps: 827.1,
+          updatedAtIso: '2026-07-24T00:00:00.000Z',
+        },
+      ],
+    };
+    const round = parseSave(serializeSave(v2WithChrono));
+    expect(round).toEqual(v2WithChrono);
+  });
+
+  it('a v2 save predating chronoSummaries still loads (field omitted)', () => {
+    const round = parseSave(serializeSave(v2Save));
+    expect(round.chronoSummaries).toBeUndefined();
+  });
+
+  it('rejects a chrono summary with a non-finite avgMps', () => {
+    const bad = {
+      ...v2Save,
+      chronoSummaries: [
+        {
+          rifleId: 'r1',
+          lotId: 'l1',
+          shots: 3,
+          avgMps: Number.NaN,
+          sdMps: 3,
+          minMps: 815,
+          maxMps: 825,
+          updatedAtIso: '2026-07-24T00:00:00.000Z',
+        },
+      ],
+    };
+    expect(() => parseSave(JSON.stringify(bad))).toThrow(/avgMps must be a finite number/);
+  });
 });
 
 describe('export file name', () => {

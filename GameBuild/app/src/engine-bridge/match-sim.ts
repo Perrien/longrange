@@ -15,7 +15,7 @@ import type {
   DragFunctionValue,
   EMatchSimulator,
   Load,
-  ScatterShot,
+  ScatterSample,
 } from './types';
 
 const DEFAULT_DT = 0.001;
@@ -34,8 +34,9 @@ export function seedRandom(module: BtkModule, value: number): void {
  * range, atmosphere) — it zeros internally — then call `fire()` per shot and
  * `delete()` when the engagement (target/wind/load) changes. */
 export interface ScatterSimulator {
-  /** One dispersed impact at the target plane, m about center (+x right, +y up). */
-  fire(): ScatterShot;
+  /** One dispersed impact at the target plane (m about center, +x right, +y up)
+   *  plus the fired shot's actual muzzle velocity (m/s) — the chrono reading. */
+  fire(): ScatterSample;
   /** RMS radius (m) of all shots fired so far. */
   meanRadius(): number;
   /** Number of shots fired so far. */
@@ -109,9 +110,11 @@ export function createScatterSimulator(
 
   let deleted = false;
   return {
-    fire(): ScatterShot {
+    fire(): ScatterSample {
       const shot = sim.fireShot(); // value_object → plain JS object, no delete
-      return { x: shot.impactX, y: shot.impactY };
+      // actualMv is the per-shot muzzle velocity the engine drew from the lot's
+      // true MV distribution (simulator.cpp) — the chronograph reads it (2.4e).
+      return { x: shot.impactX, y: shot.impactY, mvMps: shot.actualMv };
     },
     meanRadius(): number {
       const match = sim.getMatch(); // COPIED handle → delete

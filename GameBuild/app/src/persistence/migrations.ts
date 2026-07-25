@@ -8,6 +8,13 @@ type Migration = (save: SaveData) => SaveData;
 
 /** migrations[n] upgrades a version-n save to version n+1. */
 const migrations: Record<number, Migration> = {
+  // NOTE: additive-optional fields (playerZero, zeroRangeM, dopeNodes,
+  // chronoSummaries — 2.1 D6 / 2.3a / 2.4a / 2.4e) need NO migration entry: a save
+  // predating them simply omits the field, shape-validation skips it (validated
+  // only when present), and the loader defaults it (e.g. `saveToChrono` → []).
+  // Only a structural change that an old save can't satisfy warrants a version
+  // bump + a migration here.
+  //
   // v1 → v2 (Increment 2, task 2.1a): introduce the hidden-truth record arrays
   // (empty — the player owns no gear until the catalog lands in task 2.2) and
   // carry three durable settings into persistence (D5), defaulted from
