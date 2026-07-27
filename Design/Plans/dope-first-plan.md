@@ -37,7 +37,7 @@ As the player progresses, notes clear and the table tightens:
 Three pieces:
 - **Raise the off-the-shelf zero error** from the current ~1 MOA to **D16's raw pointing
   error** (flat 5–35 MOA magnitude, random direction) — see
-  [`D16-raw-zero-error.md`](./D16-raw-zero-error.md). A new rifle is genuinely un-zeroed and must
+  [`D16-raw-zero-error.md`](../archive/D16-raw-zero-error.md). A new rifle is genuinely un-zeroed and must
   be zeroed before it hits where the reticle points. Also retire the leftover
   `SCOPE_ZERO_RANGE_M = 300 yd` test constant in `loads.ts`.
 - **Update the zeroing range to 25/50/100/200 yd** (currently 50/100/200) and treat it as a
@@ -103,6 +103,6 @@ confidence-tier system.
 ## Resolved: zeroing model
 
 - **Zeroing model — DECIDED (D16, 2026-07-26)**, see
-  [`D16-raw-zero-error.md`](./D16-raw-zero-error.md). Option B: raw off-the-shelf pointing error
+  [`D16-raw-zero-error.md`](../archive/D16-raw-zero-error.md). Option B: raw off-the-shelf pointing error
   (flat 5–35 MOA, random direction); player must zero; DOPE book gated until Confirm Zero;
   25/50/100/200 yd zeroing range.

@@ -55,6 +55,7 @@ superseded.**
 | `mil-zero-range-plan.md` | The Wooded Zero Range — a fanned four-station paper bay at 25/50/100/200 shot from a low knoll, plus the first real upgrade pass on the shared environment module (low morning sun, near-field shadows, tree silhouette variety, ridgeline mountains, aerial-perspective fog, wind-driven canopy sway). Five stages, all built. | `../feature-catalog.md` §E "Wooded Zero Range"; `../execution/PROGRESS.md` "Wooded Zero Range" rows |
 | `2.4a-computed-dope-data-model.md` | Computed-DOPE nodes / confidence tiers / ladder rules + persistence. Pure data + rules; no UI. | `../execution/PROGRESS.md` row 2.4a |
 | `2.4e-chronograph.md` | Chronograph — records true per-shot muzzle velocity per rifle+lot, so the player's MV figure is an *estimate* that tightens with sample size. | `../execution/PROGRESS.md` row 2.4e |
+| `D16-raw-zero-error.md` | Raw off-the-shelf zero error — a new rifle+scope carries 5–35 MOA of pointing error the player must find and remove. Decision doc; built 2026-07-26. | `../execution/PROGRESS.md` owner decisions log, 2026-07-26 |
 
 **Worth reading `mil-zero-range-plan.md` for, specifically:** it records several
 results that were expensive to derive and are easy to get wrong again —
@@ -78,3 +79,17 @@ approach was abandoned is the part that stops it being retried.
 `Design/Plans/` and are not updated — `../feature-catalog.md` now resolves
 differently. References to them from source comments and from `feature-catalog.md`
 / `PROGRESS.md` WERE updated to the new `Design/archive/` paths.
+
+**`D16-raw-zero-error.md` is archived with ONE consequence still unbuilt.** Its §47
+item 1 — the DOPE book always rendering with a *"not zeroed"* / *"not chronoed"*
+status note, so the player knows an unzeroed table is provisional — needs the Data
+Book UI (task 2.4f), which does not exist yet. The offset model and the off-paper
+visibility handling shipped; the player-facing explanation did not. That is carried
+forward in `../execution/PROGRESS.md` under Deferred observations, and should be
+picked up with 2.4f rather than rediscovered.
+
+Also worth knowing before re-reading it: the doc's zeroing-workflow section
+describes a 25 yd station as something that "may be a new range feature". It since
+became one — the Wooded Zero Range (`mil-zero-range-plan.md`) has 25/50/100/200,
+and its backer boards are mark surfaces precisely so a 35 MOA first shot still
+leaves a visible hole.

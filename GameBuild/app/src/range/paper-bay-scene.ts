@@ -2,17 +2,18 @@
 //
 // WHY THIS EXISTS. ScopeView carries ~700 lines of paper-target behaviour: the
 // aimed-target pick, the gear-driven fire path, hit marks, the running group
-// centroid, Clean, Inspect, and the zeroing flow. None of it is specific to the
+// centroid, Clean, Inspect, and the zeroing flow. None of it was specific to the
 // original grass Zero Range — but all of it used to be reached through a
 // concrete `SightInScene` local and gated on `sceneType === 'sight-in'`. That
 // made a second paper bay cost a new disjunction at every gate, and every gate
 // someone forgot became a place where two ranges silently diverged.
 //
 // So the behaviour keys off a CAPABILITY (`RangeDefinition.targetKind === 'paper'`)
-// and talks to this interface. `SightInScene` already implemented every method
-// below before this file existed; declaring the interface was the whole change.
-// A new paper bay now costs a registry row + a scene class, and inherits the
-// zeroing flow, Clean and Inspect unmodified.
+// and talks to this interface. The original `SightInScene` implemented every
+// method below; declaring the interface was the whole change. That grass bay has
+// since been retired (replaced by the Wooded Zero Range), but the interface it
+// motivated stays: a new paper bay costs a registry row + a scene class, and
+// inherits the zeroing flow, Clean and Inspect unmodified.
 //
 // See plan §7.2 for the coupling table this replaces.
 

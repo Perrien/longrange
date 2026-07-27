@@ -5,13 +5,14 @@
 // range) plug in as one more row here + a scene builder — no rewrite.
 //
 // This file is PURE config: no THREE, no engine, no store. The scene branch that
-// consumes `sceneType` lives in ScopeView (2.3c); the sight-in stations are
-// turned into an SI layout by `range/sight-in-config.ts` (2.3c). Range A keeps
+// consumes `sceneType` lives in ScopeView (2.3c); a paper bay's stations are
+// turned into an SI layout by its config (e.g. `range/wooded-zero-config.ts`).
+// Range A keeps
 // building its own ladder in `range-a-config.ts` — its `stations` here are empty
 // (it is not a fixed-station bay).
 
 /** Which scene builder renders a range. */
-export type RangeSceneType = 'steel-racks' | 'sight-in' | 'test-range' | 'wooded-zero';
+export type RangeSceneType = 'steel-racks' | 'test-range' | 'wooded-zero';
 
 /** What a shot on this range hits. This is a CAPABILITY, deliberately separate
  *  from `sceneType` (which only picks a scene builder): the paper-bay fire path,
@@ -86,24 +87,6 @@ const RANGE_A: RangeDefinition = {
   stations: [],
 };
 
-// 50 left of centre, 100 centre, 200 right (D4). Distances are in the active
-// unit at entry; the SI conversion + physical offsets are 2.3c's job.
-const SIGHT_IN: RangeDefinition = {
-  id: 'sight-in',
-  name: 'Zero Range',
-  shortLabel: 'Zero Range — sight in',
-  unitCharacter: 'both',
-  sceneType: 'sight-in',
-  targetKind: 'paper',
-  zeroable: true,
-  windMarkers: true,
-  stations: [
-    { nominalDistance: 50, side: -1 },
-    { nominalDistance: 100, side: 0 },
-    { nominalDistance: 200, side: 1 },
-  ],
-};
-
 // Test Range (2026-07-21): 100-yd wooded sandbox. Prototype for the environment
 // system (terrain/trees/sky/mountains/clouds) that will later be applied to the
 // other ranges, and the permanent proving ground for new target types.
@@ -154,7 +137,7 @@ const WOODED_ZERO: RangeDefinition = {
  *  otherwise selecting its card falls through ScopeView's scene branch to the
  *  steel `RangeScene`, and the player gets Range A's world under a Wooded Zero
  *  label. */
-const RANGES: readonly RangeDefinition[] = [RANGE_A, SIGHT_IN, TEST_RANGE, WOODED_ZERO];
+const RANGES: readonly RangeDefinition[] = [RANGE_A, TEST_RANGE, WOODED_ZERO];
 
 /** Ranges that exist but are not yet on the landing screen. Merged into the id
  *  lookup so config/tests resolve them normally. Empty since Stage 2b gave

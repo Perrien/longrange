@@ -1,4 +1,4 @@
-// D16 raw off-the-shelf zero error — `Design/Plans/D16-raw-zero-error.md`.
+// D16 raw off-the-shelf zero error — `Design/archive/D16-raw-zero-error.md`.
 //
 // A brand-new rifle+scope is NOT pre-zeroed: it carries 5-35 MOA of scope/mount
 // pointing error that the player must discover and remove. The properties tested

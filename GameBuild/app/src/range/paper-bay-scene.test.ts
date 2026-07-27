@@ -8,7 +8,6 @@
 import { describe, expect, it } from 'vitest';
 import { getRangeDefinition, listRanges } from './ranges';
 import type { PaperBayScene } from './paper-bay-scene';
-import { SightInScene } from './SightInScene';
 import { WoodedZeroScene } from './WoodedZeroScene';
 
 /** Every member ScopeView reaches for through the interface. If ScopeView starts
@@ -27,7 +26,6 @@ describe('PaperBayScene contract', () => {
   // Compile-time check: this file would not typecheck if either scene stopped
   // satisfying the interface. Runtime assertions below cover the shape.
   it.each([
-    ['SightInScene', SightInScene],
     ['WoodedZeroScene', WoodedZeroScene],
   ])('is satisfied by %s', (_name, ctor) => {
     const proto = (ctor as unknown as { prototype: object }).prototype;
@@ -39,7 +37,7 @@ describe('PaperBayScene contract', () => {
     expect(Object.getOwnPropertyDescriptors(proto).laneLengthM?.get).toBeTypeOf('function');
   });
 
-  it('types SightInScene as assignable to PaperBayScene', () => {
+  it('types WoodedZeroScene as assignable to PaperBayScene', () => {
     // Purely a type-level assertion — `tsc --noEmit` is the real check. Written
     // as a value so the import is not elided.
     const assignable: (s: PaperBayScene) => PaperBayScene = (s) => s;
@@ -55,7 +53,7 @@ describe('landing screen only lists ranges that can actually be entered', () => 
   // under a Wooded Zero label. A range joins `listRanges()` only when its scene
   // exists. Stage 2b built that scene, so it is listed now; the guard stays for
   // the next range under construction.
-  const SCENES_THAT_EXIST = ['steel-racks', 'sight-in', 'test-range', 'wooded-zero'];
+  const SCENES_THAT_EXIST = ['steel-racks', 'test-range', 'wooded-zero'];
 
   it('gives every listed range a scene builder that exists', () => {
     for (const r of listRanges()) {
@@ -74,7 +72,7 @@ describe('targetKind drives the paper HUD, not sceneType', () => {
     // If these ever disagree, the capability gate and the scene branch have
     // drifted apart and one of them is wrong.
     for (const r of [...listRanges(), getRangeDefinition('wooded-zero')]) {
-      const looksLikePaperBay = r.sceneType === 'sight-in' || r.sceneType === 'wooded-zero';
+      const looksLikePaperBay = r.sceneType === 'wooded-zero';
       expect(r.targetKind === 'paper').toBe(looksLikePaperBay);
     }
   });

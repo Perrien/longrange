@@ -5,7 +5,7 @@
 // per-station backer board + lane marker, and the shooting corridors the terrain
 // and vegetation must keep clear.
 //
-// Follows `sight-in-config.ts`'s D3 entry-snapshot contract: the whole layout is
+// Follows the D3 entry-snapshot contract: the whole layout is
 // fixed by the unit system at range entry, so `snapshotWoodedZero` is called ONCE
 // on entry and the result held. A later `unitsPrimary` flip does not mutate a
 // held snapshot; it only produces a new one on the next entry.

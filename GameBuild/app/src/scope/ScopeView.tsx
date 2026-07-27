@@ -26,11 +26,9 @@ import { RANGE_A_GROUND } from '../range/range-a-config';
 import { TestRangeScene } from '../range/TestRangeScene';
 import { TEST_RANGE_GROUND } from '../range/test-range-config';
 import type { SteelSceneApi } from '../range/steel-scene-api';
-import { SightInScene } from '../range/SightInScene';
 import { WoodedZeroScene } from '../range/WoodedZeroScene';
 import { snapshotWoodedZero } from '../range/wooded-zero-config';
 import type { PaperBayScene, PaperTargetInstance } from '../range/paper-bay-scene';
-import { snapshotSightIn } from '../range/sight-in-config';
 import { getRangeDefinition } from '../range/ranges';
 import { solveGear, createGearScatter, gearZeroOffset } from '../engine-bridge/gear-solve';
 import { gearSolveContext, type GearSolveContext } from '../game/active-gear';
@@ -72,7 +70,6 @@ import {
   clockToDeg,
   degToClock,
   mphToMps,
-  systemLabel,
   formatAngleForDisplay,
   formatSpeedForDisplay,
   formatDistanceForDisplay,
@@ -146,9 +143,11 @@ const BREATH_DEBT_FACTOR = 1.5; // wobble multiplier out of air (oxygen debt)
 export function ScopeView({
   onOpenMenu,
   onOpenLoadout,
+  onGoHome,
 }: {
   onOpenMenu?: () => void;
   onOpenLoadout?: () => void;
+  onGoHome?: () => void;
 } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const reticleRef = useRef<HTMLCanvasElement>(null);
@@ -265,10 +264,10 @@ export function ScopeView({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     const scene = new THREE.Scene();
-    // Range-type branch (task 2.3c2): the steel KD range (RangeScene) vs the
-    // sight-in bay (SightInScene). Both reuse the magnified camera, aim/wobble/
-    // breath/recoil, zoom, and reticle below — only the world + the fire path
-    // differ. `range` is null on the sight-in bay and vice-versa.
+    // Range-type branch (task 2.3c2): the steel KD range (RangeScene) vs a
+    // paper-bay zero range (WoodedZeroScene). Both reuse the magnified camera,
+    // aim/wobble/breath/recoil, zoom, and reticle below — only the world + the
+    // fire path differ. `range` is null on a paper bay and vice-versa.
     const rangeDefinition = getRangeDefinition(store().session.rangeId);
     const sceneType = rangeDefinition.sceneType;
     // Capability gate (Stage 2a): everything downstream — the aimed-target pick,
@@ -279,13 +278,7 @@ export function ScopeView({
     const isSightIn = rangeDefinition.targetKind === 'paper';
     let range: SteelSceneApi | null = null;
     let sightIn: PaperBayScene | null = null;
-    if (sceneType === 'sight-in') {
-      // Entry snapshot (D3): fix the art variant + target size + stations for the
-      // whole session from the current unit system. Calm by default (D4) — the
-      // player dials wind from the same HUD controls and watches it push the shot.
-      store().setWind({ speedMps: 0, directionDeg: 0 });
-      sightIn = new SightInScene(scene, snapshotSightIn(store().settings.unitsPrimary));
-    } else if (sceneType === 'wooded-zero') {
+    if (sceneType === 'wooded-zero') {
       // Same D3 entry snapshot. Wind is NOT zeroed here (plan §7.3, owner
       // 2026-07-26): a very light steady breeze that visibly moves the tree tops
       // and is fed honestly to the solver — at ~1 m/s the drift at 100 m is a few
@@ -293,6 +286,9 @@ export function ScopeView({
       // Deliberately not special-cased: the vegetation and the bullet must read
       // the SAME field or wind-driven scenery stops meaning anything.
       store().setWind({ speedMps: WOODED_ZERO_WIND_MPS, directionDeg: WOODED_ZERO_WIND_DEG });
+      // Enter at 1× (owner 2026-07-27): the stations are close (25–200) and the
+      // bay is a fanned scene you want to take in wide before zooming in to group.
+      store().setZoom(1);
       sightIn = new WoodedZeroScene(scene, snapshotWoodedZero(store().settings.unitsPrimary));
     } else if (sceneType === 'test-range') {
       range = new TestRangeScene(scene);
@@ -302,9 +298,8 @@ export function ScopeView({
       const gong = range.plates[0];
       if (gong) store().commitTarget(gong.instanceId, gong.distanceM, Number.POSITIVE_INFINITY);
       // Calm by default (owner request 2026-07-21): the Test Range is for
-      // learning the fundamentals without wind in the way, same as the
-      // sight-in bay's D4 default above — no wind flags/controls either (see
-      // the markerSpecs/isTestRangeHud gating below).
+      // learning the fundamentals without wind in the way — no wind
+      // flags/controls either (see the markerSpecs/isTestRangeHud gating below).
       store().setWind({ speedMps: 0, directionDeg: 0 });
     } else {
       range = new RangeScene(scene);
@@ -1535,11 +1530,12 @@ export function ScopeView({
           background: 'radial-gradient(circle at center, transparent 0 40vmin, rgba(0,0,0,0.97) 41vmin)',
         }}
       />
-      {/* Top-right utility cluster (task 1.8a Menu + 2.2c Loadout). Menu opens the
-          2.1d Settings overlay (also where "Return to range select" lives);
-          Loadout opens the 2.2c gear-swap overlay (non-destructive — the session
-          survives). Only rendered in the real player flow (App passes the props). */}
-      {(onOpenMenu || onOpenLoadout) && (
+      {/* Top-right utility cluster (task 1.8a + 2.2c Loadout; refreshed 2026-07-27).
+          Home returns to range select (App resets the run); Loadout opens the 2.2c
+          gear-swap overlay (non-destructive — the session survives); Settings opens
+          the 2.1d Settings overlay. Only rendered in the real player flow (App
+          passes the props). */}
+      {(onOpenMenu || onOpenLoadout || onGoHome) && (
         <div
           style={{
             position: 'absolute',
@@ -1550,6 +1546,27 @@ export function ScopeView({
             gap: 6,
           }}
         >
+          {onGoHome && (
+            <button
+              onClick={onGoHome}
+              aria-label="Home — range select"
+              title="Home — range select"
+              style={{
+                fontFamily: 'monospace',
+                fontSize: 13,
+                color: '#e8eef4',
+                background: 'rgba(26,34,44,0.75)',
+                border: '1px solid rgba(232,238,244,0.4)',
+                borderRadius: 6,
+                padding: '6px 10px',
+                cursor: 'pointer',
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+              }}
+            >
+              Home
+            </button>
+          )}
           {onOpenLoadout && (
             <button
               onClick={onOpenLoadout}
@@ -1585,7 +1602,7 @@ export function ScopeView({
                 userSelect: 'none',
               }}
             >
-              Menu
+              Settings
             </button>
           )}
         </div>
@@ -1615,7 +1632,7 @@ export function ScopeView({
             environment, commit, and the engagement HUD. `unitsPrimary` still
             drives every readout's display system (set in Settings). */}
         <div>
-          {magnification.toFixed(1)}× · {systemLabel(unitsPrimary)} · {rangeDef.name}
+          {magnification.toFixed(1)}× · {unitsPrimary} · {rangeDef.name}
         </div>
         <label style={{ display: 'block', marginTop: 4 }}>
           zoom ×{magnification.toFixed(1)}{' '}
@@ -1754,9 +1771,10 @@ export function ScopeView({
             to centre the group, then Confirm; Clean for a fresh face; Inspect for
             a head-on close-up. */}
         {isSightInHud && (
+          <>
           <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
-            <div>Sight-in — read the grid, dial to centre the group, Confirm.</div>
-            <div style={{ opacity: 0.9 }}>
+            <div>
+              Sight-in —{' '}
               {!activeRifle
                 ? 'no rifle selected (Loadout)'
                 : (() => {
@@ -1791,6 +1809,11 @@ export function ScopeView({
               <button onClick={() => cleanRef.current()}>Clean target</button>
             </div>
           </div>
+          {/* Chronograph (task 2.4e, D10): also available on the paper zeroing bay
+              (owner 2026-07-27) — measuring MV belongs with load development and
+              zeroing. The paper fire path already logs readings when deployed. */}
+          <ChronoPanel />
+          </>
         )}
 
         {/* Steel range engagement HUD — hidden on the sight-in bay. */}

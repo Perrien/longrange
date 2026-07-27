@@ -36,7 +36,7 @@ export interface FieldRange {
 }
 
 /**
- * Raw off-the-shelf bore/scope pointing error (D16, `Design/Plans/D16-raw-zero-error.md`).
+ * Raw off-the-shelf bore/scope pointing error (D16, `Design/archive/D16-raw-zero-error.md`).
  *
  * A brand-new rifle+scope is NOT pre-zeroed: the bore and the line of sight point
  * in the same general direction but are not aligned, and the player must discover

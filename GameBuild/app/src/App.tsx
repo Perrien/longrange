@@ -1,19 +1,22 @@
 // Root — the player state machine (task 1.8a, D1/D5; Settings overlay task 2.1d).
 //
-//   rangeSelect → (pick Range A) → scope → (Menu) → Settings overlay
-//                                                      └→ Return to range select
+//   rangeSelect → (pick a range) → scope → (gear icon) → Settings overlay
+//        ↑  └→ (Settings button)                (Home icon) ┘
+//        └──────────────────────────────────────────────────┘
 //
 // Cold launch always starts at range select (D5); nothing resumes mid-session.
-// The scope's Menu button opens the Settings screen as an OVERLAY over the still-
-// mounted ScopeView (so the 3D scene / committed target / dialed solution survive
-// — no teardown just to flip a setting). "Return to range select" lives on that
-// screen now (task 2.1d), preserving the 1.8a reset-on-return behaviour.
+// The scope's gear-icon button opens the Settings screen as an OVERLAY over the
+// still-mounted ScopeView (so the 3D scene / committed target / dialed solution
+// survive — no teardown just to flip a setting); Settings is also reachable from
+// the range-select screen so gear can be changed before entering a range. The
+// scope's Home button returns to range select (resetting the run, 1.8a behaviour);
+// Settings dismisses only via its own Done button (owner request 2026-07-27).
 //
-// The dev tools shell (tab strip + hidden test harnesses) renders ONLY behind a
+// The dev tools shell (dev-only harness overlay) renders ONLY behind a
 // static `import.meta.env.DEV` guard — Vite replaces that with `false` in a prod
 // build, so Rollup drops DevTools and its transitive dev-only imports
-// (RangeView / DropTable / PersistencePanel) from the shipped bundle. DevTools is
-// the only place those are imported; the 1.8a dist/ grep proves the drop.
+// (DropTable / PersistencePanel / TruthInspector) from the shipped bundle. DevTools
+// is the only place those are imported; the 1.8a dist/ grep proves the drop.
 import { useState } from 'react';
 import { RangeSelect } from './shell/RangeSelect';
 import { SettingsScreen } from './shell/SettingsScreen';
@@ -34,8 +37,22 @@ export function App() {
   const setRangeId = useGameStore((s) => s.setRangeId);
   const resetSession = useGameStore((s) => s.resetSession);
 
-  // The real player flow — range select (+ Store) → Scope, with a Menu button
-  // that opens the Settings overlay and a Loadout button that swaps gear in place.
+  // Home button (scope top-right): back to range select. The 1.8a "return home
+  // resets your run" confirm lives here now (it moved off the Settings screen —
+  // owner 2026-07-27). Only prompt if a target is actually committed; read the
+  // live state imperatively so App need not subscribe to it.
+  const goHome = () => {
+    const { currentTarget } = useGameStore.getState().session;
+    if (currentTarget && !window.confirm('Return to range select? Your current run resets.')) return;
+    resetSession(); // D8/D5: fresh start on return home
+    setSettingsOpen(false);
+    setView('rangeSelect');
+  };
+
+  // The real player flow — range select (+ Store + Settings) → Scope, with a gear
+  // button that opens Settings, a Loadout button that swaps gear in place, and a
+  // Home button back to range select. Settings is an overlay rendered in either
+  // view (it never unmounts the scene underneath).
   const game = (
     <>
       {view === 'rangeSelect' && (
@@ -44,13 +61,12 @@ export function App() {
             onSelect={(id) => {
               // Route selection through the range registry (task 2.3a): resolve
               // the definition (guards unknown ids) before entering the scope.
-              // The scene branch on `sceneType` lands in 2.3c; both ranges enter
-              // the scope here so Range A behaves exactly as before.
               const range = getRangeDefinition(id);
               setRangeId(range.id);
               setView('scope');
             }}
             onOpenStore={() => setStoreOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
           />
           {storeOpen && <StoreScreen onClose={() => setStoreOpen(false)} />}
         </>
@@ -60,20 +76,12 @@ export function App() {
           <ScopeView
             onOpenMenu={() => setSettingsOpen(true)}
             onOpenLoadout={() => setLoadoutOpen(true)}
+            onGoHome={goHome}
           />
           {loadoutOpen && <LoadoutOverlay onClose={() => setLoadoutOpen(false)} />}
-          {settingsOpen && (
-            <SettingsScreen
-              onClose={() => setSettingsOpen(false)}
-              onReturnToRangeSelect={() => {
-                resetSession(); // D8/D5: fresh start on return home
-                setSettingsOpen(false);
-                setView('rangeSelect');
-              }}
-            />
-          )}
         </>
       )}
+      {settingsOpen && <SettingsScreen onClose={() => setSettingsOpen(false)} />}
     </>
   );
 

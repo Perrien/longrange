@@ -458,7 +458,16 @@ nominal distance), so the world is built once and both unit systems share it;
 and the knoll needs a *short steep* forward face, not a tall one, or it grazes
 its own 25 m sight line.
 
-**Stages 1–2b built** — 2026-07-26, gates green, awaiting the device check.
+**BUILT — all 5 stages, owner-confirmed on device 2026-07-26.** Plan archived at
+`Design/archive/mil-zero-range-plan.md`; live build record in
+`Design/execution/PROGRESS.md`. Also carries **D16** (raw 5–35 MOA off-the-shelf
+zero error, `Design/archive/D16-raw-zero-error.md`) and the **true-MOA target
+face** fix — the MOA grid was sized on the "1 inch = 1 MOA at 100 yd" shorthand
+and was 4.5% small per square, drifting ~0.45 MOA off the reticle by the 10 mark;
+it now derives from `22 × 100 yd × 1 MOA`. That fix applies to the original Zero
+Range too, which had the same error.
+
+**Stages 1–2b** — 2026-07-26.
 Stage 1: registry + pure config + corridor model (`range/ranges.ts` gained a
 `targetKind` capability and an optional `RangeStation.azimuthDeg`; new
 `range/wooded-zero-config.ts`). Stage 2a: `range/paper-bay-scene.ts` extracts
@@ -472,11 +481,12 @@ The range is now on the landing screen and shootable. 54 tests across
 `wooded-zero-config.test.ts`, `wooded-zero-environment.test.ts` and
 `paper-bay-scene.test.ts`.
 
-**Stages 3–5 not built** — the scenery upgrade proper: low morning sun +
-aerial-perspective fog + near-field shadow map (3), tree silhouette variety +
-ridgeline mountains (4), wind-driven vegetation (5). Stage 2b deliberately
-shipped on the CURRENT shared look so the device check is about the bay's
-geometry, not confounded by an art change landing at the same time.
+**Stages 3–5** — the scenery upgrade proper, landed in the SHARED environment
+module so the Test Range inherits it (owner: "Test range is fine, keep the
+changes"): low morning sun at 24° behind the firing line + FogExp2 aerial
+perspective + near-field shadow map (3), tree silhouette variety (4a), ridgeline
+mountains replacing the instanced cones (4b), and wind-driven canopy sway driven
+by the same wind sampler the bullet reads (5).
 
 ### F. Targets & scoring
 

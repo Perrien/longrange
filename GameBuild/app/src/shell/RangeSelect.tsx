@@ -3,10 +3,12 @@
 //
 // This is the cold-launch screen: no separate splash in front of it. It shows
 // the crosshair logo + "LongRange" title above one tappable card per range in
-// the registry (`range/ranges.ts`) — Range A (steel) and the Zero Range
-// (sight-in) today; future ranges appear automatically as the registry grows.
-// Selecting a card calls `onSelect(range.id)`, which App wires to setRangeId +
-// enter Scope.
+// the registry (`range/ranges.ts`) — Range A (steel), the Test Range, and the
+// Wooded Zero bay today; future ranges appear automatically as the registry
+// grows. Selecting a card calls `onSelect(range.id)`, which App wires to
+// setRangeId + enter Scope. Below the cards sit a Store button and a small
+// Settings button (so gear can be changed before entering a range — owner
+// 2026-07-27).
 //
 // Deliberately simple: no grayed-out "coming soon" slots (D8). Plain inline
 // styles, matching every other component here.
@@ -16,9 +18,11 @@ import { listRanges } from '../range/ranges';
 export function RangeSelect({
   onSelect,
   onOpenStore,
+  onOpenSettings,
 }: {
   onSelect: (rangeId: string) => void;
   onOpenStore: () => void;
+  onOpenSettings: () => void;
 }) {
   return (
     <div
@@ -89,6 +93,24 @@ export function RangeSelect({
         }}
       >
         Store — rifles &amp; ammo
+      </button>
+      <button
+        onClick={onOpenSettings}
+        style={{
+          marginTop: 4,
+          padding: '10px 22px',
+          background: 'transparent',
+          color: 'rgba(232,238,244,0.75)',
+          border: '1px solid rgba(232,238,244,0.25)',
+          borderRadius: 8,
+          fontFamily: 'monospace',
+          fontSize: 14,
+          cursor: 'pointer',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
+        }}
+      >
+        Settings
       </button>
     </div>
   );

@@ -1,7 +1,7 @@
 // Settings screen (task 2.1d, Increment 2 — owner request). A full-screen overlay
-// reachable from the scope's Menu button. It is the home for the durable player
-// settings that used to live inline in the scope HUD (task 2.1-plan §2.1d):
-// units, aim sensitivity, bullet trace, wind realism, wind-marker style, and the
+// reachable from the scope's gear-icon button and from the range-select screen's
+// Settings button. It is the home for the durable player settings: units, aim
+// sensitivity, bullet trace, wind realism, wind-marker style, and the
 // (experimental) mirage toggle. Reading/writing goes straight through the
 // existing Zustand setters — no new store state.
 //
@@ -10,9 +10,11 @@
 // persists (additive-optional since 1.7a); mirage is intentionally store-only
 // (parked OFF each launch) until it ships.
 //
-// Rendered as an overlay OVER the still-mounted ScopeView (App keeps ScopeView
-// alive underneath), so opening settings mid-engagement doesn't tear down/rebuild
-// the 3D scene or lose the committed target / dialed solution.
+// Rendered as an overlay OVER whatever is underneath (the still-mounted ScopeView
+// in the scope view, the range-select screen otherwise), so opening settings
+// mid-engagement doesn't tear down/rebuild the 3D scene or lose the committed
+// target / dialed solution. Dismissed only via the Done button (owner 2026-07-27);
+// "Return to range select" moved to the scope's Home button.
 //
 // Guardrail §4.4: no inline unit math here — these are plain preference toggles
 // (unitsPrimary just flips which system every readout elsewhere uses); MIL and
@@ -69,13 +71,7 @@ function Seg({ active, onClick, children }: { active: boolean; onClick: () => vo
   );
 }
 
-export function SettingsScreen({
-  onClose,
-  onReturnToRangeSelect,
-}: {
-  onClose: () => void;
-  onReturnToRangeSelect: () => void;
-}) {
+export function SettingsScreen({ onClose }: { onClose: () => void }) {
   const unitsPrimary = useGameStore((s) => s.settings.unitsPrimary);
   const setUnitsPrimary = useGameStore((s) => s.setUnitsPrimary);
   const sensitivity = useGameStore((s) => s.settings.sensitivity);
@@ -88,14 +84,6 @@ export function SettingsScreen({
   const setWindMarkerStyle = useGameStore((s) => s.setWindMarkerStyle);
   const mirageEnabled = useGameStore((s) => s.settings.mirageEnabled);
   const setMirageEnabled = useGameStore((s) => s.setMirageEnabled);
-  const currentTarget = useGameStore((s) => s.session.currentTarget);
-
-  // The 1.8a "return home resets your run" confirm lives here now (Menu → Settings
-  // → Return to range select). Only prompt if a target is actually committed.
-  const handleReturn = () => {
-    if (currentTarget && !window.confirm('Return to range select? Your current run resets.')) return;
-    onReturnToRangeSelect();
-  };
 
   return (
     <div
@@ -189,25 +177,6 @@ export function SettingsScreen({
             Off
           </Seg>
         </Row>
-
-        <div style={{ borderTop: DIVIDER, marginTop: 8, paddingTop: 20 }}>
-          <button
-            onClick={handleReturn}
-            style={{
-              width: '100%',
-              fontFamily: 'monospace',
-              fontSize: 15,
-              color: FG,
-              background: 'rgba(150,60,60,0.5)',
-              border: '1px solid rgba(232,238,244,0.4)',
-              borderRadius: 8,
-              padding: '14px',
-              cursor: 'pointer',
-            }}
-          >
-            Return to range select
-          </button>
-        </div>
       </div>
     </div>
   );

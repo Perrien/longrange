@@ -1,0 +1,18 @@
+/* Global element styles. The app is otherwise all inline styles; this file
+   exists for rules that can only be expressed in CSS (pseudo-classes, UA
+   overrides). Keep it tiny.
+
+   Inactive (disabled) buttons: the browser's default disabled styling renders
+   near-black text that is unreadable on the dark HUD (owner 2026-07-27). Keep
+   them visibly greyed-out but give the label a contrasting light grey so it can
+   still be read. `-webkit-text-fill-color` + `opacity: 1` are needed because
+   WebKit (iPad Safari, our target) otherwise forces its own dim disabled text
+   colour and ignores plain `color`. Inline `style` wins per-property over this
+   rule, so any custom-styled button keeps its own look. */
+button:disabled {
+  background-color: #4b545e;
+  color: #c7cfd8;
+  -webkit-text-fill-color: #c7cfd8;
+  opacity: 1;
+  cursor: default;
+}
