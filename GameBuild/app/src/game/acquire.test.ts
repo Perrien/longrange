@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest';
 import {
   LOT_DRAW_FIELDS,
   RIFLE_DRAW_FIELDS,
+  DEFAULT_LOT_ROUNDS,
   buildAmmoLot,
   buildRifleInstance,
+  lotNumberFromId,
   newId,
   rollDraws,
 } from './acquire';
@@ -50,10 +52,16 @@ describe('buildRifleInstance / buildAmmoLot', () => {
       catalogId: '65cm-custom',
       catalogVersion: CATALOG_VERSION,
       draws: { mvOffset: 0.5, zeroH: 0.5, zeroV: 0.5, inherentPrecision: 0.5 },
+      acquiredAt: 0,
+      lifetimeShotCount: 0,
     });
     const l = buildAmmoLot('65cm-match', { rng: seqRng([0.5]), id: 'l1' });
     expect(Object.keys(l.draws).sort()).toEqual([...LOT_DRAW_FIELDS].sort());
     expect(l.catalogId).toBe('65cm-match');
+    // P2: a lot ships with a code, a full round count, and an acquisition stamp.
+    expect(l.lotNumber).toMatch(/^[A-Z]\d{2}$/);
+    expect(l.roundsRemaining).toBe(DEFAULT_LOT_ROUNDS);
+    expect(l.acquiredAt).toBe(0);
   });
 
   it('rejects an unknown catalog id', () => {
@@ -80,5 +88,32 @@ describe('newId', () => {
     const b = newId('rifle');
     expect(a).not.toBe(b);
     expect(a.startsWith('rifle-')).toBe(true);
+  });
+});
+
+describe('lotNumberFromId (P2 lot codes)', () => {
+  it('is a non-sequential [A-Z][0-9][0-9] code', () => {
+    expect(lotNumberFromId('lot-abc')).toMatch(/^[A-Z]\d{2}$/);
+  });
+
+  it('is deterministic for a given id (stable across reloads, no RNG/clock)', () => {
+    expect(lotNumberFromId('lot-xyz')).toBe(lotNumberFromId('lot-xyz'));
+  });
+
+  it('avoids codes already taken', () => {
+    const first = lotNumberFromId('lot-1');
+    const second = lotNumberFromId('lot-1', new Set([first])); // same id, but first is taken
+    expect(second).not.toBe(first);
+    expect(second).toMatch(/^[A-Z]\d{2}$/);
+  });
+
+  it('generates distinct codes across many ids and never collides against the running set', () => {
+    const taken = new Set<string>();
+    for (let i = 0; i < 300; i++) {
+      const code = lotNumberFromId(`lot-${i}`, taken);
+      expect(taken.has(code)).toBe(false);
+      taken.add(code);
+    }
+    expect(taken.size).toBe(300);
   });
 });

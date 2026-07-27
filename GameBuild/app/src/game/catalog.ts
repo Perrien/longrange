@@ -195,10 +195,9 @@ export function catalogRifleRanges(rifleCatalogId: string): RifleTruthRanges {
   const m = getRifleModel(rifleCatalogId);
   const c = rawCartridge(m.cartridgeId);
   const prec = c.rifle.inherentPrecisionMoa[m.tier];
-  // zeroOffsetSdMrad is in MILLIRADIANS — convert to radians (the truth model's
-  // unit). Using it raw made a fresh rifle's bore misalignment ~1000× too large
-  // (tens of degrees → shots metres off at 100 m); milToRad fixes it (~0.29 mrad
-  // ≈ 1 MOA ≈ 9 cm at 100 m, matching the plan's fit check).
+  // Zero offset is the D16 raw off-the-shelf pointing error (RAW_ZERO_OFFSET_RANGE,
+  // 5–35 MOA polar) — no longer the old per-axis `designSet.zeroOffsetSdMrad` normal
+  // draw (that field stays in the catalog data for provenance but is not read here).
   return {
     mvOffset: { nominal: 0, sd: c.rifle.barrelToBarrelMvSpreadMps },
     zeroOffset: RAW_ZERO_OFFSET_RANGE,

@@ -19,10 +19,12 @@ export function RangeSelect({
   onSelect,
   onOpenStore,
   onOpenSettings,
+  onOpenDopeBook,
 }: {
   onSelect: (rangeId: string) => void;
   onOpenStore: () => void;
   onOpenSettings: () => void;
+  onOpenDopeBook: () => void;
 }) {
   return (
     <div
@@ -93,6 +95,24 @@ export function RangeSelect({
         }}
       >
         Store — rifles &amp; ammo
+      </button>
+      <button
+        onClick={onOpenDopeBook}
+        style={{
+          marginTop: 4,
+          padding: '10px 22px',
+          background: 'transparent',
+          color: 'rgba(232,238,244,0.75)',
+          border: '1px solid rgba(232,238,244,0.25)',
+          borderRadius: 8,
+          fontFamily: 'monospace',
+          fontSize: 14,
+          cursor: 'pointer',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
+        }}
+      >
+        DOPE Book
       </button>
       <button
         onClick={onOpenSettings}

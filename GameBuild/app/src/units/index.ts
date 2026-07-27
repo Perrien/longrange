@@ -6,5 +6,6 @@
 export * from './angle';
 export * from './length';
 export * from './velocity';
+export * from './energy';
 export * from './subtension';
 export * from './display';

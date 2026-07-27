@@ -27,10 +27,13 @@ import {
   settingsToSave,
   saveToSettings,
   storeToSave,
+  saveToInventory,
   loadSettingsInto,
   persistSettingsOnChange,
 } from './index';
 import type { DopeNode } from '../persistence';
+import type { SaveData } from '../persistence';
+import { DEFAULT_LOT_ROUNDS } from '../game/acquire';
 
 /** Build a minimal ShotResult for scoring tests (impact geometry doesn't matter here). */
 const shotResult = (hitPlateId: number | null): ShotResult => ({
@@ -754,6 +757,31 @@ describe('chronograph (task 2.4e)', () => {
     expect(useGameStore.getState().chrono.summaries[0].shots).toBe(3);
   });
 
+  it('committing a chrono string writes the lot effective MV (chrono → MV, D15 lever 1)', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng: () => 0.5 });
+    const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
+    st.logChronoReading(rid, lid, 800);
+    st.logChronoReading(rid, lid, 810);
+    st.commitChronoString('2026-07-27T00:00:00.000Z');
+    const lot = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!;
+    expect(lot.effective?.mvMps).toBeCloseTo(805, 6); // avg of 800, 810
+    expect(lot.effective?.mvSource).toBe('chrono');
+    expect(lot.effective?.bcSource).toBe('box'); // BC side untouched
+  });
+
+  it('a gear switch mid-string commits it AND writes the prior lot effective MV', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng: () => 0.5 });
+    const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
+    st.logChronoReading(rid, lid, 790);
+    st.logChronoReading(rid, lid, 800);
+    st.logChronoReading('other-rifle', 'other-lot', 900); // switch → auto-commit rid/lid
+    const lot = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!;
+    expect(lot.effective?.mvMps).toBeCloseTo(795, 6);
+    expect(lot.effective?.mvSource).toBe('chrono');
+  });
+
   it('deleteRifle / deleteLot cascade-prune chrono summaries', () => {
     const st = useGameStore.getState();
     const rid = st.acquireRifle('65cm-custom', { rng });
@@ -803,5 +831,150 @@ describe('chronograph (task 2.4e)', () => {
     expect(c.summaries[0].shots).toBe(2);
     expect(c.deployed).toBe(false); // session-only — reset on load
     expect(c.current).toBeNull();
+  });
+});
+
+describe('saveToInventory P2 backfill (pre-P2 records get the new fields)', () => {
+  const preP2Save = (): SaveData => ({
+    schemaVersion: 2,
+    updatedAt: new Date(0).toISOString(),
+    settings: { unitsPrimary: 'MIL' },
+    rifles: [{ id: 'r1', catalogId: '65cm-custom', catalogVersion: 1, draws: { mvOffset: 0.5, zeroH: 0.5, zeroV: 0.5, inherentPrecision: 0.5 } }],
+    ammoLots: [
+      { id: 'l1', catalogId: '65cm-match', catalogVersion: 1, draws: { meanMvShift: 0.5, mvSd: 0.5, bcError: 0.5, bcSd: 0.5 } },
+      { id: 'l2', catalogId: '65cm-bulk', catalogVersion: 1, draws: { meanMvShift: 0.5, mvSd: 0.5, bcError: 0.5, bcSd: 0.5 } },
+    ],
+  });
+
+  it('backfills rifle acquiredAt + lifetimeShotCount', () => {
+    const inv = saveToInventory(preP2Save());
+    expect(inv.rifles[0].acquiredAt).toBe(0);
+    expect(inv.rifles[0].lifetimeShotCount).toBe(0);
+  });
+
+  it('backfills lot roundsRemaining/acquiredAt and assigns a unique [A-Z][0-9][0-9] code', () => {
+    const inv = saveToInventory(preP2Save());
+    for (const l of inv.ammoLots) {
+      expect(l.roundsRemaining).toBe(DEFAULT_LOT_ROUNDS);
+      expect(l.acquiredAt).toBe(0);
+      expect(l.lotNumber).toMatch(/^[A-Z]\d{2}$/);
+    }
+    expect(inv.ammoLots[0].lotNumber).not.toBe(inv.ammoLots[1].lotNumber); // distinct
+  });
+
+  it('assigns the same codes on every load (deterministic, stable)', () => {
+    const a = saveToInventory(preP2Save()).ammoLots.map((l) => l.lotNumber);
+    const b = saveToInventory(preP2Save()).ammoLots.map((l) => l.lotNumber);
+    expect(a).toEqual(b);
+  });
+
+  it('preserves an already-assigned code and never collides a backfilled one against it', () => {
+    const save = preP2Save();
+    // Pin l1 to whatever l2 WOULD be assigned, forcing the backfill to dodge it.
+    const l2code = saveToInventory(preP2Save()).ammoLots[1].lotNumber!;
+    save.ammoLots[0].lotNumber = l2code;
+    const inv = saveToInventory(save);
+    expect(inv.ammoLots[0].lotNumber).toBe(l2code); // preserved
+    expect(inv.ammoLots[1].lotNumber).not.toBe(l2code); // dodged the collision
+  });
+});
+
+describe('consumeRound (P2b — shot count + round depletion)', () => {
+  const rng = () => 0.5;
+
+  it('increments the rifle lifetime count and decrements the lot rounds', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng });
+    const lid = st.acquireLot('65cm-match', { rng });
+    const lot0 = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!;
+    const start = lot0.roundsRemaining!;
+    st.consumeRound(rid, lid);
+    const inv = useGameStore.getState().inventory;
+    expect(inv.rifles.find((r) => r.id === rid)!.lifetimeShotCount).toBe(1);
+    expect(inv.ammoLots.find((l) => l.id === lid)!.roundsRemaining).toBe(start - 1);
+  });
+
+  it('floors rounds at 0 (never negative) while the lifetime count keeps climbing', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng });
+    const lid = st.acquireLot('65cm-match', { rng });
+    const start = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!.roundsRemaining!;
+    for (let i = 0; i < start + 5; i++) st.consumeRound(rid, lid);
+    const inv = useGameStore.getState().inventory;
+    expect(inv.ammoLots.find((l) => l.id === lid)!.roundsRemaining).toBe(0);
+    expect(inv.rifles.find((r) => r.id === rid)!.lifetimeShotCount).toBe(start + 5);
+  });
+
+  it('is a no-op for unknown ids', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng });
+    const lid = st.acquireLot('65cm-match', { rng });
+    const before = useGameStore.getState().inventory;
+    st.consumeRound('nope-rifle', 'nope-lot');
+    const after = useGameStore.getState().inventory;
+    expect(after.rifles.find((r) => r.id === rid)!.lifetimeShotCount).toBe(0);
+    expect(after.ammoLots.find((l) => l.id === lid)!.roundsRemaining).toBe(before.ammoLots.find((l) => l.id === lid)!.roundsRemaining);
+  });
+});
+
+describe('replenishLot (P4)', () => {
+  const rng = () => 0.5;
+
+  it('appends a fresh lot of the same ammo: new id + code, full rounds, no effective on a blank replenish', () => {
+    const st = useGameStore.getState();
+    const lid = st.acquireLot('65cm-match', { rng });
+    const freshId = st.replenishLot(lid, false)!;
+    const inv = useGameStore.getState().inventory;
+    expect(inv.ammoLots).toHaveLength(2);
+    const fresh = inv.ammoLots.find((l) => l.id === freshId)!;
+    const src = inv.ammoLots.find((l) => l.id === lid)!;
+    expect(fresh.catalogId).toBe(src.catalogId);
+    expect(fresh.id).not.toBe(src.id);
+    expect(fresh.lotNumber).not.toBe(src.lotNumber);
+    expect(fresh.lotNumber).toMatch(/^[A-Z]\d{2}$/);
+    expect(fresh.roundsRemaining).toBe(DEFAULT_LOT_ROUNDS);
+    expect(fresh.effective).toBeUndefined();
+  });
+
+  it('carries a discovered (chrono) MV forward as provisional', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng });
+    const lid = st.acquireLot('65cm-match', { rng });
+    st.logChronoReading(rid, lid, 800);
+    st.logChronoReading(rid, lid, 810);
+    st.commitChronoString('2026-07-27T00:00:00.000Z');
+    const freshId = st.replenishLot(lid, true)!;
+    const fresh = useGameStore.getState().inventory.ammoLots.find((l) => l.id === freshId)!;
+    expect(fresh.effective?.mvMps).toBeCloseTo(805, 6); // carried from the source chrono avg
+    expect(fresh.effective?.mvSource).toBe('provisional'); // but unverified on the new lot
+    expect(fresh.effective?.bcSource).toBe('provisional');
+  });
+
+  it('carryForward with nothing discovered yields a plain box lot (no effective)', () => {
+    const st = useGameStore.getState();
+    const lid = st.acquireLot('65cm-match', { rng });
+    const freshId = st.replenishLot(lid, true)!;
+    expect(useGameStore.getState().inventory.ammoLots.find((l) => l.id === freshId)!.effective).toBeUndefined();
+  });
+
+  it('makes the new lot active when the source lot was active (seamless continue)', () => {
+    const st = useGameStore.getState();
+    const lid = st.acquireLot('65cm-match', { rng });
+    st.selectLot(lid);
+    const freshId = st.replenishLot(lid, false)!;
+    expect(useGameStore.getState().inventory.activeLotId).toBe(freshId);
+  });
+
+  it('leaves the active selection alone if a different lot was active', () => {
+    const st = useGameStore.getState();
+    const a = st.acquireLot('65cm-match', { rng });
+    const b = st.acquireLot('65cm-bulk', { rng });
+    st.selectLot(b);
+    st.replenishLot(a, false);
+    expect(useGameStore.getState().inventory.activeLotId).toBe(b);
+  });
+
+  it('returns null for an unknown source lot', () => {
+    expect(useGameStore.getState().replenishLot('nope', true)).toBeNull();
   });
 });

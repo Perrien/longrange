@@ -160,3 +160,43 @@ export function ladderStationsM(
   // MOA steps are yards → convert to meters; MIL steps are already meters.
   return stepValues.map((s) => (units === 'MOA' ? yardsToMeters(s) : s));
 }
+
+/** One come-up-table station + whether it lies past the cartridge's effective
+ *  range (for the beyond-effective marking). */
+export interface ComeUpStation {
+  stationM: number;
+  beyondEffective: boolean;
+}
+
+/**
+ * Candidate stations for the come-up REFERENCE TABLE (not the shootable DOPE
+ * range, which stays capped at effective range — `ladderStationsM`). The in-range
+ * portion is identical to `ladderStationsM`; it then continues in the same cadence
+ * (centuries / a 50-step rimfire tail) out to `hardMaxYd`, tagging every station
+ * past effective range `beyondEffective`. The caller solves to the last station
+ * then trims at the transonic→subsonic wall (`assembleComeUp`), so this over-
+ * generates on purpose — `hardMaxYd` only needs to be past where the bullet goes
+ * subsonic (owner 2026-07-27: transonic is a beyond-effective phenomenon for most
+ * cartridges, so the reference table must reach past effective range to show it).
+ */
+export function comeUpStationsM(
+  isRimfire: boolean,
+  units: DisplayUnits,
+  effectiveRangeYd: number,
+  hardMaxYd: number,
+): ComeUpStation[] {
+  const inYd = units === 'MOA'; // station unit: yd (MOA) or m (MIL)
+  const effCap = inYd ? effectiveRangeYd : yardsToMeters(effectiveRangeYd);
+  const hardCap = inYd ? hardMaxYd : yardsToMeters(hardMaxYd);
+  const stepUnitVals: number[] = [];
+  if (isRimfire) {
+    for (const s of RIMFIRE_STEPS) if (s <= hardCap) stepUnitVals.push(s);
+    for (let s = RIMFIRE_STEPS[RIMFIRE_STEPS.length - 1] + 50; s <= hardCap; s += 50) stepUnitVals.push(s);
+  } else {
+    for (let s = 100; s <= hardCap; s += 100) stepUnitVals.push(s);
+  }
+  return stepUnitVals.map((s) => ({
+    stationM: inYd ? yardsToMeters(s) : s,
+    beyondEffective: s > effCap + 1e-6,
+  }));
+}

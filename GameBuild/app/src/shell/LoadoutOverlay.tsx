@@ -132,17 +132,23 @@ export function LoadoutOverlay({ onClose }: { onClose: () => void }) {
           const load = getAmmoLoad(l.catalogId);
           const active = l.id === activeLotId;
           const mv = formatSpeedForDisplay(load.believedMvMps, unitsPrimary);
+          const rounds = l.roundsRemaining ?? 0;
+          const depleted = rounds <= 0;
           return (
             <div key={l.id} style={rowStyle(active)} onClick={() => selectLot(active ? null : l.id)}>
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontSize: 15 }}>
                   {load.cartridgeName} — {load.grade}
+                  {l.lotNumber && <span style={{ opacity: 0.7 }}> · {l.lotNumber}</span>}
                 </div>
                 <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
                   {load.product} · box {mv.value.toFixed(0)} {mv.label}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 13, color: depleted ? '#e88' : FG, opacity: depleted ? 1 : 0.85 }}>
+                  {rounds} rds
+                </span>
                 <span style={{ fontSize: 13, opacity: active ? 1 : 0.4 }}>{active ? '✓ active' : 'select'}</span>
                 <button
                   style={deleteBtnStyle}

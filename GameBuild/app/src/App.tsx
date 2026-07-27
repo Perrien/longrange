@@ -22,6 +22,7 @@ import { RangeSelect } from './shell/RangeSelect';
 import { SettingsScreen } from './shell/SettingsScreen';
 import { StoreScreen } from './shell/StoreScreen';
 import { LoadoutOverlay } from './shell/LoadoutOverlay';
+import { DopeBookScreen } from './shell/DopeBookScreen';
 import { ScopeView } from './scope/ScopeView';
 import { DevTools } from './debug/DevTools';
 import { getRangeDefinition } from './range/ranges';
@@ -34,6 +35,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
   const [loadoutOpen, setLoadoutOpen] = useState(false);
+  const [dopeBookOpen, setDopeBookOpen] = useState(false);
   const setRangeId = useGameStore((s) => s.setRangeId);
   const resetSession = useGameStore((s) => s.resetSession);
 
@@ -46,6 +48,7 @@ export function App() {
     if (currentTarget && !window.confirm('Return to range select? Your current run resets.')) return;
     resetSession(); // D8/D5: fresh start on return home
     setSettingsOpen(false);
+    setDopeBookOpen(false);
     setView('rangeSelect');
   };
 
@@ -67,6 +70,7 @@ export function App() {
             }}
             onOpenStore={() => setStoreOpen(true)}
             onOpenSettings={() => setSettingsOpen(true)}
+            onOpenDopeBook={() => setDopeBookOpen(true)}
           />
           {storeOpen && <StoreScreen onClose={() => setStoreOpen(false)} />}
         </>
@@ -76,12 +80,14 @@ export function App() {
           <ScopeView
             onOpenMenu={() => setSettingsOpen(true)}
             onOpenLoadout={() => setLoadoutOpen(true)}
+            onOpenDopeBook={() => setDopeBookOpen(true)}
             onGoHome={goHome}
           />
           {loadoutOpen && <LoadoutOverlay onClose={() => setLoadoutOpen(false)} />}
         </>
       )}
       {settingsOpen && <SettingsScreen onClose={() => setSettingsOpen(false)} />}
+      {dopeBookOpen && <DopeBookScreen onClose={() => setDopeBookOpen(false)} />}
     </>
   );
 

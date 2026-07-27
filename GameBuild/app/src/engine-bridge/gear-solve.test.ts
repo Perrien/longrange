@@ -103,6 +103,20 @@ describe('engine-bridge/gear-solve/solveGear', () => {
     expect(lastTrue.dropM).toBeLessThan(lastBelieved.dropM - 0.03);
   });
 
+  it('a lot effective MV (chrono, D15 lever 1) overrides box in the BELIEVED come-up only', () => {
+    const boxMv = believedLoad(LOT_CATALOG_ID).muzzleVelocityMps;
+    const base = { rifle, lot, rifleRanges, lotRanges, atmosphere: ISA, wind: CALM, ...opts };
+    const boxRes = solveGear(module, base);
+    const slower: AmmoLot = { ...lot, effective: { mvMps: boxMv - 30, mvSource: 'chrono', bcSource: 'box' } };
+    const effRes = solveGear(module, { ...base, lot: slower });
+    const lastBox = boxRes.believedTable[boxRes.believedTable.length - 1];
+    const lastEff = effRes.believedTable[effRes.believedTable.length - 1];
+    // ~30 m/s slower believed MV → measurably MORE drop at 500 yd in the come-up.
+    expect(lastEff.dropM).toBeLessThan(lastBox.dropM - 0.02);
+    // The TRUE table (real impact) is unaffected by the believed-side override.
+    expect(effRes.trueTable).toEqual(boxRes.trueTable);
+  });
+
   it('returns numbers only — no TrueBallistics object leaks (§4.8)', () => {
     const res = solveGear(module, { rifle, lot, rifleRanges, lotRanges, atmosphere: ISA, wind: CALM, ...opts });
     expect(Object.keys(res).sort()).toEqual(['believedTable', 'trueTable', 'zeroOffsetRad']);

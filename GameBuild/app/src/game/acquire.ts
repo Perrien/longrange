@@ -33,6 +33,43 @@ export interface AcquireOptions {
   id: string;
   /** Catalog version the draws were rolled under (D2/D10); defaults to current. */
   catalogVersion?: number;
+  /** Epoch-ms acquisition time (P2). Defaults to 0 in the builder; the store's
+   *  acquire actions pass `Date.now()`. */
+  acquiredAt?: number;
+  /** Lot numbers already in use (P2) — a new lot's `[A-Z][0-9][0-9]` code is
+   *  generated unique against these. Defaults to empty (the first lot). */
+  existingLotNumbers?: ReadonlySet<string>;
+}
+
+/** Rounds in a freshly-acquired lot (P2). A TESTING value — real lot sizes will
+ *  scale to a few hundred / up to ~1000; this becomes per-catalog later. */
+export const DEFAULT_LOT_ROUNDS = 20;
+
+const EMPTY_LOT_NUMBERS: ReadonlySet<string> = new Set();
+
+/**
+ * A non-sequential `[A-Z][0-9][0-9]` lot code (D52, H05, …) derived DETERMINISTIC-
+ * ally from the lot id (owner 2026-07-27: realism, not counted up). Deterministic
+ * from the id means a save reloads to the same codes with no RNG/Date dependency;
+ * an FNV-1a hash makes it look random. Probes the full 2600-code space on
+ * collision, so it always returns a code unused in `taken` when one exists. */
+export function lotNumberFromId(id: string, taken: ReadonlySet<string> = EMPTY_LOT_NUMBERS): string {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  h = h >>> 0;
+  // Over 2600 consecutive n, (n%26, ⌊n/26⌋%100) is a bijection onto all 26×100
+  // codes, so this finds a free one if the space isn't full.
+  for (let attempt = 0; attempt < 2600; attempt++) {
+    const n = (h + attempt) >>> 0;
+    const letter = String.fromCharCode(65 + (n % 26));
+    const num = Math.floor(n / 26) % 100;
+    const code = `${letter}${String(num).padStart(2, '0')}`;
+    if (!taken.has(code)) return code;
+  }
+  return `Z${String(h % 100).padStart(2, '0')}`; // space exhausted (unreachable in practice)
 }
 
 /** Build an owned rifle instance from a catalog model id (validates the id). */
@@ -43,6 +80,8 @@ export function buildRifleInstance(catalogId: string, opts: AcquireOptions): Rif
     catalogId,
     catalogVersion: opts.catalogVersion ?? CATALOG_VERSION,
     draws: rollDraws(RIFLE_DRAW_FIELDS, opts.rng),
+    acquiredAt: opts.acquiredAt ?? 0,
+    lifetimeShotCount: 0,
   };
 }
 
@@ -54,6 +93,9 @@ export function buildAmmoLot(catalogId: string, opts: AcquireOptions): AmmoLot {
     catalogId,
     catalogVersion: opts.catalogVersion ?? CATALOG_VERSION,
     draws: rollDraws(LOT_DRAW_FIELDS, opts.rng),
+    lotNumber: lotNumberFromId(opts.id, opts.existingLotNumbers),
+    roundsRemaining: DEFAULT_LOT_ROUNDS,
+    acquiredAt: opts.acquiredAt ?? 0,
   };
 }
 

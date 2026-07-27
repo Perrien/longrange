@@ -50,6 +50,21 @@ export interface PlayerZero {
   zeroRangeM?: number;
 }
 
+/** Where an effective MV/BC value came from (DOPE book, P2/D15). `box` = catalog
+ *  default; `chrono` = measured MV; `trued` = fitted BC from a confirmed hold;
+ *  `provisional` = carried forward from a prior lot on Replenish, unverified. */
+export type EffectiveSource = 'box' | 'chrono' | 'trued' | 'provisional';
+
+/** The lot's effective ballistics — what actually drives its believed DOPE, with
+ *  a source tag per value (P2). Empty/box until a chrono (MV) or a confirmed hold
+ *  (BC) supersedes it. Additive-optional; validated only when present. */
+export interface EffectiveParams {
+  mvMps?: number;
+  bc?: number;
+  mvSource: EffectiveSource;
+  bcSource: EffectiveSource;
+}
+
 /** A specific rifle the player owns (v2). Truth = map(draws, catalog ranges);
  *  `catalogVersion` stamps the ranges the draws were rolled under (D2). */
 export interface RifleInstance {
@@ -58,6 +73,12 @@ export interface RifleInstance {
   catalogVersion: number;
   draws: RifleDraws;
   playerZero?: PlayerZero;
+  /** Epoch-ms acquisition time (P2). Additive-optional: a pre-P2 record lacks it
+   *  and the loader backfills 0 (unknown). */
+  acquiredAt?: number;
+  /** Rounds ever fired through this rifle copy (P2). Additive-optional; loader
+   *  backfills 0. */
+  lifetimeShotCount?: number;
 }
 
 /** A specific ammo lot the player owns (v2). */
@@ -66,6 +87,17 @@ export interface AmmoLot {
   catalogId: string;
   catalogVersion: number;
   draws: LotDraws;
+  /** Human-facing lot code `[A-Z][0-9][0-9]` (P2), non-sequential. Additive-
+   *  optional: the loader assigns a stable unique one to any record lacking it. */
+  lotNumber?: string;
+  /** Rounds left in the lot (P2). Additive-optional; loader backfills the default
+   *  lot size. Decrements as the lot is fired. */
+  roundsRemaining?: number;
+  /** Epoch-ms acquisition time (P2). Additive-optional; loader backfills 0. */
+  acquiredAt?: number;
+  /** Effective (discovered/overridden) MV/BC with source tags (P2). Absent = pure
+   *  box values. Written by chrono (MV), truing (BC), and Replenish carry-forward. */
+  effective?: EffectiveParams;
 }
 
 /** A confirmed DOPE node (task 2.4a, D2/D5) — a physical fact the player
@@ -191,6 +223,10 @@ function validatePlayerZero(pz: unknown, ctx: string): void {
     fail(`${ctx}.playerZero.zeroRangeM must be a finite number when present`);
 }
 
+function finiteNumber(v: unknown, ctx: string): void {
+  if (typeof v !== 'number' || !Number.isFinite(v)) fail(`${ctx} must be a finite number`);
+}
+
 function validateRifle(r: unknown, i: number): void {
   const ctx = `rifles[${i}]`;
   if (typeof r !== 'object' || r === null) fail(`${ctx} not an object`);
@@ -201,6 +237,22 @@ function validateRifle(r: unknown, i: number): void {
     fail(`${ctx}.catalogVersion must be an integer`);
   validateDraws(o.draws, ctx);
   if (o.playerZero !== undefined) validatePlayerZero(o.playerZero, ctx);
+  // P2 additive-optional fields — validated only when present.
+  if (o.acquiredAt !== undefined) finiteNumber(o.acquiredAt, `${ctx}.acquiredAt`);
+  if (o.lifetimeShotCount !== undefined) finiteNumber(o.lifetimeShotCount, `${ctx}.lifetimeShotCount`);
+}
+
+const EFFECTIVE_SOURCES = new Set(['box', 'chrono', 'trued', 'provisional']);
+
+function validateEffective(e: unknown, ctx: string): void {
+  if (typeof e !== 'object' || e === null) fail(`${ctx}.effective not an object`);
+  const o = e as Record<string, unknown>;
+  if (o.mvMps !== undefined) finiteNumber(o.mvMps, `${ctx}.effective.mvMps`);
+  if (o.bc !== undefined) finiteNumber(o.bc, `${ctx}.effective.bc`);
+  if (typeof o.mvSource !== 'string' || !EFFECTIVE_SOURCES.has(o.mvSource))
+    fail(`${ctx}.effective.mvSource must be box|chrono|trued|provisional`);
+  if (typeof o.bcSource !== 'string' || !EFFECTIVE_SOURCES.has(o.bcSource))
+    fail(`${ctx}.effective.bcSource must be box|chrono|trued|provisional`);
 }
 
 function validateLot(l: unknown, i: number): void {
@@ -212,10 +264,12 @@ function validateLot(l: unknown, i: number): void {
   if (typeof o.catalogVersion !== 'number' || !Number.isInteger(o.catalogVersion))
     fail(`${ctx}.catalogVersion must be an integer`);
   validateDraws(o.draws, ctx);
-}
-
-function finiteNumber(v: unknown, ctx: string): void {
-  if (typeof v !== 'number' || !Number.isFinite(v)) fail(`${ctx} must be a finite number`);
+  // P2 additive-optional fields — validated only when present.
+  if (o.lotNumber !== undefined && typeof o.lotNumber !== 'string')
+    fail(`${ctx}.lotNumber must be a string when present`);
+  if (o.roundsRemaining !== undefined) finiteNumber(o.roundsRemaining, `${ctx}.roundsRemaining`);
+  if (o.acquiredAt !== undefined) finiteNumber(o.acquiredAt, `${ctx}.acquiredAt`);
+  if (o.effective !== undefined) validateEffective(o.effective, ctx);
 }
 
 function validateDopeNode(n: unknown, i: number): void {

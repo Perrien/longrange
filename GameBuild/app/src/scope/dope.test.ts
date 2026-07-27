@@ -20,7 +20,7 @@ const table: TrajectoryTable = [
 describe('DOPE-equality (task 1.6d)', () => {
   it('the DropTable-style consumption (row-by-row) matches the DopePanel-style consumption (table.map) exactly', () => {
     const dropTableStyle = table.map((r) => formatDopeRow(r));
-    const dopePanelStyle = table.map(formatDopeRow);
+    const dopePanelStyle = table.map((r) => formatDopeRow(r));
     expect(dopePanelStyle).toEqual(dropTableStyle);
   });
 
@@ -33,8 +33,8 @@ describe('DOPE-equality (task 1.6d)', () => {
   });
 
   it('a fixed load/wind/zero solve (same table) produces identical rows on repeat formatting — no hidden per-call state', () => {
-    const first = table.map(formatDopeRow);
-    const second = table.map(formatDopeRow);
+    const first = table.map((r) => formatDopeRow(r));
+    const second = table.map((r) => formatDopeRow(r));
     expect(second).toEqual(first);
   });
 });

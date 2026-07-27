@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createEngineBridge, type EngineBridge, type Load, type AtmosphereInput, type WindVec } from './index';
 import { radToMil, yardsToMeters } from '../units';
-import { SCOPE_ZERO_RANGE_M, SIGHT_HEIGHT_M } from '../game/loads';
+import { SIGHT_HEIGHT_M } from '../game/loads';
 
 // 6.5 Creedmoor, 140 gr, 0.264" dia, ~1.30" length, G7 BC 0.310, ~2700 fps.
 const LOAD: Load = {
@@ -80,7 +80,7 @@ describe('engine-bridge/solveTrajectory', () => {
 });
 
 describe('engine-bridge/solveTrajectory sight height over bore (task 1.6a)', () => {
-  const zeroRangeM = SCOPE_ZERO_RANGE_M; // the game's actual test zero (300 yd)
+  const zeroRangeM = yardsToMeters(300); // a 300 yd test zero
 
   it('zeros to the line of sight and starts sightHeightM below it at the muzzle', () => {
     // At the zero range, the line-of-sight-relative drop is ~0 (on the crosshair).

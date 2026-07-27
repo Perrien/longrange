@@ -15,6 +15,7 @@
 // are unit-tested; the async load/subscribe wiring is thin glue for the app shell.
 
 import { DEFAULT_SAVE, type SaveData, type SaveStore } from '../persistence';
+import { DEFAULT_LOT_ROUNDS, lotNumberFromId } from '../game/acquire';
 import type { GameStore, InventoryState, SettingsState, DopeState, ChronoState } from './store';
 
 /** Project the store's settings onto a SaveData (the schema-v2 persisted fields). */
@@ -63,12 +64,36 @@ export function saveToSettings(save: SaveData, current: SettingsState): Settings
   };
 }
 
-/** Extract the inventory from a loaded SaveData (defensive defaults for a save
- *  predating the fields). */
+/** Extract the inventory from a loaded SaveData, backfilling the P2 fields any
+ *  pre-P2 record lacks: rifles get `acquiredAt`/`lifetimeShotCount`; lots get
+ *  `roundsRemaining`/`acquiredAt` and a STABLE unique `[A-Z][0-9][0-9]` code
+ *  (deterministic from the lot id, so it's the same on every load). Records that
+ *  already carry the fields are left untouched. */
 export function saveToInventory(save: SaveData): InventoryState {
+  const rifles = (save.rifles ?? []).map((r) => ({
+    ...r,
+    acquiredAt: r.acquiredAt ?? 0,
+    lifetimeShotCount: r.lifetimeShotCount ?? 0,
+  }));
+  // Preserve any codes already assigned so backfilled ones don't collide with them.
+  const taken = new Set<string>();
+  for (const l of save.ammoLots ?? []) if (l.lotNumber) taken.add(l.lotNumber);
+  const ammoLots = (save.ammoLots ?? []).map((l) => {
+    let lotNumber = l.lotNumber;
+    if (!lotNumber) {
+      lotNumber = lotNumberFromId(l.id, taken);
+      taken.add(lotNumber);
+    }
+    return {
+      ...l,
+      lotNumber,
+      roundsRemaining: l.roundsRemaining ?? DEFAULT_LOT_ROUNDS,
+      acquiredAt: l.acquiredAt ?? 0,
+    };
+  });
   return {
-    rifles: save.rifles ?? [],
-    ammoLots: save.ammoLots ?? [],
+    rifles,
+    ammoLots,
     activeRifleId: save.activeRifleId ?? null,
     activeLotId: save.activeLotId ?? null,
   };

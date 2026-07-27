@@ -440,11 +440,14 @@ was silently zeroing canopy/bush color, and fog saturation washing out the
 distant mountains regardless of their texture).
 
 #### Wooded Zero Range (25/50/100/200, fanned, elevated firing point)
-Owner-requested 2026-07-26. A second, additive zeroing bay (the grass Zero Range
-stays): four paper stations at 25/50/100/200 in the active unit, fanned across
+Owner-requested 2026-07-26. The zeroing range — four paper stations at
+25/50/100/200 in the active unit, fanned across
 10.5° of azimuth and shot from a low knoll so no station occludes another, set
-in the wooded environment rather than a bare strip. Inherits the zeroing flow,
-Clean and Inspect from the existing bay via a new `targetKind: 'paper'`
+in the wooded environment rather than a bare strip. **Replaces the original grass
+Zero Range** (50/100/200), which was intentionally deleted (2026-07-26, owner) —
+this bay is the better one and is now the single canonical zeroing surface.
+Inherits the zeroing flow,
+Clean and Inspect from the (now-generalized) paper-bay path via a new `targetKind: 'paper'`
 capability rather than reimplementing them. Also carries the first real upgrade
 pass on the shared environment module (low morning sun, near-field shadow map,
 tree silhouette variety, ridgeline mountains, aerial-perspective fog,

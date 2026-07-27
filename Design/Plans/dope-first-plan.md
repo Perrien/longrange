@@ -6,6 +6,27 @@ working DOPE book* — the heavy node/confidence machinery is no longer a prereq
 D15 ([`D15-two-lever-truing-independent.md`](./D15-two-lever-truing-independent.md)): two
 independent levers, chrono→MV, confirm-hold→BC.
 
+**Steps 2–4 — DONE (2026-07-27)** via the expanded [`dope-book-ui-plan.md`](./dope-book-ui-plan.md)
+(P1–P4): the tabbed rifle-scoped DOPE book (status header, come-up table extended past
+effective range to the transonic/subsonic wall, rifle & ammo overview with calculated
+vertical spread), inventory data model (shot count, round depletion, lot codes,
+`effective` MV/BC slot), and Replenish. **Step 3 (chrono→MV)** was pulled forward there
+too — a chrono commit writes `lot.effective.mvMps` and the believed come-up solves off it.
+**Remaining: step 5 (confirm-hold → BC, D15 lever 2).**
+
+**Step 1 — DONE (2026-07-27).** Verified + finished. Pieces 1a (D16 raw 5–35 MOA zero error)
+and 2 (25/50/100/200 `zeroable` zeroing range) were already shipped by the Wooded Zero Range
+work (2026-07-26). Remaining work completed this session: retired the leftover
+`SCOPE_ZERO_RANGE_M = 300 yd` test constant (`game/loads.ts`) — box-true fallback paths in
+`ScopeView.tsx`/`DopePanel.tsx` now derive the zero from `recommendedZeroM(DEFAULT_GAME_LOAD_CARTRIDGE_ID, unitsPrimary)`
+(100 yd CF / 50 yd RF, owner-chosen); split the Confirm-Zero gate so the paper-grid HUD keys on
+`targetKind === 'paper'` (interface) while the Confirm-Zero action keys on `rangeDef.zeroable`
+(permission — now actually read, enabling future field-zeroing on a zeroable steel range with no
+refactor); tidied a stale `zeroOffsetSdMrad` conversion comment in `catalog.ts` (the data field
+stays for provenance, by prior decision). Typecheck clean, 570/571 tests green (the 1 miss is a
+pre-existing stochastic wind-field flake, passes in isolation), build OK. **Next:** step 2 (DOPE
+book status notes + real-zero wiring) — but the owner asked to discuss the UI / DOPE book first.
+
 ## Goal
 
 A usable, auto-populated DOPE book that always shows a firing solution (assuming a 100 yd zero

@@ -28,11 +28,13 @@ export interface GameLoad {
 
 export const DEFAULT_GAME_LOAD_ID = '65cm-140-match';
 
-/** Fixed scope zero for Increment 1 ("given a provided zero"; build-plan §5.1).
- * Set to 300 yd for testing (owner, 2026-07-14): a rack sits exactly at the zero,
- * so nearer racks need hold-under and farther racks need hold-over — exercising
- * corrections in both directions. Note the constant is SI metres. */
-export const SCOPE_ZERO_RANGE_M = 300 * 0.9144; // 300 yd = 274.32 m
+/** Cartridge id of the default fallback game load (6.5 CM — `DEFAULT_GAME_LOAD_ID`
+ * is `65cm-140-match`). Used ONLY by the box-true fallback solve paths (no active
+ * rifle+lot) to derive a sensible zero via `recommendedZeroM(...)` in the active
+ * unit — the DOPE-first plan's replacement (step 1) for the retired 300-yd
+ * `SCOPE_ZERO_RANGE_M` test constant. Normal play always has active gear and
+ * zeroes off the rifle's stored `playerZero` instead. */
+export const DEFAULT_GAME_LOAD_CARTRIDGE_ID = '65cm';
 
 /** Scope height over bore (task 1.6a, D1): 2" for every game-path solve. Zeros
  * and reports come-ups against the line of sight instead of the bore line. */

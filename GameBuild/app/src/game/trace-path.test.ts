@@ -69,7 +69,7 @@ describe('trace-path/traceHeadAt', () => {
 import { loadBtkModule } from '../engine-bridge/wasm-module';
 import { solveTrajectory, spinRateFromTwist } from '../engine-bridge';
 import { windToVec } from './firing-solution';
-import { getGameLoad, DEFAULT_GAME_LOAD_ID, SCOPE_ZERO_RANGE_M } from './loads';
+import { getGameLoad, DEFAULT_GAME_LOAD_ID } from './loads';
 import type { AtmosphereInput, Load, BtkModule } from '../engine-bridge/types';
 
 const ISA: AtmosphereInput = { temperatureK: 288.15, altitudeM: 0, humidity: 0.5, pressurePa: 0 };
@@ -87,7 +87,7 @@ describe('trace-path/time-of-flight (engine)', () => {
       spinRateRadPerSec: spinRateFromTwist(gameLoad.load.muzzleVelocityMps, gameLoad.twistM),
     };
     const table = solveTrajectory(module, solveLoad, ISA, windToVec(0, 0), {
-      zeroRangeM: SCOPE_ZERO_RANGE_M,
+      zeroRangeM: 300 * 0.9144, // 300 yd test zero
       maxRangeM: DIST,
       stepM: DIST / 32,
     });

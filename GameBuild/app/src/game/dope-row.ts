@@ -9,12 +9,52 @@
 import { asMilMoa, type MilMoa } from '../units/angle';
 import { metersToYards, metersToCentimeters, metersToInches } from '../units/length';
 import { mpsToFps } from '../units/velocity';
+import { joulesToFootPounds } from '../units/energy';
 import type { TrajectoryRow } from '../engine-bridge/types';
+import type { ComeUpStation } from './dope-book';
 
 /** Small-angle-free correction angle (rad) subtended at the shooter for a
  *  linear offset (drop or windage) at a given range — `atan2`, not the
  *  linearized mil-relation, so it stays exact at close range too. */
 export const angleAtRange = (offsetM: number, rangeM: number): number => Math.atan2(offsetM, rangeM);
+
+/** Transonic band of a row's retained velocity (DOPE book page 2, owner
+ *  2026-07-27). The bullet is stable well above the speed of sound, grows
+ *  unstable through the transonic zone, and is unreliable subsonic:
+ *   - `supersonic` — Mach > 1.2
+ *   - `transonic`  — 1.0 < Mach ≤ 1.2 (onset of instability; flagged)
+ *   - `subsonic`   — Mach ≤ 1.0 (distinct, stronger mark)
+ *  Only classifiable when a speed of sound is supplied (else `undefined`). */
+export type TransonicBand = 'supersonic' | 'transonic' | 'subsonic';
+
+const TRANSONIC_ONSET_MACH = 1.2;
+
+export function transonicBand(mach: number): TransonicBand {
+  if (mach <= 1.0) return 'subsonic';
+  if (mach <= TRANSONIC_ONSET_MACH) return 'transonic';
+  return 'supersonic';
+}
+
+/** Nearest row to a target range (m), or `undefined` if none within `tolM`.
+ *  Shared by both DOPE surfaces to map a uniform solve grid onto the exact ladder
+ *  stations (the grid is stepped by the ladder's base gap, so a station's row sits
+ *  well within the default tolerance). Pure. */
+export function nearestRow<T extends { rangeM: number }>(
+  rows: readonly T[],
+  rangeM: number,
+  tolM = 0.5,
+): T | undefined {
+  let best: T | undefined;
+  let bestErr = Infinity;
+  for (const r of rows) {
+    const err = Math.abs(r.rangeM - rangeM);
+    if (err < bestErr) {
+      bestErr = err;
+      best = r;
+    }
+  }
+  return best && bestErr < tolM ? best : undefined;
+}
 
 /** One DOPE row's display fields — both unit systems, ready to render. */
 export interface DopeRow {
@@ -33,11 +73,29 @@ export interface DopeRow {
   velocityMps: number;
   velocityFps: number;
   timeOfFlightS: number;
+  /** Kinetic energy at the target, both unit systems (J / ft·lbf). */
+  energyJ: number;
+  energyFtLb: number;
+  /** Retained velocity as a Mach number, and its transonic band — present only
+   *  when a speed of sound was supplied to `formatDopeRow` (page 2 wants it; the
+   *  in-scope strip and the debug DropTable don't, so they omit it). */
+  machNumber?: number;
+  transonic?: TransonicBand;
+}
+
+/** Optional context for the richer page-2 columns. Omitted by the in-scope strip
+ *  and the debug DropTable, which don't show Mach/transonic. */
+export interface DopeRowContext {
+  /** Speed of sound (m/s) for the row's atmosphere — enables the Mach/transonic
+   *  fields. From `engine-bridge` `speedOfSound(module, atmosphere)`. */
+  speedOfSoundMps?: number;
 }
 
 /** Format one solved trajectory row (`engine-bridge.solveTrajectory` output)
  *  into the shared DOPE display fields. Pure — no store, no DOM. */
-export function formatDopeRow(row: TrajectoryRow): DopeRow {
+export function formatDopeRow(row: TrajectoryRow, ctx: DopeRowContext = {}): DopeRow {
+  const machNumber =
+    ctx.speedOfSoundMps && ctx.speedOfSoundMps > 0 ? row.velocityMps / ctx.speedOfSoundMps : undefined;
   return {
     rangeM: row.rangeM,
     rangeYd: metersToYards(row.rangeM),
@@ -50,5 +108,37 @@ export function formatDopeRow(row: TrajectoryRow): DopeRow {
     velocityMps: row.velocityMps,
     velocityFps: mpsToFps(row.velocityMps),
     timeOfFlightS: row.timeOfFlightS,
+    energyJ: row.energyJ,
+    energyFtLb: joulesToFootPounds(row.energyJ),
+    machNumber,
+    transonic: machNumber === undefined ? undefined : transonicBand(machNumber),
   };
+}
+
+/** A come-up-table row plus whether it's past the cartridge's effective range. */
+export interface ComeUpDisplayRow extends DopeRow {
+  beyondEffective: boolean;
+}
+
+/**
+ * Assemble the come-up reference table: map each candidate station onto its solved
+ * row, formatted, tagged with its beyond-effective flag — stopping ONE ROW PAST the
+ * transonic→subsonic wall (include the first subsonic station, then break) so the
+ * table shows where the cartridge runs out without trailing off into deep-subsonic
+ * lob. `ctx.speedOfSoundMps` must be supplied or nothing is classified as subsonic
+ * and the table runs to the last station. Pure. */
+export function assembleComeUp(
+  solvedTable: readonly TrajectoryRow[],
+  stations: readonly ComeUpStation[],
+  ctx: DopeRowContext = {},
+): ComeUpDisplayRow[] {
+  const out: ComeUpDisplayRow[] = [];
+  for (const st of stations) {
+    const r = nearestRow(solvedTable, st.stationM);
+    if (!r) continue;
+    const dr = formatDopeRow({ ...r, rangeM: st.stationM }, ctx);
+    out.push({ ...dr, beyondEffective: st.beyondEffective });
+    if (dr.transonic === 'subsonic') break; // include the first subsonic row, then stop
+  }
+  return out;
 }

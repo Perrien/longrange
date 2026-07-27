@@ -96,10 +96,19 @@ export function solveGear(module: BtkModule, input: GearSolveInput): GearSolveRe
     input.rifleRanges,
     input.lotRanges,
   );
+  // The believed (come-up) solve. Box values UNLESS the lot carries effective
+  // params (D15): a chronograph sets effective MV, a confirmed hold sets effective
+  // BC (later); Replenish may carry them forward as provisional. Whichever are
+  // present override box here so the player's DOPE reflects what they've measured.
   const believed = believedLoad(input.lot.catalogId);
+  const eff = input.lot.effective;
+  const believedMv = eff?.mvMps ?? believed.muzzleVelocityMps;
+  const believedBc = eff?.bc ?? believed.bc;
   const believedLoadWithSpin: Load = {
     ...believed,
-    spinRateRadPerSec: spinRateFromTwist(believed.muzzleVelocityMps, twistM),
+    muzzleVelocityMps: believedMv,
+    bc: believedBc,
+    spinRateRadPerSec: spinRateFromTwist(believedMv, twistM),
   };
 
   const opts = {

@@ -19,7 +19,7 @@ import { yardsToMeters } from '../units';
 import type { ShotResult } from '../game/shot';
 import type { AmmoLot, RifleInstance, PlayerZero, DopeNode, ChronoSummary } from '../persistence';
 import { upsertNode, removeNode, pruneNodesForRifle, pruneNodesForLot } from '../game/dope-book';
-import { mergeChronoString, pruneChronoForRifle, pruneChronoForLot } from '../game/chrono';
+import { mergeChronoString, findChronoSummary, pruneChronoForRifle, pruneChronoForLot } from '../game/chrono';
 import {
   buildAmmoLot,
   buildRifleInstance,
@@ -305,6 +305,11 @@ export interface GameStore {
   acquireRifle(catalogId: string, opts?: Partial<AcquireOptions>): string;
   /** Acquire an ammo lot from a catalog load id (same semantics as acquireRifle). */
   acquireLot(catalogId: string, opts?: Partial<AcquireOptions>): string;
+  /** Consume one round for a fired shot (P2): +1 to the rifle's `lifetimeShotCount`,
+   *  −1 (floored at 0) from the lot's `roundsRemaining`, in one atomic set. Called by
+   *  the fire paths on every shot fired with real gear (chrono shots included). No-op
+   *  for an unknown rifle/lot id (e.g. the box-true fallback with no owned lot). */
+  consumeRound(rifleId: string, lotId: string): void;
   /** Set the active rifle instance (by record id, or null to clear). */
   selectRifle(instanceId: string | null): void;
   /** Set the active ammo lot (by record id, or null to clear). */
@@ -316,6 +321,14 @@ export interface GameStore {
   deleteRifle(instanceId: string): void;
   /** Remove an owned ammo lot (same semantics as deleteRifle). */
   deleteLot(lotId: string): void;
+  /** Replenish a lot (P4): append a NEW lot of the same ammo (fresh hidden draws,
+   *  new `[A-Z][0-9][0-9]` code, full round count). `carryForward` copies the
+   *  source lot's discovered MV/BC into the new lot as **provisional** (unverified
+   *  until this lot is chronographed / hold-confirmed, D15); false starts it on box.
+   *  If the source lot was the active one, the new lot becomes active (seamless
+   *  continue when a lot runs dry). Returns the new lot's id, or null if the source
+   *  is unknown. */
+  replenishLot(sourceLotId: string, carryForward: boolean): string | null;
   /** Store the confirmed zero for a rifle instance (task 2.3, D5/D6): writes its
    *  `playerZero` (elevation/windage correction + the SI distance it was confirmed
    *  at). Persists via the existing inventory→save wiring. No-op for an unknown id. */
@@ -368,7 +381,18 @@ export interface GameStore {
   applyChrono(chrono: ChronoState): void;
 }
 
-export const useGameStore = create<GameStore>()((set) => ({
+/** Set a lot's effective MV from a chronograph average (D15 lever 1, chrono → MV).
+ *  Preserves any existing BC side; a lot with no `effective` yet gets `bcSource:
+ *  'box'`. Pure — returns a new array. */
+function withLotEffectiveMv(lots: AmmoLot[], lotId: string, avgMps: number): AmmoLot[] {
+  return lots.map((l) =>
+    l.id === lotId
+      ? { ...l, effective: { ...(l.effective ?? { bcSource: 'box' as const }), mvMps: avgMps, mvSource: 'chrono' as const } }
+      : l,
+  );
+}
+
+export const useGameStore = create<GameStore>()((set, get) => ({
   session: defaultSession(),
   settings: defaultSettings(),
   score: defaultScore(),
@@ -510,6 +534,7 @@ export const useGameStore = create<GameStore>()((set) => ({
       rng: opts?.rng ?? cryptoRng(),
       id,
       catalogVersion: opts?.catalogVersion,
+      acquiredAt: opts?.acquiredAt ?? Date.now(),
     });
     set((s) => ({ inventory: { ...s.inventory, rifles: [...s.inventory.rifles, instance] } }));
     return id;
@@ -517,12 +542,70 @@ export const useGameStore = create<GameStore>()((set) => ({
 
   acquireLot: (catalogId, opts) => {
     const id = opts?.id ?? newId('lot');
+    // Generate the lot's [A-Z][0-9][0-9] code unique against the ones already owned.
+    const existingLotNumbers = new Set(
+      get().inventory.ammoLots.map((l) => l.lotNumber).filter((n): n is string => typeof n === 'string'),
+    );
     const lot = buildAmmoLot(catalogId, {
       rng: opts?.rng ?? cryptoRng(),
       id,
       catalogVersion: opts?.catalogVersion,
+      acquiredAt: opts?.acquiredAt ?? Date.now(),
+      existingLotNumbers,
     });
     set((s) => ({ inventory: { ...s.inventory, ammoLots: [...s.inventory.ammoLots, lot] } }));
+    return id;
+  },
+
+  consumeRound: (rifleId, lotId) =>
+    set((s) => ({
+      inventory: {
+        ...s.inventory,
+        rifles: s.inventory.rifles.map((r) =>
+          r.id === rifleId ? { ...r, lifetimeShotCount: (r.lifetimeShotCount ?? 0) + 1 } : r,
+        ),
+        ammoLots: s.inventory.ammoLots.map((l) =>
+          l.id === lotId ? { ...l, roundsRemaining: Math.max(0, (l.roundsRemaining ?? 0) - 1) } : l,
+        ),
+      },
+    })),
+
+  replenishLot: (sourceLotId, carryForward) => {
+    const src = get().inventory.ammoLots.find((l) => l.id === sourceLotId);
+    if (!src) return null;
+    const id = newId('lot');
+    const existingLotNumbers = new Set(
+      get().inventory.ammoLots.map((l) => l.lotNumber).filter((n): n is string => typeof n === 'string'),
+    );
+    // A new physical lot: fresh hidden draws (its OWN true MV/BC), new code, full count.
+    const base = buildAmmoLot(src.catalogId, {
+      rng: cryptoRng(),
+      id,
+      catalogVersion: src.catalogVersion,
+      acquiredAt: Date.now(),
+      existingLotNumbers,
+    });
+    const se = src.effective;
+    const carry = carryForward && !!se && (se.mvMps != null || se.bc != null);
+    const lot: AmmoLot = carry
+      ? {
+          ...base,
+          effective: {
+            ...(se!.mvMps != null ? { mvMps: se!.mvMps } : {}),
+            ...(se!.bc != null ? { bc: se!.bc } : {}),
+            mvSource: 'provisional',
+            bcSource: 'provisional',
+          },
+        }
+      : base;
+    set((s) => ({
+      inventory: {
+        ...s.inventory,
+        ammoLots: [...s.inventory.ammoLots, lot],
+        // Continue seamlessly if the source lot was active (e.g. it just ran dry).
+        activeLotId: s.inventory.activeLotId === sourceLotId ? id : s.inventory.activeLotId,
+      },
+    }));
     return id;
   },
 
@@ -629,12 +712,19 @@ export const useGameStore = create<GameStore>()((set) => ({
         };
       }
       // Gear switched with an in-progress string → commit it, then start fresh.
-      const summaries =
-        cur && cur.readings.length
-          ? mergeChronoString(s.chrono.summaries, cur.rifleId, cur.lotId, cur.readings, new Date().toISOString())
-          : s.chrono.summaries;
+      const hadString = !!(cur && cur.readings.length);
+      const summaries = hadString
+        ? mergeChronoString(s.chrono.summaries, cur!.rifleId, cur!.lotId, cur!.readings, new Date().toISOString())
+        : s.chrono.summaries;
+      // The committed pairing's lot now has a measured MV → its effective MV (D15
+      // lever 1), so the believed DOPE/come-up recomputes off the chrono, not box.
+      const committed = hadString ? findChronoSummary(summaries, cur!.rifleId, cur!.lotId) : undefined;
+      const ammoLots = committed
+        ? withLotEffectiveMv(s.inventory.ammoLots, cur!.lotId, committed.avgMps)
+        : s.inventory.ammoLots;
       return {
         chrono: { ...s.chrono, summaries, current: { rifleId, lotId, readings: [mps] } },
+        inventory: { ...s.inventory, ammoLots },
       };
     }),
 
@@ -642,12 +732,16 @@ export const useGameStore = create<GameStore>()((set) => ({
     set((s) => {
       const cur = s.chrono.current;
       if (!cur || cur.readings.length === 0) return s;
+      const summaries = mergeChronoString(s.chrono.summaries, cur.rifleId, cur.lotId, cur.readings, nowIso);
+      // Chrono → effective MV (D15 lever 1): the come-up now solves off the measured
+      // average, not box.
+      const committed = findChronoSummary(summaries, cur.rifleId, cur.lotId);
+      const ammoLots = committed
+        ? withLotEffectiveMv(s.inventory.ammoLots, cur.lotId, committed.avgMps)
+        : s.inventory.ammoLots;
       return {
-        chrono: {
-          ...s.chrono,
-          summaries: mergeChronoString(s.chrono.summaries, cur.rifleId, cur.lotId, cur.readings, nowIso),
-          current: null,
-        },
+        chrono: { ...s.chrono, summaries, current: null },
+        inventory: { ...s.inventory, ammoLots },
       };
     }),
 

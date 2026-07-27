@@ -32,6 +32,7 @@ import type { PaperBayScene, PaperTargetInstance } from '../range/paper-bay-scen
 import { getRangeDefinition } from '../range/ranges';
 import { solveGear, createGearScatter, gearZeroOffset } from '../engine-bridge/gear-solve';
 import { gearSolveContext, type GearSolveContext } from '../game/active-gear';
+import { recommendedZeroM } from '../game/zero-distance';
 import { WIND_MARKERS } from '../range/wind-markers-config';
 import { initWindMarkers, updateWindMarkers, disposeWindMarkers } from './WindMarkers';
 import { initMirage, renderSceneWithMirage, disposeMirage, MIRAGE_REFERENCE_DISTANCE_M } from './Mirage';
@@ -65,7 +66,7 @@ import { windToVec, averageEffectiveWind, requiredCorrectionRad } from '../game/
 import { superposeWind, gustScaleFor } from '../game/wind-superposition';
 import { GUST_REFERENCE_MPS } from '../game/wind-field-config';
 import { callImpact, type ImpactCall } from '../game/impact-call';
-import { getGameLoad, DEFAULT_GAME_LOAD_ID, SCOPE_ZERO_RANGE_M, SIGHT_HEIGHT_M } from '../game/loads';
+import { getGameLoad, DEFAULT_GAME_LOAD_ID, DEFAULT_GAME_LOAD_CARTRIDGE_ID, SIGHT_HEIGHT_M } from '../game/loads';
 import {
   clockToDeg,
   degToClock,
@@ -144,10 +145,12 @@ export function ScopeView({
   onOpenMenu,
   onOpenLoadout,
   onGoHome,
+  onOpenDopeBook,
 }: {
   onOpenMenu?: () => void;
   onOpenLoadout?: () => void;
   onGoHome?: () => void;
+  onOpenDopeBook?: () => void;
 } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const reticleRef = useRef<HTMLCanvasElement>(null);
@@ -196,6 +199,14 @@ export function ScopeView({
   // bay, so it keys off `targetKind` rather than `sceneType === 'sight-in'`.
   // See `range/paper-bay-scene.ts` and plan §7.2.
   const isSightInHud = rangeDef.targetKind === 'paper';
+  // Permission to STORE a zero here (DOPE-first plan, step 1): a distinct concept
+  // from the paper-grid interface above. `targetKind === 'paper'` decides whether
+  // the read-the-grid HUD renders; `zeroable` decides whether Confirm Zero may
+  // commit a `playerZero`. Today every paper bay is zeroable so they coincide,
+  // but keeping them separate is what lets field-zeroing land on a `zeroable`
+  // steel range later with no gate refactor (the confirmZero() store action is
+  // already range-agnostic).
+  const canZero = rangeDef.zeroable;
   // Test Range is a sandbox, not an engagement — no commit step, no shot-count
   // limit (the gong auto-commits with an unlimited budget on scene load).
   const isTestRangeHud = rangeDef.sceneType === 'test-range';
@@ -203,6 +214,10 @@ export function ScopeView({
   // whether Confirm can store a zero.
   const inventory = useGameStore((s) => s.inventory);
   const activeRifle = inventory.rifles.find((r) => r.id === inventory.activeRifleId) ?? null;
+  const activeLot = inventory.ammoLots.find((l) => l.id === inventory.activeLotId) ?? null;
+  // Out of rounds (P2b): only bites with real gear selected — the box-true
+  // fallback (no owned lot) is never round-gated. Blocks FIRE + labels it EMPTY.
+  const outOfRounds = !!activeLot && (activeLot.roundsRemaining ?? 0) <= 0;
   // Running group (task 2.3d, D5): the engaged target + shot count for the
   // read-the-grid HUD (the centroid marker itself is drawn on the target face).
   const [sightInGroup, setSightInGroup] = useState<{
@@ -361,6 +376,13 @@ export function ScopeView({
       ...gameLoad.load,
       spinRateRadPerSec: spinRateFromTwist(gameLoad.load.muzzleVelocityMps, gameLoad.twistM),
     };
+    // Box-true fallback zero (no active rifle+lot): the recommended zero for the
+    // default load's cartridge, read in the active unit — the DOPE-first plan's
+    // (step 1) replacement for the retired 300-yd SCOPE_ZERO_RANGE_M test
+    // constant. The gear path below zeroes off ctx.zeroRangeM (the rifle's stored
+    // playerZero, else the cartridge default) instead, so this only bites when
+    // there is no gear at all.
+    const fallbackZeroRangeM = recommendedZeroM(DEFAULT_GAME_LOAD_CARTRIDGE_ID, store().settings.unitsPrimary);
     let engineModule: BtkModule | null = null;
     let speedOfSoundMps = 340.3; // ISA default until the engine reports it
     // Cached once when the engine loads (task 1.7a) — avoids re-querying (and
@@ -398,7 +420,7 @@ export function ScopeView({
     // with its TRUE dispersion, and passes the rifle's zero offset + stored
     // player zero into resolveShot — an unzeroed rifle visibly misses. With no
     // gear (or a stale catalog id), the box-true fallback keeps Increment-1
-    // behaviour identical (getGameLoad + SCOPE_ZERO_RANGE_M, no zero error).
+    // behaviour (getGameLoad + fallbackZeroRangeM, no zero error).
     function steelGearCtx(): GearSolveContext | null {
       const inv = store().inventory;
       const rifle = inv.rifles.find((r) => r.id === inv.activeRifleId);
@@ -540,7 +562,7 @@ export function ScopeView({
       let s = zeroSolveCache.get(rangeM);
       if (!s) {
         const table = solveTrajectory(engineModule!, solveLoad, ISA_ATMOSPHERE, { x: 0, y: 0, z: 0 }, {
-          zeroRangeM: SCOPE_ZERO_RANGE_M,
+          zeroRangeM: fallbackZeroRangeM,
           maxRangeM: rangeM,
           stepM: rangeM,
           sightHeightM: SIGHT_HEIGHT_M,
@@ -567,7 +589,7 @@ export function ScopeView({
       const zero = zeroWindSolveAt(rangeM);
       const meanVec = windToVec(wind.speedMps, wind.directionDeg);
       const fieldTable = solveTrajectoryField(engineModule!, solveLoad, ISA_ATMOSPHERE, meanVec, field, {
-        zeroRangeM: SCOPE_ZERO_RANGE_M,
+        zeroRangeM: fallbackZeroRangeM,
         maxRangeM: rangeM,
         stepM: rangeM,
         sightHeightM: SIGHT_HEIGHT_M,
@@ -621,7 +643,7 @@ export function ScopeView({
         const windVec = windToVec(wind.speedMps, wind.directionDeg);
         // Gear → the TRUE trajectory zeroed at the rifle's stored zero (else the
         // cartridge default — ctx.zeroRangeM); box fallback → the Increment-1
-        // solve at SCOPE_ZERO_RANGE_M (its remaining role, task 2.3e).
+        // solve at the fallback recommended zero (its remaining role, task 2.3e).
         table = ctx
           ? solveGear(engineModule!, {
               rifle: ctx.rifle,
@@ -636,7 +658,7 @@ export function ScopeView({
               sightHeightM: SIGHT_HEIGHT_M,
             }).trueTable
           : solveTrajectory(engineModule!, solveLoad, ISA_ATMOSPHERE, windVec, {
-              zeroRangeM: SCOPE_ZERO_RANGE_M,
+              zeroRangeM: fallbackZeroRangeM,
               maxRangeM: rangeM,
               stepM: rangeM / TRACE_SAMPLES,
               sightHeightM: SIGHT_HEIGHT_M,
@@ -799,6 +821,14 @@ export function ScopeView({
       // Gate on budget (task 1.6c, D2): ends the 1.4c dry-fire allowance — no
       // shot, no recoil, once the budget for the current target is spent.
       if (store().session.shotBudget <= 0) return;
+      // Gate on ammo (P2b): a real lot at 0 rounds can't fire (box fallback with no
+      // owned lot is unaffected). The FIRE button also disables, but guard here too
+      // so any fire entry point is blocked.
+      {
+        const inv = store().inventory;
+        const lotNow = inv.ammoLots.find((l) => l.id === inv.activeLotId);
+        if (lotNow && (lotNow.roundsRemaining ?? 0) <= 0) return;
+      }
       // Sample the aim BEFORE this shot's recoil kick (0.9: the bullet leaves as
       // the trigger breaks). Wobble is part of the aim; the kick below is the
       // consequence, applied after the shot is resolved.
@@ -847,6 +877,9 @@ export function ScopeView({
           });
           store().recordShot(result);
           store().decrementBudget();
+          // Deplete the lot + tally the rifle's lifetime count (P2b). Gear only —
+          // the box fallback has no owned lot to consume.
+          if (gearCtx) store().consumeRound(gearCtx.rifle.id, gearCtx.lot.id);
 
           // Chronograph (task 2.4e, D10): while deployed, log THIS shot's true
           // muzzle velocity (the engine's per-shot draw) for the active rifle+lot.
@@ -1096,6 +1129,13 @@ export function ScopeView({
     }
 
     function fireSightIn() {
+      // Gate on ammo (P2b): a real lot at 0 rounds can't fire (before the try, so
+      // no recoil either). Box fallback (no owned lot) is unaffected.
+      {
+        const inv = store().inventory;
+        const lotNow = inv.ammoLots.find((l) => l.id === inv.activeLotId);
+        if (lotNow && (lotNow.roundsRemaining ?? 0) <= 0) return;
+      }
       // Guard the whole shot resolution so a solve error can't kill the recoil.
       try {
         if (engineModule && sightIn) {
@@ -1180,6 +1220,8 @@ export function ScopeView({
             const cy = g.reduce((s, p) => s + p.dy, 0) / g.length;
             sightIn.setGroupCentroid(target.stationIndex, target.position.x + cx, target.position.y + cy);
             setSightInGroup({ shots: g.length, nominalDistance: target.nominalDistance });
+            // Deplete the lot + tally the rifle's lifetime count (P2b) — gear only.
+            if (rifle && lot) store().consumeRound(rifle.id, lot.id);
           }
         }
       } catch (err) {
@@ -1226,7 +1268,7 @@ export function ScopeView({
     // The store action does compose + subtract + turret reset atomically.
     confirmZeroRef.current = () => {
       const inv = store().inventory;
-      if (!sightIn || engagedStation < 0 || !inv.activeRifleId) return;
+      if (!rangeDefinition.zeroable || !sightIn || engagedStation < 0 || !inv.activeRifleId) return;
       const target = sightIn.targets[engagedStation];
       if (!target) return;
       let required = { elevRad: 0, windRad: 0 };
@@ -1535,7 +1577,7 @@ export function ScopeView({
           gear-swap overlay (non-destructive — the session survives); Settings opens
           the 2.1d Settings overlay. Only rendered in the real player flow (App
           passes the props). */}
-      {(onOpenMenu || onOpenLoadout || onGoHome) && (
+      {(onOpenMenu || onOpenLoadout || onGoHome || onOpenDopeBook) && (
         <div
           style={{
             position: 'absolute',
@@ -1584,6 +1626,27 @@ export function ScopeView({
               }}
             >
               Loadout
+            </button>
+          )}
+          {onOpenDopeBook && (
+            <button
+              onClick={onOpenDopeBook}
+              aria-label="DOPE book"
+              title="DOPE book"
+              style={{
+                fontFamily: 'monospace',
+                fontSize: 13,
+                color: '#e8eef4',
+                background: 'rgba(26,34,44,0.75)',
+                border: '1px solid rgba(232,238,244,0.4)',
+                borderRadius: 6,
+                padding: '6px 10px',
+                cursor: 'pointer',
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+              }}
+            >
+              DOPE
             </button>
           )}
           {onOpenMenu && (
@@ -1800,7 +1863,7 @@ export function ScopeView({
             )}
             {windState.speedMps > 0.5 && <div style={{ color: '#e8c95a' }}>zero in calm conditions</div>}
             <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
-              <button onClick={() => confirmZeroRef.current()} disabled={!activeRifle || !sightInGroup}>
+              <button onClick={() => confirmZeroRef.current()} disabled={!activeRifle || !sightInGroup || !canZero}>
                 Confirm zero
               </button>
               <button onClick={() => setInspectOpen(true)} disabled={!sightInGroup}>
@@ -1874,7 +1937,7 @@ export function ScopeView({
             {/* DOPE side panel (task 1.6d, D3): closed by default, stacked in this
                 same left-margin column so it can never overlap the scope glass or
                 the dial/fire controls — see DopePanel.tsx. */}
-            <DopePanel />
+            <DopePanel onOpenBook={onOpenDopeBook} />
 
             {/* Chronograph (task 2.4e, D10): deploy to log a measured MV on every
                 shot; shows measured avg/SD/ES vs the box MV. Same stacked column. */}
@@ -1923,9 +1986,10 @@ export function ScopeView({
       <button
         onPointerDown={(e) => {
           e.preventDefault();
-          fireRef.current();
+          if (!outOfRounds) fireRef.current();
         }}
         onContextMenu={(e) => e.preventDefault()}
+        disabled={outOfRounds}
         style={{
           touchAction: 'none',
           WebkitUserSelect: 'none',
@@ -1937,14 +2001,32 @@ export function ScopeView({
           height: 84,
           borderRadius: '50%',
           border: '3px solid #e8eef4',
-          background: 'rgba(180,40,40,0.85)',
+          background: outOfRounds ? 'rgba(120,120,120,0.6)' : 'rgba(180,40,40,0.85)',
           color: '#fff',
           fontFamily: 'monospace',
-          fontSize: 16,
+          fontSize: outOfRounds ? 13 : 16,
         }}
       >
-        FIRE
+        {outOfRounds ? 'EMPTY' : 'FIRE'}
       </button>
+      {outOfRounds && (
+        <div
+          style={{
+            position: 'absolute',
+            right: 'calc(24px + env(safe-area-inset-right))',
+            bottom: 'calc(112px + env(safe-area-inset-bottom))',
+            width: 84,
+            textAlign: 'center',
+            fontFamily: 'monospace',
+            fontSize: 10,
+            color: '#e8c95a',
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+          }}
+        >
+          out of rounds
+        </div>
+      )}
       {/* Inspect (D10): a read-only head-on close-up of the engaged target
           (grid + splats + group centroid) — dismiss to return to the scope. */}
       {inspectOpen && (

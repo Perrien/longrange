@@ -13,6 +13,7 @@ import {
   pruneNodesForRifle,
   pruneNodesForLot,
   ladderStationsM,
+  comeUpStationsM,
   TOL_RAD,
   type DopeNode,
 } from './dope-book';
@@ -246,5 +247,31 @@ describe('ladderStationsM (D7)', () => {
         expect(s).toBeLessThanOrEqual(capM + 1e-9);
       }
     }
+  });
+});
+
+describe('comeUpStationsM (come-up reference table, past effective range)', () => {
+  it('its in-range portion is exactly the shootable ladder', () => {
+    const inRange = comeUpStationsM(false, 'MOA', 1000, 2000)
+      .filter((s) => !s.beyondEffective)
+      .map((s) => s.stationM);
+    expect(inRange).toEqual(ladderStationsM(false, 'MOA', 1000));
+  });
+
+  it('continues past effective range up to the hard max, tagged beyondEffective', () => {
+    const st = comeUpStationsM(false, 'MOA', 1000, 2000);
+    const beyond = st.filter((s) => s.beyondEffective).map((s) => s.stationM);
+    expect(beyond[0]).toBeCloseTo(yardsToMeters(1100), 6); // first station past 1000 yd
+    expect(st[st.length - 1].stationM).toBeCloseTo(yardsToMeters(2000), 6); // to the hard max
+    // every beyond station is strictly past the effective range
+    for (const m of beyond) expect(m).toBeGreaterThan(yardsToMeters(1000) + 1e-9);
+  });
+
+  it('honours the MIL station-unit cap for beyondEffective (.223: 500 m in-range, 600 m beyond)', () => {
+    const st = comeUpStationsM(false, 'MIL', 600, 1200);
+    const at500 = st.find((s) => Math.abs(s.stationM - 500) < 1e-6);
+    const at600 = st.find((s) => Math.abs(s.stationM - 600) < 1e-6);
+    expect(at500?.beyondEffective).toBe(false); // 500 m ≤ yardsToMeters(600)=548.6
+    expect(at600?.beyondEffective).toBe(true); // 600 m > 548.6
   });
 });
