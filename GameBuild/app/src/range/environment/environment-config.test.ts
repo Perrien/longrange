@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   cloudEdgeOpacity,
   generateCloudPlacements,
-  generateMountainPlacements,
+  generateRidgeProfile,
   generateScatterPlacements,
   generateTreePlacements,
   getCloudField,
@@ -18,7 +18,7 @@ describe('environment-config determinism', () => {
   it('same seed gives identical placement arrays', () => {
     expect(generateTreePlacements(CFG)).toEqual(generateTreePlacements(CFG));
     expect(generateScatterPlacements(CFG)).toEqual(generateScatterPlacements(CFG));
-    expect(generateMountainPlacements(CFG)).toEqual(generateMountainPlacements(CFG));
+    expect(generateRidgeProfile(CFG, 0)).toEqual(generateRidgeProfile(CFG, 0));
     expect(generateCloudPlacements(CFG)).toEqual(generateCloudPlacements(CFG));
   });
 
@@ -139,13 +139,18 @@ describe('placement bounds', () => {
     }
   });
 
-  it('mountains all clear the minimum ring distance', () => {
-    const mountains = generateMountainPlacements(CFG);
-    expect(mountains).toHaveLength(CFG.mountains.count);
-    for (const m of mountains) {
-      expect(m.z).toBeLessThanOrEqual(-CFG.mountains.distMinM);
-      expect(-m.z).toBeLessThanOrEqual(CFG.mountains.distMaxM);
-    }
+  it('ridge crests sit at their layer distance, across the full arc', () => {
+    CFG.ridges.layers.forEach((layer, i) => {
+      const crest = generateRidgeProfile(CFG, i);
+      expect(crest).toHaveLength(layer.segments);
+      for (const p of crest) {
+        // every sample is on the layer's arc, and downrange of the shooter
+        expect(Math.hypot(p.x, p.z)).toBeCloseTo(layer.distanceM, 6);
+        expect(p.z).toBeLessThan(0);
+        expect(p.y).toBeGreaterThanOrEqual(layer.heightMinM - 1e-9);
+        expect(p.y).toBeLessThanOrEqual(layer.heightMaxM + 1e-9);
+      }
+    });
   });
 
   it('clouds all sit inside their configured field box', () => {

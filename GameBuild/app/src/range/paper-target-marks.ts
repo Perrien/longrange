@@ -1,8 +1,13 @@
-// Sight-in hit marks (task 2.3c, D7/D9). A per-target "mark layer": a canvas
-// whose base is the target art, onto which each shot paints a bright-green disc
-// (radius = the bullet's radius mapped to the face) with a black outline, so
-// overlapping hits still show distinct edges. Independent of the steel
-// target-surface system (that chips paint on 3D steel; this is flat paper).
+// Paper target hit marks — shared by every paper bay (the original Zero Range and
+// the Wooded Zero Range). Renamed from `sight-in-marks.ts` on 2026-07-26: this
+// file never contained anything sight-in-specific, and the old name implied
+// otherwise once a second bay started using it.
+//
+// A per-target "mark layer": a canvas whose base is the target art, onto which
+// each shot paints a bright-green disc (radius = the bullet's radius mapped to
+// the face) with a black outline, so overlapping hits still show distinct edges.
+// Independent of the steel target-surface system (that chips paint on 3D steel;
+// this is flat paper).
 //
 // The face is created EAGERLY (before the art has rasterized) so a shot always
 // leaves a visible mark — the base starts white and the art is swapped in via
@@ -51,10 +56,19 @@ export interface TargetFace {
  * the face can exist (white) before the art rasterizes and receive it later via
  * `setArt`.
  */
-export function createTargetFace(sizePx: number, art?: CanvasImageSource): TargetFace {
+export function createTargetFace(
+  sizePx: number,
+  art?: CanvasImageSource,
+  /** Canvas height in px. Defaults to `sizePx` (square — every paper face).
+   *  The Wooded Zero Range's BACKER BOARD is a mark surface too (D16: an
+   *  off-the-shelf rifle can miss the paper entirely on its first shot, and a
+   *  miss that draws nothing leaves the player no way to walk the correction
+   *  in), and the board is taller than it is wide. */
+  heightPx: number = sizePx,
+): TargetFace {
   const canvas = document.createElement('canvas');
   canvas.width = sizePx;
-  canvas.height = sizePx;
+  canvas.height = heightPx;
   const ctx = canvas.getContext('2d')!;
 
   let base: CanvasImageSource | null = art ?? null;
@@ -66,12 +80,14 @@ export function createTargetFace(sizePx: number, art?: CanvasImageSource): Targe
 
   const drawBase = () => {
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, sizePx, sizePx);
-    if (base) ctx.drawImage(base, 0, 0, sizePx, sizePx);
+    ctx.fillRect(0, 0, sizePx, heightPx);
+    if (base) ctx.drawImage(base, 0, 0, sizePx, heightPx);
   };
   const drawDisc = (m: Mark) => {
     const x = m.u * sizePx;
-    const y = m.v * sizePx;
+    const y = m.v * heightPx;
+    // Disc radius is scaled off the WIDTH on both axes so a hole stays circular
+    // on a non-square face; `radiusFrac` is a fraction of the face width.
     const r = Math.max(MIN_MARK_PX, m.radiusFrac * sizePx);
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -84,7 +100,7 @@ export function createTargetFace(sizePx: number, art?: CanvasImageSource): Targe
   const drawCentroid = () => {
     if (!centroid) return;
     const x = centroid.u * sizePx;
-    const y = centroid.v * sizePx;
+    const y = centroid.v * heightPx;
     const r = sizePx * 0.03;
     ctx.strokeStyle = CENTROID_COLOR;
     ctx.lineWidth = Math.max(2, sizePx / 512);

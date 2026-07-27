@@ -1,5 +1,5 @@
 // PBR texture loading for the environment module (Stage 2 of
-// Design/Plans/test-range-environment-plan.md). Offline-first (build-plan
+// Design/archive/test-range-environment-plan.md). Offline-first (build-plan
 // hard constraint): the material renders immediately with `fallbackColor`, so
 // a slow/failed texture load (or a build that forgot to precache jpg — see
 // vite.config.ts) never blocks the scene or leaves it untextured-and-broken;

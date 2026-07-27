@@ -44,3 +44,37 @@ than as a live spec. `../feature-catalog.md`'s "Test Range" entry and
 `../execution/PROGRESS.md`'s Stage 1–4 rows are the authoritative record of what
 actually shipped; this file is the plan that was executed to get there.
 
+## Completed plan docs (archived 2026-07-26)
+
+Three more docs moved from `Design/Plans/` on completion — same reason as
+`test-range-environment-plan.md` above: **executed to completion, not
+superseded.**
+
+| File | What it was | Where the live record is |
+|---|---|---|
+| `mil-zero-range-plan.md` | The Wooded Zero Range — a fanned four-station paper bay at 25/50/100/200 shot from a low knoll, plus the first real upgrade pass on the shared environment module (low morning sun, near-field shadows, tree silhouette variety, ridgeline mountains, aerial-perspective fog, wind-driven canopy sway). Five stages, all built. | `../feature-catalog.md` §E "Wooded Zero Range"; `../execution/PROGRESS.md` "Wooded Zero Range" rows |
+| `2.4a-computed-dope-data-model.md` | Computed-DOPE nodes / confidence tiers / ladder rules + persistence. Pure data + rules; no UI. | `../execution/PROGRESS.md` row 2.4a |
+| `2.4e-chronograph.md` | Chronograph — records true per-shot muzzle velocity per rifle+lot, so the player's MV figure is an *estimate* that tightens with sample size. | `../execution/PROGRESS.md` row 2.4e |
+
+**Worth reading `mil-zero-range-plan.md` for, specifically:** it records several
+results that were expensive to derive and are easy to get wrong again —
+
+- shooter elevation above the targets is **ballistically free**
+  (`error ≈ g·H²/(4v₀²)`, *independent of target distance*), which is what let the
+  bay solve occlusion with a knoll instead of a wide target spread;
+- a yard is shorter than a metre at every nominal distance, so the **metric
+  layout's corridors are a strict superset of the imperial one's** — the world is
+  built once and both unit systems ride inside it;
+- the knoll needs a **short steep** forward face, not a tall one, or it grazes its
+  own 25 m sight line;
+- the sun must stay **behind the firing line**, or every target board is lit
+  edge-on — which silently defeats the no-berm board-contrast plan.
+
+It also keeps the superseded rules rather than deleting them (the
+constant-angular-size boards, the linear-fog tuning), because knowing *why* an
+approach was abandoned is the part that stops it being retried.
+
+⚠ Same caveat as above: relative links inside these files were written for
+`Design/Plans/` and are not updated — `../feature-catalog.md` now resolves
+differently. References to them from source comments and from `feature-catalog.md`
+/ `PROGRESS.md` WERE updated to the new `Design/archive/` paths.

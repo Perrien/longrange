@@ -1,11 +1,16 @@
-// Sight-in target face art (task 2.3c/2.3d). Two paths:
+// Paper target face art — shared by every paper bay (the original Zero Range and
+// the Wooded Zero Range). Renamed from `sight-in-target-texture.ts` on
+// 2026-07-26: nothing in here is specific to the sight-in range, and the old
+// name implied otherwise once a second bay started using it.
+//
+// Two paths:
 //  • `drawZeroingTarget` — draws the zeroing grid PROCEDURALLY (guaranteed to
 //    render on every browser; the immediate face + fallback).
-//  • `rasterizeSightInArt` — rasterizes the DELIVERED OK2A SVG (D7), swapped over
-//    the procedural grid once it loads (SightInScene), kept only if it succeeds.
+//  • `rasterizeZeroingArt` — rasterizes the DELIVERED OK2A SVG (D7), swapped over
+//    the procedural grid once it loads, kept only if it succeeds.
 //
-// Both produce the same 22-cell layout (1-unit border + 20×20 inner grid,
-// calibrated so one square ≈ 1 MOA at 100 yd / 0.2 MIL at 100 m — D5). The
+// Both produce the same 22-cell layout (1-unit border + 20x20 inner grid,
+// calibrated so one square ~= 1 MOA at 100 yd / 0.2 MIL at 100 m — D5). The
 // procedural draw exists because the delivered SVG (physical in/cm units) can
 // rasterize to a blank image on some WebKit builds; seeding procedurally first
 // means the target is never invisible.
@@ -89,17 +94,17 @@ function drawDiamond(ctx: CanvasRenderingContext2D, x: number, y: number, r: num
 // --- Delivered SVG art (D7) -------------------------------------------------
 // Rasterize the delivered `zeroing-target-<variant>.svg` (bundled in public/,
 // precached — §4.7) to a canvas. Used as the PREFERRED face art, swapped over the
-// procedural grid once it loads (SightInScene). Robust to WebKit's physical-unit
+// procedural grid once it loads. Robust to WebKit's physical-unit
 // quirk: fetch the SVG text, force the root width/height to pixels (the viewBox
 // keeps the artwork scaling), and rasterize via a blob URL. Rejects if the asset
 // can't be fetched/decoded, so the caller can keep the procedural fallback.
-export async function rasterizeSightInArt(
+export async function rasterizeZeroingArt(
   artVariant: 'moa' | 'mil',
   sizePx: number,
 ): Promise<HTMLCanvasElement> {
   const url = `${import.meta.env.BASE_URL}zeroing-target-${artVariant}.svg`;
   const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`sight-in-target-texture: fetch ${url} → ${resp.status}`);
+  if (!resp.ok) throw new Error(`paper-target-texture: fetch ${url} → ${resp.status}`);
   let svgText = await resp.text();
   svgText = svgText.replace(
     /<svg([^>]*?)\swidth="[^"]*"([^>]*?)\sheight="[^"]*"/,
@@ -119,14 +124,14 @@ export async function rasterizeSightInArt(
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
       el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error(`sight-in-target-texture: failed to decode ${url}`));
+      el.onerror = () => reject(new Error(`paper-target-texture: failed to decode ${url}`));
       el.src = objectUrl;
     });
     const canvas = document.createElement('canvas');
     canvas.width = sizePx;
     canvas.height = sizePx;
     const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('sight-in-target-texture: no 2D context');
+    if (!ctx) throw new Error('paper-target-texture: no 2D context');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, sizePx, sizePx);
     ctx.drawImage(img, 0, 0, sizePx, sizePx);

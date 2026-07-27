@@ -24,7 +24,7 @@ describe('gearSolveContext (D2/D8)', () => {
     const ctx = gearSolveContext(rifle(), lot, 'MIL');
     expect(ctx.bulletDiameterM).toBe(believedLoad('65cm-match').diameterM);
     expect(ctx.bulletMassKg).toBe(believedLoad('65cm-match').massKg);
-    expect(ctx.rifleRanges.zeroH).toBeDefined();
+    expect(ctx.rifleRanges.zeroOffset).toBeDefined();
     expect(ctx.lotRanges.bc).toBeDefined();
   });
 

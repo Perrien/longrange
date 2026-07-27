@@ -21,7 +21,7 @@
 // call — the Store UI never does.
 import type { Load } from '../engine-bridge/types';
 import type { LotTruthRanges, RifleTruthRanges } from './hidden-truth';
-import { moaToRad, milToRad } from '../units/angle';
+import { moaToRad } from '../units/angle';
 import { inchesToMeters } from '../units/length';
 import catalogData from './catalog.data.json';
 
@@ -176,8 +176,21 @@ export function catalogTwistM(rifleCatalogId: string): number {
 
 // --- Adapters to the 2.1b hidden-truth model --------------------------------
 
-/** Hidden ranges for a rifle model (the tier's precision band + design-set zero
- *  offset). `mvOffset`/`zeroH`/`zeroV` are signed deltas centred on 0. */
+/**
+ * Raw off-the-shelf pointing error, 5–35 MOA (D16, LOCKED with owner 2026-07-26).
+ *
+ * Deliberately large: 5 MOA is ~1.3″ at 25 yd, 35 MOA is ~9.2″ at 25 yd and ~37″
+ * at 100 — off a normal target entirely, which is exactly WHY zeroing starts at
+ * 25. The floor of 5 MOA means a fresh rifle is never accidentally usable.
+ *
+ * This supersedes the previous `designSet.zeroOffsetSdMrad` (~1 MOA SD, drawn
+ * independently per axis). That value is left in the catalog data for provenance
+ * but is no longer read.
+ */
+export const RAW_ZERO_OFFSET_RANGE = { minRad: moaToRad(5), maxRad: moaToRad(35) };
+
+/** Hidden ranges for a rifle model (the tier's precision band + the D16 raw zero
+ *  offset). `mvOffset` is a signed delta centred on 0. */
 export function catalogRifleRanges(rifleCatalogId: string): RifleTruthRanges {
   const m = getRifleModel(rifleCatalogId);
   const c = rawCartridge(m.cartridgeId);
@@ -186,11 +199,9 @@ export function catalogRifleRanges(rifleCatalogId: string): RifleTruthRanges {
   // unit). Using it raw made a fresh rifle's bore misalignment ~1000× too large
   // (tens of degrees → shots metres off at 100 m); milToRad fixes it (~0.29 mrad
   // ≈ 1 MOA ≈ 9 cm at 100 m, matching the plan's fit check).
-  const zeroSd = milToRad(catalogData.designSet.zeroOffsetSdMrad);
   return {
     mvOffset: { nominal: 0, sd: c.rifle.barrelToBarrelMvSpreadMps },
-    zeroH: { nominal: 0, sd: zeroSd },
-    zeroV: { nominal: 0, sd: zeroSd },
+    zeroOffset: RAW_ZERO_OFFSET_RANGE,
     inherentPrecision: { nominal: moaToRad(prec.nom), sd: moaToRad(prec.sd) },
   };
 }

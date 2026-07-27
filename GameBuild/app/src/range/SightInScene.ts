@@ -4,9 +4,10 @@
 // (50 left, 100 centre, 200 right) on simple ~1 m racks with a backstop behind
 // each. No swing, no reaction, no berm system (D4) — just a static bay.
 //
-// The target FACE art is delivered SVG (rasterized once via sight-in-target-
-// texture), then each target gets its own mark layer (sight-in-marks) so hits
-// paint independently and a single target can be cleaned (D9). The face texture
+// The target FACE art is delivered SVG (rasterized once via `paper-target-
+// texture`), then each target gets its own mark layer (`paper-target-marks`) so
+// hits paint independently and a single target can be cleaned (D9). Both of those
+// modules are shared with the Wooded Zero Range. The face texture
 // loads asynchronously; the quads render white until `whenReady` resolves, then
 // the art + mark layer are swapped in.
 //
@@ -16,8 +17,9 @@
 
 import * as THREE from 'three';
 import type { SightInLayout, SightInStation } from './sight-in-config';
-import { drawZeroingTarget, rasterizeSightInArt } from './sight-in-target-texture';
-import { createTargetFace, type TargetFace } from './sight-in-marks';
+import { drawZeroingTarget, rasterizeZeroingArt } from './paper-target-texture';
+import { createTargetFace, type TargetFace } from './paper-target-marks';
+import type { PaperBayScene, PaperTargetInstance } from './paper-bay-scene';
 
 const SKY_COLOR = 0x9fc4e8;
 const GRASS_COLOR = 0x7d9450;
@@ -27,22 +29,16 @@ const POST_COLOR = 0x8b7355; // wooden rack post
 const POST_RADIUS_M = 0.03;
 const ART_RASTER_PX = 2048;
 
-/** One placed paper target, exposed for the shot loop (2.3c2) to aim + hit-test. */
-export interface SightInTargetInstance {
-  stationIndex: number;
-  distanceM: number;
-  nominalDistance: number;
-  /** Physical square side of the face (m). */
-  sizeM: number;
-  /** World-space centre of the target face. */
-  position: THREE.Vector3;
-}
+/** Shooter eye height on this bay (m) — flat ground, so it matches the Range A
+ *  look-around. A bay with an elevated firing point reports its own value. */
+const SIGHT_IN_EYE_HEIGHT_M = 1.6;
 
-export class SightInScene {
-  readonly targets: SightInTargetInstance[] = [];
+export class SightInScene implements PaperBayScene {
+  readonly targets: PaperTargetInstance[] = [];
   /** Resolves when the delivered art has been swapped in (or the load failed and
    *  the procedural grid is kept). Faces are usable immediately regardless. */
   readonly whenReady: Promise<void>;
+  readonly eyeHeightM = SIGHT_IN_EYE_HEIGHT_M;
 
   private readonly scene: THREE.Scene;
   private readonly disposables: Array<{ dispose(): void }> = [];
@@ -70,11 +66,16 @@ export class SightInScene {
     this.whenReady = this.loadDeliveredArt();
   }
 
+  /** How far downrange this bay's ground extends (m) — `PaperBayScene`. */
+  get laneLengthM(): number {
+    return this.layout.ground.lengthM;
+  }
+
   /** Rasterize the delivered SVG and swap it into every face; on failure keep
    *  the procedural grid the faces were seeded with. */
   private async loadDeliveredArt(): Promise<void> {
     try {
-      const art = await rasterizeSightInArt(this.layout.artVariant, ART_RASTER_PX);
+      const art = await rasterizeZeroingArt(this.layout.artVariant, ART_RASTER_PX);
       for (const face of this.faces) face.setArt(art);
     } catch (err) {
       console.warn('sight-in: delivered art failed to rasterize; keeping procedural grid', err);

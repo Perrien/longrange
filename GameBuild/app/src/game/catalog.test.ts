@@ -2,6 +2,7 @@
 // well-formed for the 2.1b model, and its believed 6.5 CM box values match the
 // golden-vector oracle (D2 consistency). Pure data + mapping; no store/UI/engine.
 import { describe, expect, it } from 'vitest';
+import { moaToRad } from '../units/angle';
 import {
   AMMO_LOADS,
   CATALOG_VERSION,
@@ -62,8 +63,6 @@ describe('derived hidden-truth ranges (2.1b compatibility)', () => {
     for (const m of RIFLE_MODELS) {
       const r = catalogRifleRanges(m.catalogId);
       expect(near0(r.mvOffset.nominal)).toBe(true); // barrel offset ~ N(0, ·)
-      expect(near0(r.zeroH.nominal)).toBe(true);
-      expect(near0(r.zeroV.nominal)).toBe(true);
       expect(r.mvOffset.sd).toBeGreaterThan(0);
       nonNeg(r.inherentPrecision, `${m.catalogId} inherentPrecision`);
     }
@@ -105,15 +104,27 @@ describe('derived hidden-truth ranges (2.1b compatibility)', () => {
     }
   });
 
-  it('zero-offset SD is in RADIANS at ~1 MOA scale, not raw mrad (regression: 1000× unit bug)', () => {
-    // zeroOffsetSdMrad is 0.29 mrad ≈ 1 MOA ≈ 0.00029 rad. A fresh rifle's worst-
-    // case (±3σ) misalignment must stay a few cm at 100 m — NOT tens of degrees.
+  it('gives every rifle the D16 raw pointing error: 5-35 MOA, never a free zero', () => {
+    // Replaces the old ~1 MOA per-axis normal draw. The point of D16 is that a
+    // brand-new rifle is ALWAYS meaningfully off — an independent normal centred
+    // on zero regularly rolled a near-perfect rifle, which made "you must zero
+    // before the rifle is usable" only sometimes true.
+    const MOA = moaToRad(1);
+    for (const m of RIFLE_MODELS) {
+      const r = catalogRifleRanges(m.catalogId);
+      expect(r.zeroOffset.minRad / MOA).toBeCloseTo(5, 6);
+      expect(r.zeroOffset.maxRad / MOA).toBeCloseTo(35, 6);
+      expect(r.zeroOffset.minRad).toBeGreaterThan(0); // hard floor: never free
+    }
+  });
+
+  it('keeps the raw offset in RADIANS (regression: the 1000x mrad unit bug)', () => {
+    // The original bug read `zeroOffsetSdMrad` raw as radians, putting a fresh
+    // rifle tens of degrees off. Guard the magnitude, not the old field.
     const r = catalogRifleRanges('65cm-custom');
-    expect(r.zeroH.sd).toBeCloseTo(0.00029, 6);
-    expect(r.zeroV.sd).toBeCloseTo(0.00029, 6);
-    expect(r.zeroH.sd).toBeLessThan(0.001); // << 1 mrad; would be ~0.29 rad if unconverted
-    // ±3σ at 100 m is a handful of cm (on paper), not metres.
-    expect(3 * r.zeroV.sd * 100).toBeLessThan(0.15);
+    expect(r.zeroOffset.maxRad).toBeLessThan(0.02); // ~35 MOA = 0.0102 rad
+    // Worst case at 25 m is ~25 cm — big, but on the backer board, not in orbit.
+    expect(r.zeroOffset.maxRad * 25).toBeLessThan(0.30);
   });
 });
 

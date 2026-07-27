@@ -1,5 +1,5 @@
 // Terrain mesh for the environment module (Stage 2 of
-// Design/Plans/test-range-environment-plan.md). Displaces a plane through the
+// Design/archive/test-range-environment-plan.md). Displaces a plane through the
 // shared `makeTerrainSampler` height function so the lane, the tree/scatter
 // placements, and the rendered ground all agree on the same heights.
 

@@ -1,5 +1,5 @@
 // Tests for the Test Range placeholder config (Stage 1 of
-// Design/Plans/test-range-environment-plan.md). Pure data — node test env, no
+// Design/archive/test-range-environment-plan.md). Pure data — node test env, no
 // Three.js/DOM.
 
 import { describe, it, expect } from 'vitest';

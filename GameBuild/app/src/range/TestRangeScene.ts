@@ -1,4 +1,4 @@
-// Test Range scene builder (Stage 1-2 of Design/Plans/test-range-environment-plan.md)
+// Test Range scene builder (Stage 1-2 of Design/archive/test-range-environment-plan.md)
 // — a minimal single-rack steel world: one 12" gong at 100 yd, built so the
 // existing shot loop (commit, fire, swing, chains, splat, ping, score, bullet
 // trace, dust puffs) works with zero changes to ScopeView's fireSteel /
@@ -33,6 +33,12 @@ export class TestRangeScene implements SteelSceneApi {
   readonly chainRest: THREE.Matrix4[] = [];
   private readonly scene: THREE.Scene;
   private readonly env: EnvironmentHandle;
+
+  /** Whether this scene's environment configured a shadow map — ScopeView reads
+   *  it to enable `renderer.shadowMap` (a renderer-level flag, Stage 3). */
+  get usesShadows(): boolean {
+    return this.env.usesShadows;
+  }
   private readonly disposables: Array<{ dispose(): void }> = [];
   private readonly objects: THREE.Object3D[] = [];
 
@@ -177,8 +183,13 @@ export class TestRangeScene implements SteelSceneApi {
 
   /** Delegates to the environment handle (Stage 4 adds cloud drift there;
    *  a no-op until then). */
-  update(dt: number, timeS: number, windVec: { x: number; y: number; z: number }): void {
-    this.env.update(dt, timeS, windVec);
+  update(
+    dt: number,
+    timeS: number,
+    windVec: { x: number; y: number; z: number },
+    sampleWindAt?: (p: { x: number; y: number; z: number }) => { x: number; y: number; z: number },
+  ): void {
+    this.env.update(dt, timeS, windVec, sampleWindAt);
   }
 
   // --- bookkeeping ----------------------------------------------------------

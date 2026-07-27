@@ -26,7 +26,10 @@ import { RANGE_A_GROUND } from '../range/range-a-config';
 import { TestRangeScene } from '../range/TestRangeScene';
 import { TEST_RANGE_GROUND } from '../range/test-range-config';
 import type { SteelSceneApi } from '../range/steel-scene-api';
-import { SightInScene, type SightInTargetInstance } from '../range/SightInScene';
+import { SightInScene } from '../range/SightInScene';
+import { WoodedZeroScene } from '../range/WoodedZeroScene';
+import { snapshotWoodedZero } from '../range/wooded-zero-config';
+import type { PaperBayScene, PaperTargetInstance } from '../range/paper-bay-scene';
 import { snapshotSightIn } from '../range/sight-in-config';
 import { getRangeDefinition } from '../range/ranges';
 import { solveGear, createGearScatter, gearZeroOffset } from '../engine-bridge/gear-solve';
@@ -80,6 +83,14 @@ import { DopePanel } from './DopePanel';
 import { ChronoPanel } from './ChronoPanel';
 
 const EYE_HEIGHT_M = 1.6; // matches the Range A look-around
+
+/** Wooded Zero Range ambient breeze (plan §7.3). Light enough that it does not
+ *  meaningfully smear a group — ~1 m/s full-value at 100 m is a few millimetres
+ *  of drift — but real, so the canopy movement Stage 5 drives from it is telling
+ *  the truth. Full-value (3 o'clock) so the effect is visible rather than hidden
+ *  in a head/tail component. */
+const WOODED_ZERO_WIND_MPS = 1.1;
+const WOODED_ZERO_WIND_DEG = 90;
 
 // A low miss resolves on the far target plane BELOW ground level; place its dust
 // where the round actually lands by projecting the sight ray onto the grass.
@@ -181,7 +192,11 @@ export function ScopeView({
   // and the header label; the effect reads the same off the store.
   const rangeId = useGameStore((s) => s.session.rangeId);
   const rangeDef = getRangeDefinition(rangeId);
-  const isSightInHud = rangeDef.sceneType === 'sight-in';
+  // Capability, not scene identity (Stage 2a): the paper-target HUD — Clean,
+  // Inspect, the group readout and the zeroing controls — belongs to ANY paper
+  // bay, so it keys off `targetKind` rather than `sceneType === 'sight-in'`.
+  // See `range/paper-bay-scene.ts` and plan §7.2.
+  const isSightInHud = rangeDef.targetKind === 'paper';
   // Test Range is a sandbox, not an engagement — no commit step, no shot-count
   // limit (the gong auto-commits with an unlimited budget on scene load).
   const isTestRangeHud = rangeDef.sceneType === 'test-range';
@@ -254,18 +269,31 @@ export function ScopeView({
     // sight-in bay (SightInScene). Both reuse the magnified camera, aim/wobble/
     // breath/recoil, zoom, and reticle below — only the world + the fire path
     // differ. `range` is null on the sight-in bay and vice-versa.
-    const sceneType = getRangeDefinition(store().session.rangeId).sceneType;
-    const isSightIn = sceneType === 'sight-in';
+    const rangeDefinition = getRangeDefinition(store().session.rangeId);
+    const sceneType = rangeDefinition.sceneType;
+    // Capability gate (Stage 2a): everything downstream — the aimed-target pick,
+    // the fire path, marks, centroid, Clean, Inspect, the zeroing flow — works on
+    // the `PaperBayScene` interface, so it is driven by `targetKind`, not by
+    // which concrete bay got constructed. Only the CONSTRUCTION below still
+    // switches on `sceneType`, which is that field's actual job.
+    const isSightIn = rangeDefinition.targetKind === 'paper';
     let range: SteelSceneApi | null = null;
-    let sightIn: SightInScene | null = null;
-    let sightInLayout: ReturnType<typeof snapshotSightIn> | null = null;
-    if (isSightIn) {
+    let sightIn: PaperBayScene | null = null;
+    if (sceneType === 'sight-in') {
       // Entry snapshot (D3): fix the art variant + target size + stations for the
       // whole session from the current unit system. Calm by default (D4) — the
       // player dials wind from the same HUD controls and watches it push the shot.
       store().setWind({ speedMps: 0, directionDeg: 0 });
-      sightInLayout = snapshotSightIn(store().settings.unitsPrimary);
-      sightIn = new SightInScene(scene, sightInLayout);
+      sightIn = new SightInScene(scene, snapshotSightIn(store().settings.unitsPrimary));
+    } else if (sceneType === 'wooded-zero') {
+      // Same D3 entry snapshot. Wind is NOT zeroed here (plan §7.3, owner
+      // 2026-07-26): a very light steady breeze that visibly moves the tree tops
+      // and is fed honestly to the solver — at ~1 m/s the drift at 100 m is a few
+      // millimetres, well inside group size, so a zero taken here is still valid.
+      // Deliberately not special-cased: the vegetation and the bullet must read
+      // the SAME field or wind-driven scenery stops meaning anything.
+      store().setWind({ speedMps: WOODED_ZERO_WIND_MPS, directionDeg: WOODED_ZERO_WIND_DEG });
+      sightIn = new WoodedZeroScene(scene, snapshotWoodedZero(store().settings.unitsPrimary));
     } else if (sceneType === 'test-range') {
       range = new TestRangeScene(scene);
       // It's a sandbox, not an engagement: auto-commit the one gong with an
@@ -291,20 +319,43 @@ export function ScopeView({
     // Range Stage 1) — on a short lane the far markers would float mid-forest.
     // The Test Range itself gets none at all (owner request 2026-07-21): it's
     // a calm sandbox, so a flag reading zero wind is just clutter.
-    const laneLenM =
-      isSightIn && sightInLayout
-        ? sightInLayout.ground.lengthM
-        : sceneType === 'test-range'
-          ? TEST_RANGE_GROUND.laneLengthM
-          : RANGE_A_GROUND.laneLengthM;
-    const markerSpecs = sceneType === 'test-range' ? [] : WIND_MARKERS.filter((m) => m.distanceM <= laneLenM - 10);
+    const laneLenM = sightIn
+      ? sightIn.laneLengthM
+      : sceneType === 'test-range'
+        ? TEST_RANGE_GROUND.laneLengthM
+        : RANGE_A_GROUND.laneLengthM;
+    // Capability, not scene identity (2026-07-26): whether this range plants
+    // wind flags is a property of the range, not of which builder drew it.
+    const markerSpecs = rangeDefinition.windMarkers
+      ? WIND_MARKERS.filter((m) => m.distanceM <= laneLenM - 10)
+      : [];
     initWindMarkers(scene, markerSpecs, store().settings.windMarkerStyle);
     // Mirage shimmer (task 1.7c): a post-process pass between this world render
     // and the reticle's separate 2D overlay canvas (untouched by this).
     initMirage(renderer);
 
+    // Shadow map (Stage 3, plan §9.2). This is the one RENDERER-level piece of
+    // the scenery upgrade, so it is opt-in per scene rather than always on:
+    // enabling it costs a shadow pass on every range, while only the two scenes
+    // built on the environment module actually flag any casters. Until Stage 3
+    // no `castShadow` in the codebase did anything, because this was never set.
+    const wantsShadows =
+      (sightIn as { usesShadows?: boolean } | null)?.usesShadows ??
+      (range as { usesShadows?: boolean } | null)?.usesShadows ??
+      false;
+    if (wantsShadows) {
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    }
+
+    // Eye height is a property of the BAY, not a global (Stage 2a): a firing
+    // point on a knoll raises the camera, the wind sampling and the mirage
+    // reference together. Flat ranges — and the sight-in bay, which reports
+    // exactly `EYE_HEIGHT_M` — are unchanged by this.
+    const eyeHeightM = sightIn?.eyeHeightM ?? EYE_HEIGHT_M;
+
     const camera = new THREE.PerspectiveCamera(SCOPE_BASE_FOV_DEG / magnification, 1, 0.5, 3000);
-    camera.position.set(0, EYE_HEIGHT_M, 0);
+    camera.position.set(0, eyeHeightM, 0);
 
     // --- firing solution plumbing (task 1.4c) --------------------------------
     // Load the engine once; until it resolves, FIRE just recoils. The per-shot
@@ -535,7 +586,7 @@ export function ScopeView({
       // average with the mean (scaled the same as the shot), and report both
       // the recovered speed/direction and the windage mils the field accounted
       // for (the exact quantity solveAt just added on top of the mean).
-      const eye = { x: 0, y: EYE_HEIGHT_M, z: 0 };
+      const eye = { x: 0, y: eyeHeightM, z: 0 };
       const gustSamples = sampleFieldColumn(field, eye, rangeM, EFFECTIVE_WIND_SAMPLES);
       const effective = averageEffectiveWind(meanVec, gustScale, gustSamples);
       const windOffsetRad = Math.atan2(-(gustScale * (fieldDW.windageM - zero.windageM)), rangeM);
@@ -948,7 +999,7 @@ export function ScopeView({
     const sightInSimCache = new Map<number, { sim: ScatterSimulator; key: string }>();
 
     // The paper target nearest the sight line at its own plane.
-    function findAimedTarget(): { dir: THREE.Vector3; target: SightInTargetInstance } | null {
+    function findAimedTarget(): { dir: THREE.Vector3; target: PaperTargetInstance } | null {
       if (!sightIn || sightIn.targets.length === 0) return null;
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(aimQuaternion(st.t));
       if (dir.z >= -1e-3) return null;
@@ -1376,8 +1427,17 @@ export function ScopeView({
       // Impact FX (task 1.5c): grow/fade dust puffs and recycle finished ones.
       updateImpactFx(dt);
       // Per-scene environment animation (Test Range Stage 1; no-op on
-      // RangeScene/sight-in). Stage 4 wires cloud drift here.
-      range?.update?.(dt, st.t, meanWindVec());
+      // RangeScene/sight-in). Drives cloud drift, and from Stage 5 the
+      // wind-driven vegetation. Paper bays get the same hook — the Wooded Zero
+      // Range carries the full environment module, so it needs it too.
+      // `windAtForMarkers` is deliberately the sampler passed for canopy sway:
+      // it is already "the wind this range's shots actually experience" (the
+      // full field on a steel range, the dialled mean on a paper bay, matching
+      // each one's solve). Vegetation and bullet therefore read the SAME wind,
+      // which is the entire justification for wind-driven scenery — see
+      // `environment/wind-sway.ts`.
+      range?.update?.(dt, st.t, meanWindVec(), windAtForMarkers);
+      sightIn?.update?.(dt, st.t, meanWindVec(), windAtForMarkers);
       // Bullet trace (task 1.5b): advance the tracer, or hide it if toggled off.
       if (store().settings.traceEnabled) updateBulletTrace(st.t);
       else hideBulletTrace();
@@ -1393,7 +1453,7 @@ export function ScopeView({
       // straight to the screen, same as before 1.7c existed (also the
       // cheaper path, no offscreen pass to pay for while it's parked).
       if (store().settings.mirageEnabled) {
-        const mirageWind = windAtForMarkers({ x: 0, y: EYE_HEIGHT_M, z: -MIRAGE_REFERENCE_DISTANCE_M });
+        const mirageWind = windAtForMarkers({ x: 0, y: eyeHeightM, z: -MIRAGE_REFERENCE_DISTANCE_M });
         renderSceneWithMirage(scene, camera, {
           dt,
           fovDeg: camera.fov,

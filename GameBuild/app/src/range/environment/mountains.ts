@@ -1,63 +1,89 @@
-// Mountains for the environment module (Stage 4 of
-// Design/Plans/test-range-environment-plan.md). Ported from BTK
-// environment.js:266-343: one InstancedMesh of a snow-gradient-textured cone,
-// Lambert-lit so distance fog naturally turns them into hazy silhouettes at
-// 1000+ m — no separate haze pass needed.
+// Distant mountains for the environment module. Stage 4b of
+// `Design/archive/mil-zero-range-plan.md` replaced the ring of instanced cones
+// with overlapping ridge silhouettes.
+//
+// WHY THE CONES DIDN'T WORK. Twelve textured cones scattered on a ring give the
+// eye a countable set of separate solids at a measurable spacing — which reads
+// as props placed on a stage, not as landscape. Real distance reads as
+// *overlapping silhouettes* at different depths, with the further ones paler.
+// Two continuous ridgelines deliver that directly, and cost less: a couple of
+// hundred triangles in two draw calls instead of an instanced cone mesh with a
+// canvas-gradient texture.
+//
+// The material is deliberately UNLIT (`MeshBasicMaterial`). At a kilometre-plus,
+// shading detail is invisible, and an unlit flat colour is the one thing that
+// makes aerial perspective predictable: the rendered pixel is exactly
+// `mix(ridgeColor, fogColor, fogFactor)`. That predictability is the direct
+// answer to the earlier saga where two rounds of darkening the mountain texture
+// produced no visible change, because linear fog had saturated it to ~99% fog
+// colour regardless of albedo.
 
 import * as THREE from 'three';
-import type { MountainPlacement } from './environment-config';
+import { generateRidgeProfile, RIDGE_BASE_Y_M, type EnvironmentConfig } from './environment-config';
 import type { TrackFn } from './track';
 
 export interface MountainsHandle {
-  mesh: THREE.InstancedMesh;
+  meshes: THREE.Mesh[];
 }
 
-/** Vertical gradient: brown base → grey → white snow cap (BTK
- *  environment.js:301-306). Darkened twice per owner feedback 2026-07-21 —
- *  round 1 dimmed the brown/grey stops ~25%; round 2 ("mountains need to be
- *  darker") pushed base/grey darker again and dimmed the snow cap off pure
- *  white so it doesn't blow out against the darker body below it. */
-function buildSnowGradientTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d')!;
-  const gradient = ctx.createLinearGradient(0, 256, 0, 0);
-  gradient.addColorStop(0, '#332b23'); // brown base
-  gradient.addColorStop(0.55, '#332b23');
-  gradient.addColorStop(0.8, '#4d4d4d'); // grey
-  gradient.addColorStop(1, '#dcdcdc'); // snow cap (off pure white)
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 256, 256);
-  return new THREE.CanvasTexture(canvas);
-}
+/**
+ * Build one strip mesh per ridge layer. Each strip is a triangle band between
+ * the crest polyline and a base line carried below the horizon, so the ridge
+ * meets the skyline with no sliver of sky beneath it.
+ */
+export function buildMountains(scene: THREE.Scene, cfg: EnvironmentConfig, track: TrackFn): MountainsHandle {
+  const meshes: THREE.Mesh[] = [];
 
-export function buildMountains(scene: THREE.Scene, placements: MountainPlacement[], track: TrackFn): MountainsHandle {
-  // Unit cone with its base translated to local y=0 (THREE's default is
-  // centred, spanning -0.5..+0.5) so per-instance y=0 placement sits the
-  // base on the ground instead of burying half the mountain below it — same
-  // convention as the tree-trunk fix earlier in Stage 3.
-  const geo = track(new THREE.ConeGeometry(1, 1, 8));
-  geo.translate(0, 0.5, 0);
-  const texture = track(buildSnowGradientTexture());
-  const material = track(new THREE.MeshLambertMaterial({ map: texture }));
-  const mesh = new THREE.InstancedMesh(geo, material, Math.max(placements.length, 1));
+  cfg.ridges.layers.forEach((layer, layerIndex) => {
+    const crest = generateRidgeProfile(cfg, layerIndex);
+    const n = crest.length;
 
-  const m = new THREE.Matrix4();
-  const pos = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  const scaleV = new THREE.Vector3();
-  const up = new THREE.Vector3(0, 1, 0);
-  placements.forEach((p, i) => {
-    pos.set(p.x, 0, p.z);
-    quat.setFromAxisAngle(up, p.rotationY);
-    scaleV.set(p.radius, p.height, p.radius);
-    m.compose(pos, quat, scaleV);
-    mesh.setMatrixAt(i, m);
+    // Two vertices per sample: crest and base.
+    const positions = new Float32Array(n * 2 * 3);
+    for (let i = 0; i < n; i++) {
+      const p = crest[i];
+      positions[i * 6 + 0] = p.x;
+      positions[i * 6 + 1] = p.y;
+      positions[i * 6 + 2] = p.z;
+      positions[i * 6 + 3] = p.x;
+      positions[i * 6 + 4] = RIDGE_BASE_Y_M;
+      positions[i * 6 + 5] = p.z;
+    }
+
+    // Two triangles per gap, wound so the strip faces the shooter at the origin.
+    const indices: number[] = [];
+    for (let i = 0; i < n - 1; i++) {
+      const c0 = i * 2;
+      const b0 = i * 2 + 1;
+      const c1 = (i + 1) * 2;
+      const b1 = (i + 1) * 2 + 1;
+      indices.push(c0, b0, b1, c0, b1, c1);
+    }
+
+    const geo = track(new THREE.BufferGeometry());
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setIndex(indices);
+
+    const mat = track(
+      new THREE.MeshBasicMaterial({
+        color: layer.colorHex,
+        // DoubleSide so a winding mistake can never produce an invisible ridge —
+        // this is a silhouette a kilometre away, the back faces cost nothing.
+        side: THREE.DoubleSide,
+        // Fog is the whole point: it is what separates the layers in depth.
+        fog: true,
+      }),
+    );
+
+    const mesh = new THREE.Mesh(geo, mat);
+    // Behind everything except the sky dome (-1). No depth writes needed at this
+    // distance, but leave depth testing on so nothing odd happens if a future
+    // range puts geometry out here.
+    mesh.renderOrder = 0;
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+    meshes.push(mesh);
   });
-  mesh.instanceMatrix.needsUpdate = true;
-  mesh.count = placements.length;
-  scene.add(mesh);
 
-  return { mesh };
+  return { meshes };
 }

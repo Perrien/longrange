@@ -1,14 +1,23 @@
-// Tree instancing for the environment module (Stage 3 of
-// Design/Plans/test-range-environment-plan.md). Four InstancedMeshes total —
-// conifer trunk/canopy, deciduous trunk/canopy — so a ~190-tree forest costs
-// four draw calls, not 190. Canopies are pre-merged into one BufferGeometry
-// per kind (three cones for conifers, four lumpy icosahedra for deciduous) so
-// each tree is still a single instance.
+// Tree instancing for the environment module. Stage 4a of
+// `Design/archive/mil-zero-range-plan.md` replaced the single-silhouette forest
+// with per-species shape VARIANTS, independent height/breadth scaling, a small
+// per-tree lean, and baked canopy shading.
+//
+// WHAT WAS WRONG BEFORE. Every conifer was the identical 3-cone stack and every
+// broadleaf the identical 4-icosahedron blob, varied only by UNIFORM scale and
+// Y rotation. That is the main reason the woods read as synthetic: the eye
+// detects "one object repeated" almost instantly, and no amount of palette
+// tuning hides it. Uniform scaling in particular makes the repetition obvious,
+// because every tree is provably the same shape at a different size.
+//
+// Draw-call cost: one InstancedMesh per (kind, variant) for canopies plus one
+// trunk mesh per kind — 3x2 + 2 = 8 total for a ~300-tree forest. The previous
+// version used 4. Placement stays a single deterministic pass.
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { loadPbrMaterial } from './texture-loader';
-import type { EnvironmentConfig, TreePlacement } from './environment-config';
+import { TREE_VARIANTS_PER_KIND, type EnvironmentConfig, type TreePlacement } from './environment-config';
 import type { TrackFn } from './track';
 
 export interface TreesHandle {
@@ -17,33 +26,119 @@ export interface TreesHandle {
 
 const SINK_M = 0.2; // trunk base sinks slightly so no visible gap over uneven terrain
 
-function buildConiferCanopyGeometry(): THREE.BufferGeometry {
-  const tiers = [
+/** How dark the underside/interior of a canopy goes, relative to its lit top.
+ *  This is cheap fake self-shadowing — real shadow maps do not help inside a
+ *  canopy, and it is what stops a tree reading as a flat cut-out. */
+const CANOPY_SHADE_FLOOR = 0.55;
+
+interface ConiferTier {
+  radius: number;
+  height: number;
+  y: number;
+}
+
+/** Three conifer silhouettes: a classic spruce, a tall narrow fir, and a squat
+ *  wind-shaped tree. Kept as tier tables so the shapes stay readable. */
+const CONIFER_VARIANTS: ConiferTier[][] = [
+  [
     { radius: 1.6, height: 2.6, y: 3.2 },
     { radius: 1.25, height: 2.2, y: 4.6 },
     { radius: 0.85, height: 1.8, y: 5.9 },
-  ];
-  const cones = tiers.map(({ radius, height, y }) => {
+  ],
+  [
+    { radius: 1.25, height: 2.8, y: 3.0 },
+    { radius: 1.05, height: 2.5, y: 4.6 },
+    { radius: 0.8, height: 2.2, y: 6.1 },
+    { radius: 0.5, height: 1.8, y: 7.4 },
+  ],
+  [
+    { radius: 1.95, height: 2.4, y: 2.6 },
+    { radius: 1.4, height: 2.0, y: 3.9 },
+  ],
+];
+
+interface Blob {
+  r: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** Three broadleaf crowns: the original clump, a tall narrow crown, and a broad
+ *  spreading one. */
+const DECIDUOUS_VARIANTS: Blob[][] = [
+  [
+    { r: 1.6, x: 0, y: 3.8, z: 0 },
+    { r: 1.3, x: 0.9, y: 3.8, z: 0 },
+    { r: 1.2, x: -0.7, y: 3.8, z: 0.6 },
+    { r: 1.0, x: 0.2, y: 3.8, z: -0.9 },
+  ],
+  [
+    { r: 1.15, x: 0, y: 4.0, z: 0 },
+    { r: 1.0, x: 0.4, y: 4.9, z: 0.2 },
+    { r: 0.85, x: -0.3, y: 5.6, z: -0.2 },
+  ],
+  [
+    { r: 1.5, x: 0, y: 3.4, z: 0 },
+    { r: 1.35, x: 1.4, y: 3.5, z: 0.3 },
+    { r: 1.3, x: -1.3, y: 3.4, z: -0.4 },
+    { r: 1.1, x: 0.3, y: 3.3, z: 1.4 },
+    { r: 1.05, x: -0.4, y: 3.6, z: -1.3 },
+  ],
+];
+
+/**
+ * Bake a vertical shade gradient into the geometry's `color` attribute: dark at
+ * the canopy base, full brightness at the top, with downward-facing surfaces
+ * pushed darker still.
+ *
+ * GOTCHA THIS DELIBERATELY AVOIDS. `trees.ts` previously carried a comment about
+ * `vertexColors: true` with no bound `color` attribute rendering solid black —
+ * the shader multiplies every vertex by an unbound (zero) attribute. That is why
+ * this function ALWAYS writes the attribute, and why the material only sets
+ * `vertexColors` when it is called. The per-tree palette tint still arrives
+ * separately via `InstancedMesh.setColorAt`; THREE multiplies instance colour by
+ * vertex colour, so the two compose as tint x shade.
+ */
+function bakeCanopyShading(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  geo.computeBoundingBox();
+  const bbox = geo.boundingBox!;
+  const minY = bbox.min.y;
+  const spanY = Math.max(1e-6, bbox.max.y - minY);
+
+  const pos = geo.attributes.position;
+  const normal = geo.attributes.normal;
+  const colors = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const heightFrac = (pos.getY(i) - minY) / spanY;
+    // Downward-facing surfaces are the ones a sky-dominated fill would leave
+    // dark in reality, so bias them further down.
+    const facing = normal ? Math.max(0, -normal.getY(i)) : 0;
+    const shade = CANOPY_SHADE_FLOOR + (1 - CANOPY_SHADE_FLOOR) * heightFrac * (1 - 0.45 * facing);
+    colors[i * 3] = shade;
+    colors[i * 3 + 1] = shade;
+    colors[i * 3 + 2] = shade;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
+
+function buildConiferCanopy(variant: number): THREE.BufferGeometry {
+  const cones = CONIFER_VARIANTS[variant].map(({ radius, height, y }) => {
     const geo = new THREE.ConeGeometry(radius, height, 7);
     geo.translate(0, y, 0);
     return geo;
   });
-  return mergeGeometries(cones);
+  return bakeCanopyShading(mergeGeometries(cones));
 }
 
-function buildDeciduousCanopyGeometry(): THREE.BufferGeometry {
-  const blobs = [
-    { r: 1.6, x: 0, z: 0 },
-    { r: 1.3, x: 0.9, z: 0 },
-    { r: 1.2, x: -0.7, z: 0.6 },
-    { r: 1.0, x: 0.2, z: -0.9 },
-  ];
-  const shapes = blobs.map(({ r, x, z }) => {
+function buildDeciduousCanopy(variant: number): THREE.BufferGeometry {
+  const shapes = DECIDUOUS_VARIANTS[variant].map(({ r, x, y, z }) => {
     const geo = new THREE.IcosahedronGeometry(r, 1);
-    geo.translate(x, 3.8, z);
+    geo.translate(x, y, z);
     return geo;
   });
-  return mergeGeometries(shapes);
+  return bakeCanopyShading(mergeGeometries(shapes));
 }
 
 export function buildTrees(
@@ -51,10 +146,13 @@ export function buildTrees(
   cfg: EnvironmentConfig,
   placements: TreePlacement[],
   track: TrackFn,
+  /** Optional wind sway — patches the canopy material so crowns bend with the
+   *  real wind field (Stage 5). Trunks are left alone: a swaying trunk base
+   *  would separate from the ground. */
+  sway?: { patch(material: THREE.Material): void },
 ): TreesHandle {
   const { palette } = cfg.trees;
-  const conifers = placements.filter((p) => p.kind === 'conifer');
-  const deciduous = placements.filter((p) => p.kind === 'deciduous');
+  const meshes: THREE.Object3D[] = [];
 
   const bark = track(
     loadPbrMaterial({
@@ -64,82 +162,78 @@ export function buildTrees(
     }),
   );
 
-  // CylinderGeometry is centred on its own origin by default (spans
-  // -height/2..+height/2); translate up by half its height so the base sits
-  // at local y=0 — that's the same origin the placement matrix's `pos` uses,
-  // so the trunk actually stands on the ground instead of half-burying itself
-  // and leaving a gap below the canopy.
-  const coniferTrunkHeight = 2.2;
-  const coniferTrunkGeo = track(new THREE.CylinderGeometry(0.12, 0.18, coniferTrunkHeight, 7));
-  coniferTrunkGeo.translate(0, coniferTrunkHeight / 2, 0);
-  const coniferTrunkMesh = new THREE.InstancedMesh(coniferTrunkGeo, bark.material, Math.max(conifers.length, 1));
-  const coniferCanopyGeo = track(buildConiferCanopyGeometry());
-  // NOTE: no `vertexColors: true` here — the per-tree tint comes entirely
-  // from InstancedMesh.setColorAt below (instance color, applied
-  // independent of this flag). Setting `vertexColors: true` with no
-  // geometry `color` attribute made the shader multiply every vertex by an
-  // unbound (zero) attribute, rendering solid black regardless of palette or
-  // instance tint (owner feedback 2026-07-21: canopy stayed "way too dark"
-  // even after a full palette brightening pass produced zero visible
-  // change — the tell that a value was being multiplied by zero, not just
-  // under-lit).
   // No `flatShading` — ConeGeometry/IcosahedronGeometry already carry smooth
-  // analytic normals (a cone's slant surface, an icosahedron's spherical
-  // push-out), so leaving shading smooth interpolates across faces instead
-  // of forcing the hard per-triangle facet look (owner feedback 2026-07-21:
-  // "is it possible to smooth the edges without significant changes in the
-  // geometry?") — no vertex/index changes needed, purely a shading flag.
-  const coniferCanopyMat = track(new THREE.MeshStandardMaterial({ roughness: 1 }));
-  const coniferCanopyMesh = new THREE.InstancedMesh(coniferCanopyGeo, coniferCanopyMat, Math.max(conifers.length, 1));
+  // analytic normals, so leaving shading smooth interpolates across faces
+  // instead of forcing a hard facet look (owner request 2026-07-21).
+  const canopyMaterial = track(new THREE.MeshStandardMaterial({ roughness: 1, vertexColors: true }));
+  // One shared material across every (kind, variant) mesh, so a single patch
+  // animates the whole forest.
+  sway?.patch(canopyMaterial);
 
-  const deciduousTrunkHeight = 2.6;
-  const deciduousTrunkGeo = track(new THREE.CylinderGeometry(0.14, 0.2, deciduousTrunkHeight, 7));
-  deciduousTrunkGeo.translate(0, deciduousTrunkHeight / 2, 0);
-  const deciduousTrunkMesh = new THREE.InstancedMesh(deciduousTrunkGeo, bark.material, Math.max(deciduous.length, 1));
-  const deciduousCanopyGeo = track(buildDeciduousCanopyGeometry());
-  const deciduousCanopyMat = track(new THREE.MeshStandardMaterial({ roughness: 1 }));
-  const deciduousCanopyMesh = new THREE.InstancedMesh(
-    deciduousCanopyGeo,
-    deciduousCanopyMat,
-    Math.max(deciduous.length, 1),
-  );
+  const buildKind = (
+    kind: 'conifer' | 'deciduous',
+    trunkHeight: number,
+    trunkRadii: [number, number],
+    canopyFor: (variant: number) => THREE.BufferGeometry,
+  ) => {
+    const all = placements.filter((p) => p.kind === kind);
 
-  writeInstances(coniferTrunkMesh, coniferCanopyMesh, conifers, palette);
-  writeInstances(deciduousTrunkMesh, deciduousCanopyMesh, deciduous, palette);
+    // CylinderGeometry is centred on its own origin; translate up by half its
+    // height so the base sits at local y=0 — the same origin the placement
+    // matrix uses, so the trunk stands on the ground rather than half-burying
+    // itself and leaving a gap below the canopy.
+    const trunkGeo = track(new THREE.CylinderGeometry(trunkRadii[0], trunkRadii[1], trunkHeight, 7));
+    trunkGeo.translate(0, trunkHeight / 2, 0);
+    const trunkMesh = new THREE.InstancedMesh(trunkGeo, bark.material, Math.max(all.length, 1));
+    writeMatrices(trunkMesh, all);
+    trunkMesh.count = all.length;
+    scene.add(trunkMesh);
+    meshes.push(trunkMesh);
 
-  const meshes = [coniferTrunkMesh, coniferCanopyMesh, deciduousTrunkMesh, deciduousCanopyMesh];
-  meshes.forEach((m) => {
-    m.count = m === coniferTrunkMesh || m === coniferCanopyMesh ? conifers.length : deciduous.length;
-    scene.add(m);
-  });
+    for (let v = 0; v < TREE_VARIANTS_PER_KIND; v++) {
+      const forVariant = all.filter((p) => p.variantIndex === v);
+      const geo = track(canopyFor(v));
+      const mesh = new THREE.InstancedMesh(geo, canopyMaterial, Math.max(forVariant.length, 1));
+      writeMatrices(mesh, forVariant);
+      writeTints(mesh, forVariant, palette);
+      mesh.count = forVariant.length;
+      scene.add(mesh);
+      meshes.push(mesh);
+    }
+  };
+
+  buildKind('conifer', 2.2, [0.12, 0.18], buildConiferCanopy);
+  buildKind('deciduous', 2.6, [0.14, 0.2], buildDeciduousCanopy);
 
   return { meshes };
 }
 
-function writeInstances(
-  trunkMesh: THREE.InstancedMesh,
-  canopyMesh: THREE.InstancedMesh,
-  placements: TreePlacement[],
-  palette: number[],
-): void {
+/** Compose position + yaw + lean + non-uniform scale for each placement. */
+function writeMatrices(mesh: THREE.InstancedMesh, placements: TreePlacement[]): void {
   const m = new THREE.Matrix4();
   const pos = new THREE.Vector3();
   const quat = new THREE.Quaternion();
+  const euler = new THREE.Euler();
   const scaleV = new THREE.Vector3();
-  const tint = new THREE.Color();
 
   placements.forEach((p, i) => {
     pos.set(p.x, p.y - SINK_M, p.z);
-    quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.rotationY);
-    scaleV.set(p.scale, p.scale, p.scale);
+    // YXZ so the lean is applied in world-ish terms after the yaw, which keeps
+    // a leaning tree leaning the same way regardless of which way it faces.
+    euler.set(p.tiltX, p.rotationY, p.tiltZ, 'YXZ');
+    quat.setFromEuler(euler);
+    scaleV.set(p.scaleXZ, p.scaleY, p.scaleXZ);
     m.compose(pos, quat, scaleV);
-    trunkMesh.setMatrixAt(i, m);
-    canopyMesh.setMatrixAt(i, m);
-    tint.set(palette[p.tintIndex % palette.length]);
-    canopyMesh.setColorAt(i, tint);
+    mesh.setMatrixAt(i, m);
   });
+  mesh.instanceMatrix.needsUpdate = true;
+}
 
-  trunkMesh.instanceMatrix.needsUpdate = true;
-  canopyMesh.instanceMatrix.needsUpdate = true;
-  if (canopyMesh.instanceColor) canopyMesh.instanceColor.needsUpdate = true;
+function writeTints(mesh: THREE.InstancedMesh, placements: TreePlacement[], palette: number[]): void {
+  const tint = new THREE.Color();
+  placements.forEach((p, i) => {
+    tint.set(palette[p.tintIndex % palette.length]);
+    mesh.setColorAt(i, tint);
+  });
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 }

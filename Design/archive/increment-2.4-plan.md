@@ -314,6 +314,12 @@ they're recorded now rather than re-derived whenever 2.5 planning starts. Whoeve
 `increment-2.md` §2.5's existing method + Done-when.
 
 ### D11 — Truing lever order: chronograph first, then BC
+> **⚠ No-chrono path SUPERSEDED by D15 (2026-07-26)** — see
+> [`../Plans/D15-two-lever-truing-independent.md`](../Plans/D15-two-lever-truing-independent.md).
+> A node no longer solves MV when no chronograph exists; a node **always** fits BC, a chrono
+> **always** sets MV, the levers are independent, and last write wins. The has-chrono path
+> below (chrono pins MV, node fits BC) is unchanged and is now the only path. D12/D13/D14 stand.
+
 **Effective MV** is sourced from a chronograph reading (2.4e `ChronoSummary`) directly when one
 exists for the rifle+lot — a real measurement, not a fit. **BC/drag-scale** is then fit from a
 confirmed node (farthest / near-transonic preferred, per `increment-2.md` §2.5's existing

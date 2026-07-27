@@ -18,6 +18,13 @@ export interface SteelSceneApi {
   /** Optional per-frame environment animation (cloud drift etc.). windVec is the
    *  dialed mean wind in world m/s. RangeScene doesn't implement it — callers
    *  must use `scene.update?.(…)`. */
-  update?(dt: number, timeS: number, windVec: { x: number; y: number; z: number }): void;
+  update?(
+    dt: number,
+    timeS: number,
+    windVec: { x: number; y: number; z: number },
+    /** The range's own wind sampler — drives canopy sway from the same wind the
+     *  bullet gets (Stage 5, `environment/wind-sway.ts`). */
+    sampleWindAt?: (p: { x: number; y: number; z: number }) => { x: number; y: number; z: number },
+  ): void;
   dispose(): void;
 }

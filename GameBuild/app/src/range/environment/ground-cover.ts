@@ -1,5 +1,5 @@
 // Bush/rock/grass-tuft instancing for the environment module (Stage 3 of
-// Design/Plans/test-range-environment-plan.md). Three InstancedMeshes, one
+// Design/archive/test-range-environment-plan.md). Three InstancedMeshes, one
 // per kind — matches the counts in `cfg.cover`, so this is still ~3 draw
 // calls even at a few hundred grass tufts.
 

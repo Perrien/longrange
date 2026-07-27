@@ -1,5 +1,5 @@
 // Clouds for the environment module (Stage 4 of
-// Design/Plans/test-range-environment-plan.md). Ported from BTK
+// Design/archive/test-range-environment-plan.md). Ported from BTK
 // environment.js:345-518 (build) + 737-793 (update): a single InstancedMesh
 // of billboards, each a per-instance-seeded procedural puffy-cloud shader —
 // no image textures, no separate mesh per cloud. Drifts with the dialed MEAN

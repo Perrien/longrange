@@ -147,16 +147,19 @@ an ordered roadmap, §K). Full decisions in
 [`archive/increment-2.4-plan.md`](./archive/increment-2.4-plan.md).
 
 #### Solver truing (two-lever: chronograph → MV, node → BC)
-Fits the model to the player's confirmed reality: effective MV comes from a
-chronograph reading directly (a real measurement); effective BC/drag-scale is then fit
-from a confirmed node (farthest / near-transonic preferred) once MV is pinned.
-Without a chronograph, a node instead solves MV alone (BC held at catalog) and stays
-provisional — a single no-chrono node can't separate an MV error from a BC error. A
-node's own measured value is never overwritten by a recompute; only unmeasured
-distances ride the retrued curve.
-**Not built** — planned 2.5. Lever-order decisions (D11–D13) locked with owner
-2026-07-21 ahead of full 2.5 planning — see
-[`archive/increment-2.4-plan.md`](./archive/increment-2.4-plan.md) §8 and
+Fits the model to the player's confirmed reality. Two independent levers, each moving one
+value: **chronograph sets effective MV** (the only thing that ever does), and **confirming a
+downrange node fits effective BC/drag-scale** (always — with MV held at its current effective
+value, chrono if one exists else box). The levers never swap roles; neither invalidates the
+other; whichever was written last is current ("last write wins"). A single node can't separate
+an MV error from a BC error, so a BC fit made before chronographing dumps that residual onto BC
+and stays **provisional** until the curve is chrono-anchored (D13). A node's own measured value
+is never overwritten by a recompute; only unmeasured distances ride the retrued curve (D12).
+Re-truing after a new chrono is a manual re-confirm of the affected node (D15).
+**Not built** — planned 2.5. Lever decisions locked: D11–D13 (2026-07-21), D14 (2026-07-24),
+**D15 (2026-07-26, supersedes D11's no-chrono path)** — see
+[`Plans/D15-two-lever-truing-independent.md`](./Plans/D15-two-lever-truing-independent.md),
+[`archive/increment-2.4-plan.md`](./archive/increment-2.4-plan.md) §8, and
 [`archive/increment-2.md`](./archive/increment-2.md) §2.5.
 
 #### Exposed effective MV/BC + manual override ("manual truing")
@@ -435,6 +438,45 @@ iteration log (multiple owner feedback rounds per stage, including a couple of
 real rendering bugs found along the way: an unbound vertex-color attribute that
 was silently zeroing canopy/bush color, and fog saturation washing out the
 distant mountains regardless of their texture).
+
+#### Wooded Zero Range (25/50/100/200, fanned, elevated firing point)
+Owner-requested 2026-07-26. A second, additive zeroing bay (the grass Zero Range
+stays): four paper stations at 25/50/100/200 in the active unit, fanned across
+10.5° of azimuth and shot from a low knoll so no station occludes another, set
+in the wooded environment rather than a bare strip. Inherits the zeroing flow,
+Clean and Inspect from the existing bay via a new `targetKind: 'paper'`
+capability rather than reimplementing them. Also carries the first real upgrade
+pass on the shared environment module (low morning sun, near-field shadow map,
+tree silhouette variety, ridgeline mountains, aerial-perspective fog,
+wind-driven vegetation). Plan: `Design/archive/mil-zero-range-plan.md` (5 stages).
+
+Key locked results, all verified numerically in the plan: shooter elevation is
+ballistically free (`error ≈ g·H²/(4v₀²)`, *independent of target distance* —
+10 m of elevation shifts impact 0.36 mm); the metric layout's corridors are a
+strict superset of the imperial one (a yard is shorter than a metre at every
+nominal distance), so the world is built once and both unit systems share it;
+and the knoll needs a *short steep* forward face, not a tall one, or it grazes
+its own 25 m sight line.
+
+**Stages 1–2b built** — 2026-07-26, gates green, awaiting the device check.
+Stage 1: registry + pure config + corridor model (`range/ranges.ts` gained a
+`targetKind` capability and an optional `RangeStation.azimuthDeg`; new
+`range/wooded-zero-config.ts`). Stage 2a: `range/paper-bay-scene.ts` extracts
+the `PaperBayScene` interface and ScopeView re-gates onto `targetKind`, so the
+zeroing flow, Clean and Inspect are inherited rather than duplicated; eye height
+became a per-bay property. Stage 2b: `range/WoodedZeroScene.ts` +
+`range/wooded-zero-environment.ts`, and the shared environment module gained an
+optional injected `terrain.clearance` so a range can supply its own corridor
+geometry (the Test Range's single-lane model is untouched and asserted so).
+The range is now on the landing screen and shootable. 54 tests across
+`wooded-zero-config.test.ts`, `wooded-zero-environment.test.ts` and
+`paper-bay-scene.test.ts`.
+
+**Stages 3–5 not built** — the scenery upgrade proper: low morning sun +
+aerial-perspective fog + near-field shadow map (3), tree silhouette variety +
+ridgeline mountains (4), wind-driven vegetation (5). Stage 2b deliberately
+shipped on the CURRENT shared look so the device check is about the bay's
+geometry, not confounded by an art change landing at the same time.
 
 ### F. Targets & scoring
 

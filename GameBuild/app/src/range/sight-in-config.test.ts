@@ -18,12 +18,16 @@ describe('snapshotSightIn (D3/D4/D7)', () => {
     expect(l.stations.map((s) => s.nominalDistance)).toEqual([50, 100, 200]);
   });
 
-  it('imperial (MOA): 50/100/200 yd stations (SI), MOA art, 22 in face', () => {
+  it('imperial (MOA): 50/100/200 yd stations (SI), MOA art, TRUE-MOA face', () => {
     const l = snapshotSightIn('MOA');
     expect(l.system).toBe('imperial');
     expect(l.artVariant).toBe('moa');
     expect(l.targetSizeM).toBeCloseTo(MOA_TARGET_SIZE_M, 10);
-    expect(l.targetSizeM).toBeCloseTo(0.5588, 10);
+    // 23.04 in, not 22 — the face is sized so one grid square is EXACTLY 1 MOA at
+    // 100 yd. A 22 in face relies on the "1 inch = 1 MOA at 100 yd" shorthand and
+    // is 4.5% small per cell, which accumulates to ~0.45 MOA by the reticle's
+    // 10 mark (owner, on device 2026-07-26).
+    expect(l.targetSizeM).toBeCloseTo(0.58517, 5);
     expect(l.stations[0].distanceM).toBeCloseTo(yardsToMeters(50), 10);
     expect(l.stations[1].distanceM).toBeCloseTo(yardsToMeters(100), 10);
     expect(l.stations[2].distanceM).toBeCloseTo(yardsToMeters(200), 10);

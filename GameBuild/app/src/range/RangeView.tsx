@@ -5,7 +5,7 @@
 // whole range can be inspected; the real scope pipeline, wobble, and touch feel
 // arrive in task 1.3 (reusing the task-0.9 aim spike). No ballistics yet.
 //
-// Stage 3 of Design/Plans/test-range-environment-plan.md generalized this to
+// Stage 3 of Design/archive/test-range-environment-plan.md generalized this to
 // an optional `buildScene` (defaults to `RangeScene`, unchanged) + `label`, so
 // DevTools can reuse the same free-look/frame-time harness for `TestRangeScene`
 // while tuning trees/ground-cover — no shooting required to see the world.

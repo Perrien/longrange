@@ -35,14 +35,34 @@ export interface FieldRange {
   sd: number;
 }
 
+/**
+ * Raw off-the-shelf bore/scope pointing error (D16, `Design/Plans/D16-raw-zero-error.md`).
+ *
+ * A brand-new rifle+scope is NOT pre-zeroed: the bore and the line of sight point
+ * in the same general direction but are not aligned, and the player must discover
+ * and remove the difference by zeroing.
+ *
+ * Drawn in POLAR form — magnitude uniform in `[minRad, maxRad]`, direction uniform
+ * over the full circle — rather than as two independent normal H/V components.
+ * That is the whole point of the change: independent normals centred on zero
+ * routinely roll a near-perfect rifle, which makes "you must zero before the rifle
+ * is usable" only sometimes true. A uniform magnitude with a hard floor guarantees
+ * a meaningful offset every time.
+ */
+export interface ZeroOffsetRange {
+  /** Minimum pointing error (rad). A hard floor — never a free zero. */
+  minRad: number;
+  /** Maximum pointing error (rad). */
+  maxRad: number;
+}
+
 /** Hidden per-rifle-copy ranges (catalog §C1 / §D). */
 export interface RifleTruthRanges {
   /** Muzzle-velocity offset of this copy vs the box MV (m/s). */
   mvOffset: FieldRange;
-  /** Horizontal zero offset (rad). */
-  zeroH: FieldRange;
-  /** Vertical zero offset (rad). */
-  zeroV: FieldRange;
+  /** Raw scope/mount pointing error, polar (D16). Replaces the former
+   *  independent `zeroH`/`zeroV` normal draws with SD ~1 MOA. */
+  zeroOffset: ZeroOffsetRange;
   /** Inherent angular precision of the rifle (rad). */
   inherentPrecision: FieldRange;
 }
@@ -139,14 +159,36 @@ export function bellCurveValue(range: FieldRange, draw: number): number {
 
 // --- Public derivation ------------------------------------------------------
 
+/**
+ * Map the two stored zero draws to a polar pointing error, then to H/V (D16).
+ *
+ * NOTE ON THE PERSISTED FIELD NAMES. The save keys are still `zeroH`/`zeroV`
+ * because they are normalized [0,1] draws and renaming them would be a
+ * save-schema change (guardrail §6: version bump + migration + fixture). Under
+ * D16 they no longer mean "horizontal" and "vertical" — `zeroH` is the MAGNITUDE
+ * draw and `zeroV` the DIRECTION draw. The rename is deferred, not forgotten; see
+ * `Design/execution/PROGRESS.md` deferred observations.
+ *
+ * Uniform, not bell-curved: a normal magnitude would pile up near the middle and
+ * still produce occasional near-zero offsets, which is the behaviour D16 exists
+ * to remove.
+ */
+export function deriveZeroOffsetRad(
+  range: ZeroOffsetRange,
+  magnitudeDraw: number,
+  directionDraw: number,
+): { h: number; v: number } {
+  const magnitude = range.minRad + clamp(magnitudeDraw, 0, 1) * (range.maxRad - range.minRad);
+  const direction = clamp(directionDraw, 0, 1) * 2 * Math.PI;
+  return { h: magnitude * Math.cos(direction), v: magnitude * Math.sin(direction) };
+}
+
 /** Map a rifle instance's stored draws to its hidden true ballistics. */
 export function deriveRifleTruth(ranges: RifleTruthRanges, draws: RifleDraws): RifleTruth {
   return {
     mvOffsetMps: bellCurveValue(ranges.mvOffset, draws.mvOffset),
-    zeroOffsetRad: {
-      h: bellCurveValue(ranges.zeroH, draws.zeroH),
-      v: bellCurveValue(ranges.zeroV, draws.zeroV),
-    },
+    // `zeroH` = magnitude draw, `zeroV` = direction draw — see above.
+    zeroOffsetRad: deriveZeroOffsetRad(ranges.zeroOffset, draws.zeroH, draws.zeroV),
     inherentPrecisionRad: bellCurveValue(ranges.inherentPrecision, draws.inherentPrecision),
   };
 }

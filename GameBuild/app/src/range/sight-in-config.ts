@@ -14,17 +14,36 @@
 // left/centre/right layout is single-sourced. All output is SI (m); no unit math
 // lives in the scene/components (guardrail §4.4).
 import { getRangeDefinition } from './ranges';
-import { yardsToMeters, inchesToMeters } from '../units/length';
+import { yardsToMeters } from '../units/length';
+import { moaToRad } from '../units/angle';
 import type { DisplayUnits } from '../units/display';
 
 /** MIL travels with metric (m), MOA with imperial (yd) — the units/display
  *  pairing. The sight-in bay reads its stations in the active unit. */
 export type SightInUnitSystem = 'metric' | 'imperial';
 
-/** Per-variant physical target size (D7): the MOA face is 22 in square, the MIL
- *  face 44 cm square — different physical sizes, fixed at entry (D3). */
-export const MOA_TARGET_SIZE_M = inchesToMeters(22); // 0.5588 m
-export const MIL_TARGET_SIZE_M = 0.44; // 44 cm
+/**
+ * Target face sizes — sized so ONE GRID SQUARE IS EXACTLY ONE ANGULAR UNIT at the
+ * face's design distance. Both faces are a 22-cell grid (1-cell border + 20).
+ *
+ * MIL is exact for free: 44 cm / 22 = 2 cm per cell, and 1 mil at 100 m is 10 cm
+ * BY DEFINITION, so a cell is exactly 0.2 mil.
+ *
+ * MOA is NOT free, and the original 22 in face got it wrong (owner, on device
+ * 2026-07-26: "at MOA they're off... not by a lot but definitely off"). A 22 in
+ * face gives 1 in per cell, which relies on the shooter's shorthand that an inch
+ * equals a MOA at 100 yd. It does not: 1 MOA at 100 yd is 1.0472 in, so an inch
+ * is only 0.9549 MOA. Each cell was 4.5% small, and the error ACCUMULATES — by
+ * the reticle's 10 MOA mark the grid had drifted almost half a MOA, which is
+ * exactly the widening mismatch visible in the scope.
+ *
+ * So the MOA face is derived rather than authored: 22 cells x (100 yd x 1 MOA).
+ * That is 23.04 in, not 22 in — and it is the MORE physically correct target,
+ * since real "true MOA" targets are printed with 1.047 in squares for precisely
+ * this reason.
+ */
+export const MOA_TARGET_SIZE_M = 22 * yardsToMeters(100) * moaToRad(1); // 0.58517 m = 23.04 in
+export const MIL_TARGET_SIZE_M = 0.44; // 44 cm -> 2 cm cells -> exactly 0.2 mil at 100 m
 
 /** Lateral spacing of the three targets from bore centre (m). Kept tight so all
  *  three sit within a low-magnification view and are easy to put under the

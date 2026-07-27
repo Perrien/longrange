@@ -1,5 +1,5 @@
 // Gradient sky dome for the environment module (Stage 2 of
-// Design/Plans/test-range-environment-plan.md). Replaces the flat
+// Design/archive/test-range-environment-plan.md). Replaces the flat
 // `scene.background` color with a horizon/mid/zenith dome and switches
 // distance fog on — fog color is set equal to the dome's horizon color so
 // fogged geometry dissolves into the sky rather than a mismatched grey wall.
@@ -57,7 +57,11 @@ export function buildSky(scene: THREE.Scene, cfg: EnvironmentConfig, track: Trac
   scene.add(mesh);
 
   scene.background = null; // the dome covers everything
-  scene.fog = new THREE.Fog(cfg.fog.colorHex, cfg.fog.nearM, cfg.fog.farM);
+  // Exponential-squared, not linear (Stage 3, plan §9.5) — see the `fog` field
+  // comment in environment-config.ts for why linear fog was actively harmful at
+  // mountain distances. Colour still matches the dome's horizon so fogged
+  // geometry dissolves into the sky rather than a mismatched grey wall.
+  scene.fog = new THREE.FogExp2(cfg.fog.colorHex, cfg.fog.density);
 
   return { mesh };
 }

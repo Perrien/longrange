@@ -1,4 +1,4 @@
-// Test Range config (Stage 1 of Design/Plans/test-range-environment-plan.md) —
+// Test Range config (Stage 1 of Design/archive/test-range-environment-plan.md) —
 // pure data, no THREE, mirroring range-a-config.ts's style. A single placeholder
 // target: a 12" gong hung at 100 yd on a rack authored with Range A's frame
 // numbers (RACK_HEIGHT_YARDS 1.2, PLATE_CENTER_FRACTION 0.5).
@@ -78,23 +78,27 @@ export const TEST_RANGE_ENVIRONMENT: EnvironmentConfig = {
     reliefAmpM: 2.0,
     hill: { xM: 0, zM: -340, radiusM: 50, heightM: 4 },
   },
-  sky: { horizonHex: 0xcfe0ee, midHex: 0x9ec2e4, zenithHex: 0x5f93c9, domeRadiusM: 1500 },
-  // farM raised 1400→2000 (owner feedback 2026-07-21, "still too bright" after
-  // two rounds of texture darkening had zero visible effect on the
-  // mountains — the tell, same as the earlier canopy bug, that something
-  // else was fully overriding the material color). Root cause: THREE.Fog is
-  // linear-smoothstep(nearM, farM, dist), and the mountain ring (1000-1350 m)
-  // sat deep in that curve's saturated tail at farM=1400 — ~75% fog-color at
-  // the near edge, ~99.6% at the far edge — so the rendered pixel was almost
-  // pure fog color (a pale sky blue) regardless of the mountain texture's
-  // actual albedo. Raising farM to 2000 (mountains unchanged, still
-  // comfortably inside both the new fog far and the 3000 m camera far) moves
-  // them to ~43%/~71% fog instead — a real haze gradient with the darkened
-  // texture now actually visible, not a wash. Clouds ignore scene.fog
-  // entirely (own ShaderMaterial, ported from BTK) and the sky dome sets
-  // `fog: false`, so neither is affected; terrain/trees (max z ±500/430) are
-  // nowhere near either far value, so their look is unchanged.
-  fog: { colorHex: 0xcfe0ee, nearM: 180, farM: 2000 },
+  // Stage 3 of the Wooded Zero plan (2026-07-26) brought the shared module's
+  // low morning sun, FogExp2 aerial perspective and near-field shadow map. The
+  // Test Range adopts them by charter — it exists as the proving ground for
+  // exactly this kind of change before it reaches a live range. NOTE: this
+  // changes the Test Range's look and wants its own device re-check.
+  //
+  // The long fog commentary that used to live below is now obsolete: `farM`
+  // tuning was a symptom of LINEAR fog saturating at mountain distances, which
+  // is the thing FogExp2 fixes. See `environment-config.ts`'s `fog` field.
+  sky: { horizonHex: 0xe6dcc8, midHex: 0xa8c4e0, zenithHex: 0x5688c4, domeRadiusM: 1500 },
+  fog: { colorHex: 0xe6dcc8, density: 7.45e-4 },
+  lighting: {
+    sunElevationDeg: 24,
+    sunAzimuthDeg: -125,
+    sunHex: 0xffe3ba,
+    sunIntensity: 1.6,
+    hemiSkyHex: 0x93b4e0,
+    hemiGroundHex: 0x4a5236,
+    hemiIntensity: 0.75,
+    shadows: { mapSize: 2048, extentM: 100, normalBias: 0.08, bias: -0.0005 },
+  },
   trees: {
     coniferCount: 110,
     deciduousCount: 80,
@@ -136,7 +140,31 @@ export const TEST_RANGE_ENVIRONMENT: EnvironmentConfig = {
   // count is cut back to match so the remaining band doesn't read as a wall
   // of grass either.
   cover: { bushCount: 60, rockCount: 25, grassTuftCount: 140, grassZoneM: 34, shooterClearM: 18 },
-  mountains: { count: 12, distMinM: 1000, distMaxM: 1350, heightMinM: 120, heightMaxM: 260, widthToHeight: 1.4 },
+  // Two overlapping ridgelines (Stage 4b). The far one is lower, paler and
+  // further, so aerial perspective separates them into distinct depths instead
+  // of one flat cut-out. Both sit inside the 1500 m sky dome and the 3000 m
+  // camera far plane. At the configured fog density they land at roughly 49%
+  // and 69% haze — a real gradient, which is exactly what the old linear fog
+  // could not produce.
+  ridges: {
+    halfArcDeg: 70,
+    layers: [
+      { distanceM: 1100, heightMinM: 90, heightMaxM: 250, colorHex: 0x5d6b7a, segments: 96 },
+      { distanceM: 1430, heightMinM: 60, heightMaxM: 170, colorHex: 0x8493a3, segments: 80 },
+    ],
+  },
+  // Canopy sway driven by the SAME wind the bullet gets (Stage 5, plan §9.6).
+  // Quadratic in height above the trunk base, so crowns move and trunks do not
+  // — which is both how a tree behaves and what the owner asked for (§7.3:
+  // "the very light wind just affecting tree tops is fine").
+  windSway: {
+    halfWidthM: 250,
+    depthM: 450,
+    sampleHeightM: 8,
+    bendScale: 0.0016,
+    maxBendM: 0.8,
+    swayHz: 1.1,
+  },
   clouds: {
     count: 24,
     heightMinM: 220,

@@ -17,8 +17,9 @@ import type { AmmoLot, RifleInstance } from '../persistence';
 // field keeps nominal ≥ 3·sd where a negative would be nonsensical.
 const RIFLE_RANGES: RifleTruthRanges = {
   mvOffset: { nominal: 0, sd: 5 }, // m/s
-  zeroH: { nominal: 0, sd: 0.0005 }, // rad
-  zeroV: { nominal: 0, sd: 0.0005 }, // rad
+  // D16 raw pointing error: polar, uniform magnitude. `zeroH`/`zeroV` DRAWS are
+  // now magnitude/direction (the persisted key names are unchanged).
+  zeroOffset: { minRad: 0.001, maxRad: 0.01 }, // rad
   inherentPrecision: { nominal: 0.0003, sd: 0.00005 }, // rad
 };
 
@@ -75,8 +76,9 @@ describe('deriveRifleTruth / deriveLotTruth', () => {
   it('all-0.5 draws yield exactly the nominal for every field', () => {
     const r = deriveRifleTruth(RIFLE_RANGES, RIFLE_DRAWS_A);
     expect(r.mvOffsetMps).toBe(RIFLE_RANGES.mvOffset.nominal);
-    expect(r.zeroOffsetRad.h).toBe(RIFLE_RANGES.zeroH.nominal);
-    expect(r.zeroOffsetRad.v).toBe(RIFLE_RANGES.zeroV.nominal);
+    // Zero offset is polar now, not a per-axis nominal: draw 0.5/0.5 is
+    // mid-magnitude at half a turn, i.e. pointing straight -H.
+    expect(Math.hypot(r.zeroOffsetRad.h, r.zeroOffsetRad.v)).toBeCloseTo(0.0055, 9);
     expect(r.inherentPrecisionRad).toBe(RIFLE_RANGES.inherentPrecision.nominal);
 
     const l = deriveLotTruth(LOT_RANGES, LOT_DRAWS_A);
@@ -100,8 +102,11 @@ describe('deriveRifleTruth / deriveLotTruth', () => {
         inherentPrecision: draw,
       });
       within(r.mvOffsetMps, RIFLE_RANGES.mvOffset);
-      within(r.zeroOffsetRad.h, RIFLE_RANGES.zeroH);
-      within(r.zeroOffsetRad.v, RIFLE_RANGES.zeroV);
+      // The zero offset is uniform-polar, so the ±3 SD rule does not apply; its
+      // own invariant is that the MAGNITUDE stays inside the configured band.
+      const mag = Math.hypot(r.zeroOffsetRad.h, r.zeroOffsetRad.v);
+      expect(mag).toBeGreaterThanOrEqual(RIFLE_RANGES.zeroOffset.minRad - 1e-12);
+      expect(mag).toBeLessThanOrEqual(RIFLE_RANGES.zeroOffset.maxRad + 1e-12);
       within(r.inherentPrecisionRad, RIFLE_RANGES.inherentPrecision);
 
       const l = deriveLotTruth(LOT_RANGES, {
