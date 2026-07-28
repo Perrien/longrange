@@ -5,3 +5,20 @@ oracle-patches: (none)
 emscripten: 6.0.2   # owner decision 2026-07-13 — same version for local, CI, and vector generation
 tolerance: 1e-4 relative (expected: ~0; engine is an unmodified copy)
 vectors: vectors/golden.json (regenerate: node GameBuild/validation/run.mjs --generate — requires local pristine BTK build)
+
+# --- Matrix extensions (NOT oracle changes) -------------------------------
+# The oracle IDENTITY above is unchanged by these. Extending the sampled matrix
+# is a different operation from changing the oracle: the btk-commit, patches and
+# emscripten version all stay put, so previously-generated rows must come back
+# BIT-IDENTICAL. That equality is the safety property — verify it, do not assume
+# it, and never let a matrix extension be the thing that turns a red check green
+# (execution-protocol §4.2/§4.3).
+#
+# 2026-07-28 — coverage extended 1000/800/1500/1800 -> 2000 m (owner request).
+#   Why: the ELR range's 2000 m cap was chosen partly BECAUSE the oracle stopped
+#   at 1800, which left the headline station 200 m past coverage. It no longer is.
+#   Loads extended: 65cm-140-match, 223-77-match, 308-175-match, 338lm-300-match,
+#   50bmg-661-m33 (all reach 2000 m in all three atmospheres; verified first).
+#   22lr-40-standard left at 300 m — see the note in loads.json.
+#   Result: 402 pre-existing rows BIT-IDENTICAL, 234 rows added, 636 total,
+#   36 cases. Check mode worst rel diff 0.000e+0.

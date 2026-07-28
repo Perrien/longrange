@@ -41,6 +41,15 @@ Date: 2026-07-27 · banner added 2026-07-27 · **cap revised 3000 → 2000 on 20
 > is **fully validated**, not "200 m past coverage". Formally an owner-decision-logged
 > operation (harness header), but adding new loads/ranges does not disturb existing rows.
 >
+> > **✅ DONE 2026-07-28.** Coverage now runs to **2000 m** for the 6.5 CM, .223, .308,
+> > .338 LM and .50 BMG (all five reach it in all three atmospheres). 402 pre-existing
+> > rows came back **bit-identical**, 234 rows added, 636 total across 36 cases, and the
+> > owned engine matches pristine at **worst rel diff 0.000e+0**. The .22 LR stays at
+> > 300 m — it cannot reach 2000 and, worse, fails *raggedly*: the harness walls flight
+> > at 15 s and silently drops unreachable rows, so its coverage would have varied by
+> > atmosphere without erroring. Logged in `GameBuild/validation/ORACLE_VERSION`.
+> > **The 2000 m headline station is now inside validated coverage.**
+>
 > **The travel wall softens, and improves.** 2000 m needs 23.02 MIL; a flat base gives 20.
 > So you **hold the remaining 3 MIL** — no canted base needed (owner, 2026-07-27). Since
 > the reticle is FFP, holdover capacity scales with zoom: ~6 MIL below centre at 35×, ~10

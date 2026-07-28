@@ -15,7 +15,7 @@
     ]
   },
   "validation": {
-    "$comment": "Golden-vector matrix (task 0.7): every load x atmosphere x wind case, sampled per the load's `ranges`. Zero-wind windage is the spin-drift/aero-jump channel.",
+    "$comment": "Golden-vector matrix (task 0.7): every load x atmosphere x wind case, sampled per the load's `ranges`. Zero-wind windage is the spin-drift/aero-jump channel. RANGE COVERAGE, extended 2026-07-28 to 2000 m for the ELR range: five loads carry maxRangeM 2000; 22lr-40-standard stays at 300 because it CANNOT reach 2000 and fails RAGGEDLY rather than loudly — solve-driver.mjs walls simulate() at 15 s, and a .22 LR needs ~14.3 s to reach only 1600 m, so it silently returns 15-18 rows instead of 20 and the count VARIES BY ATMOSPHERE (1600 ISA / 1800 hot-and-high / 1500 cold-dense). `solve()` skips unreachable ranges with a bare `continue`, so an over-reaching load quietly shrinks its own coverage instead of erroring. Before raising any maxRangeM, check the row COUNT, not just that generation succeeded.",
     "zeroRangeM": 100,
     "atmospheres": [
       { "name": "ISA sea level", "temperatureK": 288.15, "altitudeM": 0, "humidity": 0.5, "pressurePa": 0 },
@@ -50,7 +50,7 @@
         "muzzleVelocityMps": 826.008,
         "twistM": 0.2032
       },
-      "ranges": { "maxRangeM": 1000, "stepM": 100 }
+      "ranges": { "maxRangeM": 2000, "stepM": 100 }
     },
     {
       "id": "22lr-40-standard",
@@ -98,7 +98,7 @@
         "muzzleVelocityMps": 838.2,
         "twistM": 0.2032
       },
-      "ranges": { "maxRangeM": 800, "stepM": 100 }
+      "ranges": { "maxRangeM": 2000, "stepM": 100 }
     },
     {
       "id": "308-175-match",
@@ -122,7 +122,7 @@
         "muzzleVelocityMps": 792.48,
         "twistM": 0.254
       },
-      "ranges": { "maxRangeM": 1000, "stepM": 100 }
+      "ranges": { "maxRangeM": 2000, "stepM": 100 }
     },
     {
       "id": "338lm-300-match",
@@ -146,7 +146,7 @@
         "muzzleVelocityMps": 830.58,
         "twistM": 0.254
       },
-      "ranges": { "maxRangeM": 1500, "stepM": 100 }
+      "ranges": { "maxRangeM": 2000, "stepM": 100 }
     },
     {
       "id": "50bmg-661-m33",
@@ -170,7 +170,7 @@
         "muzzleVelocityMps": 886.968,
         "twistM": 0.381
       },
-      "ranges": { "maxRangeM": 1800, "stepM": 100 }
+      "ranges": { "maxRangeM": 2000, "stepM": 100 }
     }
   ]
 }

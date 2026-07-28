@@ -57,6 +57,7 @@ import { solveTrajectory, spinRateFromTwist, speedOfSound, type AtmosphereInput,
 import { AudioManager } from '../audio/audio-manager';
 import { loadBtkModule } from '../engine-bridge/wasm-module';
 import { describeThrown } from '../engine-bridge/describe-thrown';
+import { PhaseTimer } from './phase-timer';
 import { createScatterSimulator, type ScatterSimulator } from '../engine-bridge/match-sim';
 import { createSteelReaction, type SteelReaction } from '../engine-bridge/steel-target';
 import {
@@ -250,6 +251,10 @@ export function ScopeView({
   // look identical from the outside: a button that does nothing. This makes the
   // next occurrence self-diagnosing instead of a guessing game.
   const [fireBlocked, setFireBlocked] = useState<string | null>(null);
+  // Per-shot phase breakdown (2026-07-28) — which phase of the shot causes the
+  // 25–30 ms frame the probe measured on device. Set once per shot, so it reads
+  // as "the last shot cost this", not as a live counter.
+  const [shotMs, setShotMs] = useState<string | null>(null);
   // Frame-time readout (owner request, 2026-07-27: "numbers would be good to see a
   // slowdown before it's too bad"). Shown on EVERY range, not just the probes —
   // the point is to catch a regression while it is still small, and a number you
@@ -959,7 +964,12 @@ export function ScopeView({
           const gearCtx = steelGearCtx();
           const bulletMassKg = gearCtx?.bulletMassKg ?? gameLoad.load.massKg;
           const bulletDiameterM = gearCtx?.bulletDiameterM ?? gameLoad.load.diameterM;
+          // Phase timing (2026-07-28). The probe measured 25–30 ms on the frame a
+          // shot fires against 17–18 ms idle — a discrete blocking event, not slow
+          // rendering. These marks say WHICH phase.
+          const shotTimer = new PhaseTimer();
           const solved = solveAt(rangeM, wind, gearCtx);
+          shotTimer.mark('solve');
           // Effective-wind readout (task 1.7b, D6): undefined in Steady mode
           // (or before the field's loaded), which the HUD reads as "nothing
           // new to show" and just displays the dialed mean instead.
@@ -974,6 +984,7 @@ export function ScopeView({
           // One scatter sample — carries the shot's impact AND its true muzzle
           // velocity (2.4e); resolveShot uses {x,y}, the chrono reads mvMps.
           const shot = simAt(rangeM, gearCtx).fire();
+          shotTimer.mark('scatter');
           const result = resolveShot({
             eye: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
             aimDir: { x: dir.x, y: dir.y, z: dir.z },
@@ -988,6 +999,7 @@ export function ScopeView({
             zeroOffsetRad: gearCtx ? gearZeroOffset(gearCtx.rifle, gearCtx.rifleRanges) : undefined,
             playerZero: gearCtx?.playerZero,
           });
+          shotTimer.mark('resolve');
           store().recordShot(result);
           store().decrementBudget();
           blocked(null); // a shot got all the way through
@@ -1134,7 +1146,11 @@ export function ScopeView({
               rangeM,
             );
             launchBulletTrace(path, st.t);
+            shotTimer.mark('trace');
           }
+          // One state push per shot — cheap, and it lands on a frame that has
+          // already been spent, so measuring cannot inflate what it measures.
+          setShotMs(shotTimer.summary());
         }
       }
       } catch (err) {
@@ -2218,6 +2234,20 @@ export function ScopeView({
             }}
           >
             FIRE blocked: {fireBlocked}
+          </div>
+        )}
+        {shotMs && (
+          <div
+            style={{
+              padding: '3px 9px',
+              borderRadius: 5,
+              background: 'rgba(0,0,0,0.5)',
+              color: '#cfd8ff',
+              font: '12px/1.3 ui-monospace, Menlo, monospace',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {`shot: ${shotMs}`}
           </div>
         )}
         {perf && (
