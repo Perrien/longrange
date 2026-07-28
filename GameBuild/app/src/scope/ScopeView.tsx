@@ -56,6 +56,7 @@ import { buildReticle, MAJOR_HALF_PX } from './reticle';
 import { solveTrajectory, spinRateFromTwist, speedOfSound, type AtmosphereInput, type Load } from '../engine-bridge';
 import { AudioManager } from '../audio/audio-manager';
 import { loadBtkModule } from '../engine-bridge/wasm-module';
+import { describeThrown } from '../engine-bridge/describe-thrown';
 import { createScatterSimulator, type ScatterSimulator } from '../engine-bridge/match-sim';
 import { createSteelReaction, type SteelReaction } from '../engine-bridge/steel-target';
 import {
@@ -1139,8 +1140,13 @@ export function ScopeView({
       } catch (err) {
         // Never let a shot-resolution failure take the animation loop or the
         // button with it — report it and keep the range usable.
+        // `describeThrown`, not String(err): a C++ exception from the WASM core
+        // is not an Error, and String() renders it `[object Object]` — which is
+        // exactly what reached the owner on device, hiding a message the engine
+        // had already written. Log the raw value too, so the console keeps the
+        // getters the on-screen string cannot show.
         console.error('fireSteel: shot resolution threw', err);
-        blocked(`shot failed: ${err instanceof Error ? err.message : String(err)}`);
+        blocked(`shot failed: ${describeThrown(err)}`);
       }
       // Recoil kick + POA residual (feel; ported verbatim from 0.9).
       st.dist.vp -= RECOIL_PITCH_VEL; // muzzle rise (view kicks up through the negated Euler)

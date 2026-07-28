@@ -333,6 +333,62 @@ Predicted values, so a deviation is obvious rather than a matter of opinion:
 correct behaviour and is itself worth seeing — 104 MIL is more elevation than any optic in
 the catalog has, which previews the travel wall without needing the travel model built.)*
 
+### 5.0 FINDINGS — on device, 2026-07-28 (owner, iPad)
+
+**The probe has answered its Tier-1 questions. All three clear.**
+
+| question | answer | consequence |
+|---|---|---|
+| Is an 18 s shot tense or tedious? | **Fine.** Not a problem. | The ELR range is viable at full time of flight. No TOF compression needed; do not build one. |
+| Frame time on the iPad | **Locked at 60 fps**, 16–17 ms typical, **spikes to ~30 ms**. | Passes the <16 ms gate at the mean. The spikes are the only perf item left (§5.0a). |
+| `DEPTH_BITS` on the iPad | **24.** | The two-pass depth split is **not needed**. `near = 10 m` alone carries 3 km. §6.1 of the full plan can drop it. |
+| Convex hillside vs flat deck | **Convex wins**, decisively — owner: *"opens up so many options"*. | **Probe B's profile is the pattern for the real range.** This retires the 12 m bluff and the ±1.5° fan from `elr-dope-range-plan.md`: the convex slope buys the angular separation on its own, on a single straight lane, which is both more natural and more shootable. |
+| Trace / impact / ping at 2000 m | **All three present.** | Better than predicted — §1 expected the tracer to vanish past ~1000 m and the ping to be marginal. The `BulletTrace` 0.15 s trail and the 500 yd `audio-model` tuning are **not** blockers. Their rework moves from prerequisite to polish. |
+
+**One genuine oddity, and it is physics, not a bug.** At the far stations the bullet does not
+read as an arc — it *drops out of the sky*. That is correct: with a 104 MIL come-up the launch
+angle is so steep that the ascending leg happens above and behind the sight picture, and the
+only part inside the scope's field of view is the near-vertical terminal descent. Worth
+recording because it will read as wrong to a player who has never seen it, which makes it a
+**teaching moment rather than a defect** — it is the visual proof of what a 100+ MIL come-up
+actually means. Candidate Wiki hook: `trajectory-shape` / the come-up article.
+
+#### 5.0a Still open
+
+- **The ~30 ms spikes.** Mean is fine; the spikes are not yet attributed. Suspects, cheapest
+  first: the per-shot solve (a 3 km fine table is thousands of integration steps on the main
+  thread), the wind-field solve, and plate-atlas writes on impact. Worth attributing before
+  the real range adds terrain and vegetation on top — the probe is deliberately empty, so
+  this is the *floor*, not the ceiling.
+- **The dead FIRE button.** Now partially characterised — see §5.0b.
+
+#### 5.0b The FIRE failure, characterised
+
+Observed on device: **`FIRE blocked: shot failed: [object Object]`**, with recoil but no trace.
+That is a throw inside `fireSteel`'s engine block — the shot is resolved *after* the throw
+point, the recoil kick is applied *after* the catch, hence a kick with nothing downrange.
+
+`[object Object]` was a **reporting defect, not the fault itself**: the catch used
+`String(err)`, and an Emscripten C++ exception is not an `Error`, so the message the engine
+had already written was discarded. Fixed 2026-07-28 (`engine-bridge/describe-thrown.ts`) —
+the next occurrence will name itself.
+
+The engine's reachable throw sites, for matching against whatever text comes back:
+
+| site | message |
+|---|---|
+| `simulator.cpp:328` | `computeZero: bullet cannot reach target distance (MV too low or range too far)` |
+| `simulator.cpp:295` | `computeZero: target distance (-z) must be > 0` |
+| `trajectory.cpp:19` | `Trajectory point index out of range` |
+| `atmosphere.cpp:24/28` | temperature / humidity range |
+
+Noted while reading: **`Simulator::computeZero` hard-codes its own `simulate(sim_dist, dt,
+5.0f)` time wall**, which the P0 fix did not touch (P0 raised the *caller's* cap in
+`engine-bridge/index.ts`). It is harmless at a 100 m zero, but it is a second, hidden 5 s
+ceiling that would bite instantly if anything ever zeroes at long range — and the no-gear
+sight-in fallback does exactly that (`ScopeView.tsx`, `zeroRangeM: distanceM`). Logged here
+rather than fixed, because it is not yet shown to be *this* bug.
+
 ### 5.1 The shot loop — the primary question
 
 - Is an 18-second shot **tense or tedious**? Trust the gut answer, not the second one.

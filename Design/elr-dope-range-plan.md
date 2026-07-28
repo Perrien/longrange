@@ -3,6 +3,23 @@
 Status: **UNVALIDATED — do not build from this yet.**
 Date: 2026-07-27 · banner added 2026-07-27 · **cap revised 3000 → 2000 on 2026-07-27**
 
+> ### Revision — the bluff and the fan are retired; the range sits on a convex slope (owner, 2026-07-28)
+>
+> **The probe answered this on device.** Probe B's rising convex hillside beat the flat
+> deck decisively (owner: *"opens up so many options"*), so the terrain form below —
+> a **12 m bluff** firing across flat ground on a **±1.5° fan** — is superseded. Both of
+> those existed to solve one problem: getting enough *angular* separation between stations
+> that the near targets do not occlude the far ones. A convex slope solves it on its own,
+> on a **single straight lane**, which is more natural to look at and better to shoot.
+> Rebuild §3's geometry on `elr-probe-config.ts`'s `slopeGroundY` profile rather than on
+> the bluff-plus-fan arithmetic. Occlusion margins must be re-derived for 250 m steps to
+> 2000 (the probe's +0.532° margin is for 500 m steps to 3000).
+>
+> Also settled by the probe, and relevant here: **time of flight is fine** as-is (no
+> compression mechanic), the iPad renders 3 km at **60 fps** with `near = 10 m` and a
+> **24-bit** depth buffer (so **§6.1's two-pass depth split is unnecessary** — delete it),
+> and trace/impact/ping all read at 2000 m. See [`archive/elr-probe-plan.md`](./archive/elr-probe-plan.md) §5.0.
+
 > ### Revision — the ladder now stops at 2000 (owner, 2026-07-27)
 >
 > Two independent limits nearly coincide, and neither was noticed when this doc was
@@ -36,12 +53,21 @@ Date: 2026-07-27 · banner added 2026-07-27 · **cap revised 3000 → 2000 on 20
 
 > ## ⚠ Read this first
 >
-> **The next thing to build is [`elr-probe-plan.md`](./elr-probe-plan.md), not this.**
+> **The probe has been built and has reported (2026-07-28). This document is next —
+> but it needs a rewrite, not a read.**
 >
 > This document was written before anything had been on a device. Roughly half of it is
 > settled and half is educated guesswork, and the two are not visually distinguishable in
-> the prose below. Owner call, 2026-07-27: build a throwaway flat 3 km probe first, learn
-> what actually works, then rewrite this.
+> the prose below. Owner call, 2026-07-27: build a throwaway 3 km probe first, learn what
+> actually works, then rewrite this. That probe is now **done and archived** at
+> [`archive/elr-probe-plan.md`](./archive/elr-probe-plan.md) — its findings are in **§5.0**
+> of that doc, and the two banners above carry the consequences.
+>
+> **What the probe changed in the lists below:** §2.1's 12 m bluff and §3.1–3.2's fan are
+> **retired** (convex slope replaces both); §6.1's depth-precision derivation is **moot**
+> (24-bit on device, `near = 10 m` suffices); §5 gong/frame sizing and §6.3 fog density are
+> **confirmed as built** (1 MIL gongs, white-on-dark, `FogExp2` at 1.7e−4). What remains
+> guesswork is genuinely still guesswork.
 >
 > **Settled — arithmetic, a device cannot overturn it:**
 > §1 effective ranges · §2.2 inclination error · §3.1–3.2 fan geometry and occlusion ·
@@ -58,7 +84,7 @@ Date: 2026-07-27 · banner added 2026-07-27 · **cap revised 3000 → 2000 on 20
 > `BulletTrace.ts` draws a 0.15 s trail behind an 8 cm sprite; `audio-model.ts` is tuned to
 > 500 yd by its own comment. The tracer will likely be invisible and the ping inaudible, and
 > whether an 18-second shot is tense or tedious is unknowable without firing one. See
-> `elr-probe-plan.md` §1. Nothing in the build stages below accounts for this.
+> [`archive/elr-probe-plan.md`](./archive/elr-probe-plan.md) §1. Nothing in the build stages below accounts for this.
 
 Owner decisions this doc records (2026-07-27): total distance **2000 m / 2000 yd**
 (revised down from 3000 — see the banner); stations **every 250**, not every 500;

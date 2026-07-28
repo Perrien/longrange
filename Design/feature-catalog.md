@@ -240,8 +240,25 @@ as the showcase range.
 Unlocks after KD mastery on Range A.
 **Not built** — planned 2.7.
 
-#### Range C — ELR (500/1000/1500/2000/2500)
-**Not built** — planned Increment 5.
+#### Range C — ELR (250-step ladder to 2000)
+**Not built — but de-risked and next up.** Superseded in scope by
+[`elr-dope-range-plan.md`](./elr-dope-range-plan.md): **250 m/yd steps to 2000**, not
+500-steps to 2500. 2000 is where the engine is validated (oracle to 1800, extendable by
+data edit) *and* where the .50 BMG is still supersonic (M1.0 at 2267 m); the scope's
+elevation-travel ceiling is designed in as the lesson, met by **holdover** rather than a
+gear gate (2000 m needs 23.02 MIL against a 20 MIL flat base).
+
+A throwaway 3 km **probe was built and answered on device** (2026-07-28; archived at
+[`archive/elr-probe-plan.md`](./archive/elr-probe-plan.md) §5.0), so the expensive unknowns
+are now settled rather than assumed: an 18 s time of flight is **fine** (no compression
+mechanic needed), the iPad holds **60 fps** at 3 km with `near = 10 m`, the depth buffer is
+**24-bit** (no two-pass split), trace/impact/ping all read at **2000 m**, and the range sits
+on a **convex rising slope** — which retires both the 12 m bluff and the ±1.5° fan, since the
+slope buys the angular separation on its own on a single straight lane.
+
+The plan doc still needs a rewrite against those findings before build. Probe code
+(`ELRProbeScene.ts`, `elr-probe-config.ts`) is retained as the reference implementation for
+the terrain profile.
 
 #### Mission / UKD ranges
 Unlabeled, irregularly placed targets; terrain + incline/decline; ranging via
