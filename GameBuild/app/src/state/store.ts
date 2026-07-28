@@ -524,14 +524,19 @@ export const useGameStore = create<GameStore>()((set, get) => ({
    * The group state (`shotsAtCurrentTarget`, `lastShots`) still resets, because
    * that genuinely belongs to the previous target.
    */
-  commitTarget: (plateInstanceId, distanceM, budget = DEFAULT_SHOT_BUDGET) =>
+  commitTarget: (plateInstanceId, distanceM, budget) =>
     set((s) => ({
       session: {
         ...s.session,
         targetDistanceM: distanceM,
         currentTarget: { plateInstanceId, distanceM },
         shotsAtCurrentTarget: 0,
-        shotBudget: budget,
+        // `?? DEFAULT_SHOT_BUDGET` rather than a parameter default, so passing an
+        // explicit `undefined` (what `shotBudgetFor` returns for a range with no
+        // opinion) behaves identically to omitting it. The distinction matters:
+        // callers now forward a range's budget through, and it is frequently
+        // undefined.
+        shotBudget: budget ?? DEFAULT_SHOT_BUDGET,
         lastShots: [],
       },
       score: { ...s.score, targetsEngaged: s.score.targetsEngaged + 1 },

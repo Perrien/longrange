@@ -27,17 +27,15 @@ import { TestRangeScene } from '../range/TestRangeScene';
 import { ELRProbeScene } from '../range/ELRProbeScene';
 import { probeVariantFromSearch } from '../range/elr-probe-config';
 import { projectMissToGround, FLAT_GROUND } from './miss-projection';
+import { FrameTimer, FRAME_BUDGET_MS, readDepthBits } from './perf-hud';
 import { pickAimedPlate, resolveTargetPlate } from './aim-pick';
 
-/** Effectively unlimited for a sandbox, but finite so the shots-left readout still
- *  moves — see the commit call in the `elr-probe` scene branch. */
-const PROBE_SHOT_BUDGET = 999;
 import { TEST_RANGE_GROUND } from '../range/test-range-config';
 import type { SteelSceneApi } from '../range/steel-scene-api';
 import { WoodedZeroScene } from '../range/WoodedZeroScene';
 import { snapshotWoodedZero } from '../range/wooded-zero-config';
 import type { PaperBayScene, PaperTargetInstance } from '../range/paper-bay-scene';
-import { cameraReachFor, getRangeDefinition } from '../range/ranges';
+import { cameraReachFor, getRangeDefinition, shotBudgetFor } from '../range/ranges';
 import { solveGear, createGearScatter, gearZeroOffset } from '../engine-bridge/gear-solve';
 import { gearSolveContext, type GearSolveContext } from '../game/active-gear';
 import { recommendedZeroM } from '../game/zero-distance';
@@ -242,6 +240,22 @@ export function ScopeView({
   const outOfRounds = !!activeLot && (activeLot.roundsRemaining ?? 0) <= 0;
   // Running group (task 2.3d, D5): the engaged target + shot count for the
   // read-the-grid HUD (the centroid marker itself is drawn on the target face).
+  // Why did the last FIRE press do nothing? `null` = it fired normally.
+  //
+  // Added 2026-07-27 after the probe's FIRE button died twice and TWO plausible
+  // causes were fixed from static reading without either being the real one. The
+  // fire path has five silent early-returns and one `if (engineModule)` that skips
+  // the entire shot when the WASM module is missing or has aborted — all of which
+  // look identical from the outside: a button that does nothing. This makes the
+  // next occurrence self-diagnosing instead of a guessing game.
+  const [fireBlocked, setFireBlocked] = useState<string | null>(null);
+  // Frame-time readout (owner request, 2026-07-27: "numbers would be good to see a
+  // slowdown before it's too bad"). Shown on EVERY range, not just the probes —
+  // the point is to catch a regression while it is still small, and a number you
+  // only see on the diagnostic ranges cannot do that.
+  const [perf, setPerf] = useState<{ ms: number; fps: number; worst: number; bits: number } | null>(
+    null,
+  );
   const [sightInGroup, setSightInGroup] = useState<{
     shots: number;
     nominalDistance: number;
@@ -361,7 +375,9 @@ export function ScopeView({
       // signal that a shot actually happened. A decrementing counter is the first
       // thing to look at when the trigger seems dead.
       const first = range.plates[0];
-      if (first) store().commitTarget(first.instanceId, first.distanceM, PROBE_SHOT_BUDGET);
+      if (first) {
+        store().commitTarget(first.instanceId, first.distanceM, shotBudgetFor(rangeDefinition));
+      }
     } else {
       range = new RangeScene(scene);
     }
@@ -389,6 +405,16 @@ export function ScopeView({
     // Mirage shimmer (task 1.7c): a post-process pass between this world render
     // and the reticle's separate 2D overlay canvas (untouched by this).
     initMirage(renderer);
+
+    // Perf instrumentation. `readDepthBits` is a one-shot read: the whole
+    // per-range camera `near` decision assumes 24 bits, and a device reporting 16
+    // would make the far stations z-fight no matter what near/far are set to.
+    const frameTimer = new FrameTimer();
+    const depthBits = readDepthBits(renderer.getContext());
+    // Push to React a few times a second, not every frame — a 60 Hz setState would
+    // itself become a measurable share of the frame time being measured.
+    const PERF_PUSH_MS = 250;
+    let lastPerfPush = 0;
 
     // Shadow map (Stage 3, plan §9.2). This is the one RENDERER-level piece of
     // the scenery upgrade, so it is opt-in per scene rather than always on:
@@ -877,29 +903,49 @@ export function ScopeView({
         range?.plates ?? [],
       );
       const found = picked ? { dir: dirNow, plate: picked } : null;
-      if (found) store().commitTarget(found.plate.instanceId, found.plate.distanceM);
+      // Pass the RANGE's budget, not the store default. Omitting it here is what
+      // killed the FIRE button on the probe: the scene builder granted 999 at
+      // mount, then the first press of COMMIT silently replaced it with
+      // DEFAULT_SHOT_BUDGET (3), and three shots later firing stopped for good —
+      // gear-independent, and invisible unless you were watching "shots left".
+      if (found) {
+        store().commitTarget(
+          found.plate.instanceId,
+          found.plate.distanceM,
+          shotBudgetFor(rangeDefinition),
+        );
+      }
     };
 
     // FIRE (steel range) — resolve the shot from the aim, then recoil.
     function fireSteel() {
-      if (!range) return; // steel-only path; the sight-in bay uses fireSightIn
+      const blocked = (why: string | null) => setFireBlocked(why);
+      if (!range) return blocked('no steel scene'); // sight-in bay uses fireSightIn
       const steel = range; // non-null alias so the deferred impact closures narrow
       // Gate on budget (task 1.6c, D2): ends the 1.4c dry-fire allowance — no
       // shot, no recoil, once the budget for the current target is spent.
-      if (store().session.shotBudget <= 0) return;
+      if (store().session.shotBudget <= 0) return blocked('shot budget spent — COMMIT to refill');
       // Gate on ammo (P2b): a real lot at 0 rounds can't fire (box fallback with no
       // owned lot is unaffected). The FIRE button also disables, but guard here too
       // so any fire entry point is blocked.
       {
         const inv = store().inventory;
         const lotNow = inv.ammoLots.find((l) => l.id === inv.activeLotId);
-        if (lotNow && (lotNow.roundsRemaining ?? 0) <= 0) return;
+        if (lotNow && (lotNow.roundsRemaining ?? 0) <= 0) return blocked('active lot is empty');
       }
       // Sample the aim BEFORE this shot's recoil kick (0.9: the bullet leaves as
       // the trigger breaks). Wobble is part of the aim; the kick below is the
       // consequence, applied after the shot is resolved.
+      if (!engineModule) {
+        // The WASM module never loaded, or aborted mid-session (an Emscripten
+        // abort poisons every later call). Recoil still runs below, which is why
+        // this reads as a dead trigger rather than an obvious failure.
+        blocked('ballistics engine not available');
+      }
+      try {
       if (engineModule) {
         const found = findAimed();
+        if (!found) blocked('no target resolved from this aim');
         if (found) {
           const { dir, plate: aimed } = found;
           const rangeM = aimed.distanceM;
@@ -943,6 +989,7 @@ export function ScopeView({
           });
           store().recordShot(result);
           store().decrementBudget();
+          blocked(null); // a shot got all the way through
           // Deplete the lot + tally the rifle's lifetime count (P2b). Gear only —
           // the box fallback has no owned lot to consume.
           if (gearCtx) store().consumeRound(gearCtx.rifle.id, gearCtx.lot.id);
@@ -1088,6 +1135,12 @@ export function ScopeView({
             launchBulletTrace(path, st.t);
           }
         }
+      }
+      } catch (err) {
+        // Never let a shot-resolution failure take the animation loop or the
+        // button with it — report it and keep the range usable.
+        console.error('fireSteel: shot resolution threw', err);
+        blocked(`shot failed: ${err instanceof Error ? err.message : String(err)}`);
       }
       // Recoil kick + POA residual (feel; ported verbatim from 0.9).
       st.dist.vp -= RECOIL_PITCH_VEL; // muzzle rise (view kicks up through the negated Euler)
@@ -1461,9 +1514,24 @@ export function ScopeView({
     let raf = 0;
     let last = performance.now();
     function frame(now: number) {
-      const dt = Math.min((now - last) / 1000, 0.05);
+      const rawDeltaMs = now - last;
+      const dt = Math.min(rawDeltaMs / 1000, 0.05);
       st.t += dt;
       last = now;
+      // Sample the RAW delta, not the clamped `dt` — clamping at 50 ms is what
+      // keeps the physics stable through a stall, and would hide exactly the
+      // stalls this readout exists to show.
+      frameTimer.push(rawDeltaMs);
+      if (now - lastPerfPush > PERF_PUSH_MS) {
+        lastPerfPush = now;
+        const sample = frameTimer.sample();
+        setPerf({
+          ms: sample.avgMs,
+          fps: sample.fps,
+          worst: sample.worstMs,
+          bits: depthBits,
+        });
+      }
       // Disturbance spring-damper (recoil + micro-jerks).
       st.dist.vy += (-SPRING_K * st.dist.y - SPRING_C * st.dist.vy) * dt;
       st.dist.vp += (-SPRING_K * st.dist.p - SPRING_C * st.dist.vp) * dt;
@@ -2110,6 +2178,58 @@ export function ScopeView({
       >
         {outOfRounds ? 'EMPTY' : 'FIRE'}
       </button>
+
+      {/* DIAGNOSTIC READOUTS — bottom-centre, stacked.
+          Every corner is already taken: the HUD panel is top-left (which is where
+          these first landed, on top of the range name and zoom slider), the menu
+          buttons are top-right, the dial cluster bottom-left and FIRE bottom-right.
+          The centre strip along the bottom is the only clear space, and it sits
+          under the sight picture rather than across it. `pointerEvents: none` so
+          neither readout can swallow a tap meant for the canvas. */}
+      <div
+        style={{
+          position: 'absolute',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          bottom: 'calc(8px + env(safe-area-inset-bottom))',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 4,
+          pointerEvents: 'none',
+        }}
+      >
+        {fireBlocked && (
+          <div
+            style={{
+              padding: '4px 10px',
+              borderRadius: 6,
+              background: 'rgba(90,0,0,0.65)',
+              color: '#ffd0d0',
+              fontSize: 12,
+              maxWidth: '70vw',
+              textAlign: 'center',
+            }}
+          >
+            FIRE blocked: {fireBlocked}
+          </div>
+        )}
+        {perf && (
+          <div
+            style={{
+              padding: '3px 9px',
+              borderRadius: 5,
+              background: 'rgba(0,0,0,0.5)',
+              color: perf.ms > 33 ? '#ff9b9b' : perf.ms > FRAME_BUDGET_MS ? '#ffd79b' : '#bfe6bf',
+              font: '12px/1.3 ui-monospace, Menlo, monospace',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {`${perf.fps.toFixed(0)} fps \u00b7 ${perf.ms.toFixed(1)} ms \u00b7 worst ${perf.worst.toFixed(1)} \u00b7 depth ${perf.bits || '?'}-bit`}
+          </div>
+        )}
+      </div>
+
       {outOfRounds && (
         <div
           style={{

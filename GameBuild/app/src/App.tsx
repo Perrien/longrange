@@ -103,10 +103,20 @@ export function App() {
       {view === 'rangeSelect' && (
         <>
           <RangeSelect
-            onSelect={(id) => {
+            onSelect={(id, variant) => {
               // Route selection through the range registry (task 2.3a): resolve
               // the definition (guards unknown ids) before entering the scope.
               const range = getRangeDefinition(id);
+              // Diagnostic probes carry a variant. ScopeView reads it from the URL
+              // (it is a throwaway knob, not store state — see
+              // `probeVariantFromSearch`), so put it there and let the scene
+              // rebuild pick it up. `replaceState` keeps it out of history.
+              if (typeof window !== 'undefined') {
+                const url = new URL(window.location.href);
+                if (variant) url.searchParams.set('probe', variant);
+                else url.searchParams.delete('probe');
+                window.history.replaceState(null, '', url);
+              }
               setRangeId(range.id);
               setView('scope');
             }}

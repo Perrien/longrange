@@ -17,7 +17,7 @@ import {
   SLOPE_SPAN_M,
   RING_FRACTIONS,
 } from './elr-probe-config';
-import { getRangeDefinition, cameraReachFor, DEFAULT_CAMERA_REACH } from './ranges';
+import { getRangeDefinition, cameraReachFor, shotBudgetFor, DEFAULT_CAMERA_REACH } from './ranges';
 
 const DEG = Math.PI / 180;
 
@@ -38,6 +38,13 @@ describe('elr-probe registry row', () => {
   it('leaves every other range on the shipped camera — the no-change guarantee', () => {
     for (const id of ['range-a', 'test-range', 'wooded-zero']) {
       expect(cameraReachFor(getRangeDefinition(id))).toEqual(DEFAULT_CAMERA_REACH);
+    }
+  });
+
+  it('grants a sandbox shot budget, and the shipped ranges keep the default', () => {
+    expect(shotBudgetFor(getRangeDefinition('elr-probe'))).toBe(999);
+    for (const id of ['range-a', 'test-range', 'wooded-zero']) {
+      expect(shotBudgetFor(getRangeDefinition(id))).toBeUndefined();
     }
   });
 

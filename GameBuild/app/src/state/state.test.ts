@@ -22,6 +22,7 @@ import {
   MIL_CLICK_RAD,
   MOA_CLICK_RAD,
   COARSE_CLICKS,
+  DEFAULT_SHOT_BUDGET,
   ZOOM_MIN,
   ZOOM_MAX,
   DEFAULT_WIND_PRESET,
@@ -202,6 +203,29 @@ describe('scoring & engagement (task 1.6b, D2)', () => {
   // resolution makes COMMIT the way you HOLD a target through a big holdover, so
   // resetting the dial would throw away the very solution the player committed to
   // protect. Real turrets do not spring back when you look at another target.
+  // THE PROBE'S DEAD FIRE BUTTON. The scene granted 999 shots at mount, but the
+  // COMMIT button called commitTarget with no budget, so the store default (3)
+  // silently replaced it — and three shots later firing stopped for good,
+  // independent of gear. Budget is now a property of the RANGE and every commit
+  // path forwards it.
+  it('an explicit undefined budget behaves exactly like omitting it', () => {
+    const st = useGameStore.getState();
+    st.commitTarget(1, 500, undefined);
+    expect(useGameStore.getState().session.shotBudget).toBe(DEFAULT_SHOT_BUDGET);
+  });
+
+  it('an explicit budget survives commit, and re-committing keeps granting it', () => {
+    const st = useGameStore.getState();
+    st.commitTarget(1, 500, 999);
+    expect(useGameStore.getState().session.shotBudget).toBe(999);
+    st.decrementBudget();
+    st.decrementBudget();
+    expect(useGameStore.getState().session.shotBudget).toBe(997);
+    // The case that broke: a second commit must not fall back to the default.
+    st.commitTarget(2, 1000, 999);
+    expect(useGameStore.getState().session.shotBudget).toBe(999);
+  });
+
   it('commitTarget PRESERVES the dialled elevation and windage', () => {
     const st = useGameStore.getState();
     st.dialElevationClicks(120); // 12 MIL — an ELR come-up

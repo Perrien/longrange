@@ -103,6 +103,18 @@ export interface RangeDefinition {
   /** How far the camera must see here. Omit for `DEFAULT_CAMERA_REACH` — which is
    *  what every range shipped with, so omitting it is a guarantee of no change. */
   camera?: CameraReach;
+  /**
+   * Shots granted per engagement here. Omit for the store's `DEFAULT_SHOT_BUDGET`
+   * (3), which is what every shipped range uses.
+   *
+   * This has to live on the RANGE, not be a default buried in `commitTarget`.
+   * Sandbox and diagnostic ranges want an effectively unlimited budget, and they
+   * want it on EVERY commit — not just the one the scene builder makes at mount.
+   * Setting it once at scene build left the ELR probe on 999 until the player
+   * pressed COMMIT, at which point the store default silently replaced it with 3
+   * and the FIRE button died three shots later, permanently and regardless of gear.
+   */
+  shotBudget?: number;
 }
 
 const RANGE_A: RangeDefinition = {
@@ -178,6 +190,9 @@ const ELR_PROBE: RangeDefinition = {
   // predicted table — a sharper test than reading flags, and it keeps the probe small.
   windMarkers: false,
   camera: { nearM: 10, farM: 12000 },
+  // Effectively unlimited, but FINITE so the shots-left readout still counts down
+  // — a moving counter is the cheapest signal that a shot actually happened.
+  shotBudget: 999,
   stations: [
     { nominalDistance: 500, side: -1, azimuthDeg: -1.5 },
     { nominalDistance: 1000, side: -1, azimuthDeg: -0.9 },
@@ -207,9 +222,27 @@ const RANGES: readonly RangeDefinition[] = [RANGE_A, TEST_RANGE, WOODED_ZERO];
  *  never appear on a player-facing card at all. */
 const UNLISTED: readonly RangeDefinition[] = [ELR_PROBE];
 
+/**
+ * Diagnostic ranges — reachable, but never player-facing content.
+ *
+ * `listRanges()` deliberately excludes these (D8: no grayed-out or throwaway cards
+ * among the real ones). Exposed separately so the range-select screen can offer
+ * them in a clearly-separated strip during development, which beats hand-editing a
+ * URL on an iPad. **Delete this and the strip together with the probes.**
+ */
+export function listUnlistedRanges(): readonly RangeDefinition[] {
+  return UNLISTED;
+}
+
 /** Camera near/far for a range, falling back to what every range shipped with. */
 export function cameraReachFor(range: RangeDefinition): CameraReach {
   return range.camera ?? DEFAULT_CAMERA_REACH;
+}
+
+/** Shots per engagement on a range, or `undefined` to take the store's default.
+ *  Returning `undefined` rather than a number keeps the default in ONE place. */
+export function shotBudgetFor(range: RangeDefinition): number | undefined {
+  return range.shotBudget;
 }
 
 const BY_ID = new Map([...RANGES, ...UNLISTED].map((r) => [r.id, r]));
