@@ -20,12 +20,14 @@ import { createPlateDiscGeometry } from './plate-geometry';
 import { createPlateSurface, createPlateMaterial, type PlateSurface } from './plate-surface';
 import { buildBullseyeLayer } from './bullseye-texture';
 import type { SteelSceneApi } from './steel-scene-api';
+import type { TreePlacement } from './environment/environment-config';
 import { buildTrees } from './environment/trees';
 import { WOODED_ZERO_ENVIRONMENT } from './wooded-zero-environment';
-import { generateProbeTreePlacements } from './elr-probe-trees';
+import { generateProbeTreePlacements, MAX_TREES } from './elr-probe-trees';
 import { MIN_PLATE_STANDOFF_M } from '../scope/perf-hud';
 import {
   snapshotElrProbe,
+  withSolvedOffsets,
   groundYFor,
   groundLocalYToDownrangeM,
   GROUND_HEX,
@@ -87,9 +89,27 @@ export class ELRProbeScene implements SteelSceneApi {
   private readonly prevBackground: THREE.Scene['background'];
   private readonly prevFog: THREE.Scene['fog'];
 
+  /** The full-density field. Every ramp step draws a PREFIX of this, and the
+   *  station offsets were solved against all of it — see `MAX_TREES`. */
+  private readonly treeField: TreePlacement[];
+
   constructor(scene: THREE.Scene, variant: ProbeVariant = 'flat') {
     this.scene = scene;
-    this.layout = snapshotElrProbe(variant);
+
+    // ORDER MATTERS. Trees are generated first and know nothing about targets;
+    // the targets are then re-sited into whatever gaps that forest happens to
+    // leave. Doing it the other way — keeping trees out of the sight lines —
+    // is what made the earlier clearance study circular, and it is what produces
+    // a mown corridor instead of a wooded hillside.
+    //
+    // Solving against the FULL field, not the currently-drawn count, is what lets
+    // the ramp change tree density without the gongs jumping around: smaller
+    // counts are strict subsets, so a sight line clear at 4000 is clear at 250.
+    this.treeField = generateProbeTreePlacements(MAX_TREES, {
+      groundY: (downrangeM: number) => groundYFor(variant, downrangeM),
+      paletteSize: WOODED_ZERO_ENVIRONMENT.trees.palette.length,
+    });
+    this.layout = withSolvedOffsets(snapshotElrProbe(variant), this.treeField);
 
     this.prevBackground = scene.background;
     this.prevFog = scene.fog;
@@ -314,11 +334,7 @@ export class ELRProbeScene implements SteelSceneApi {
     this.treeCount = 0;
     if (count <= 0) return;
 
-    const placements = generateProbeTreePlacements(count, {
-      groundY: this.groundYAt,
-      targets: this.layout.stations.map((s) => ({ x: s.x, z: s.z })),
-      paletteSize: WOODED_ZERO_ENVIRONMENT.trees.palette.length,
-    });
+    const placements = this.treeField.slice(0, count);
     // Reuses the Wooded Zero Range's renderer and palette on purpose — a budget
     // measured against stand-in geometry would be a budget for the wrong trees.
     const handle = buildTrees(this.scene, WOODED_ZERO_ENVIRONMENT, placements, (d) => {

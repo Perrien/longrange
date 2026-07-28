@@ -13,6 +13,8 @@
 // `wooded-zero-config.ts` exists to protect is not under test here, and leaving it
 // out keeps the probe small.
 
+import { chooseOffset, offsetCandidates } from './sight-clearance';
+import type { TreePlacement } from './environment/environment-config';
 import { getRangeDefinition } from './ranges';
 
 const DEG = Math.PI / 180;
@@ -320,4 +322,76 @@ export function angularSeparationDeg(a: ElrProbeStation, b: ElrProbeStation): nu
 export function sightLineY(layout: ElrProbeLayout, station: ElrProbeStation, r: number): number {
   const t = station.groundRunM === 0 ? 0 : r / station.groundRunM;
   return layout.eyeYM + (station.y - layout.eyeYM) * t;
+}
+
+// ---------------------------------------------------------------------------
+// Target placement among trees (P14) — the stations move to suit the forest.
+// ---------------------------------------------------------------------------
+
+/**
+ * How far off the centre line a station may be pushed, in MILLIRADIANS.
+ *
+ * Angular rather than metric, for the same reason the gongs are 1 MIL: a fixed
+ * metric offset is a huge swing up close and an imperceptible nudge far out,
+ * which is backwards — the far stations are where the shooting is interesting.
+ * 25 mrad is 6 m at 250 m and 50 m at 2000 m, and costs about two 20x fields of
+ * view of traverse to sweep.
+ *
+ * 25 sits on the knee measured across 8 forest seeds at 4000 trees: below it the
+ * search runs out of room (10 mrad still leaves ~9.5 trees needing removal),
+ * above it each extra field of view of traverse buys about one tree. Targets
+ * further out than this stop being interesting to find and start being tiring.
+ */
+export const OFFSET_CAP_MRAD = 25;
+
+/** Candidate offsets per station. Fine enough to find a gap, coarse enough that
+ *  the search stays trivial at scene-build time. */
+const OFFSET_SAMPLES = 61;
+
+/**
+ * Re-site every station at the lateral offset where the forest most nearly
+ * leaves it in the clear.
+ *
+ * INVERTS THE USUAL ORDER. The obvious approach — place targets, then cut the
+ * trees in the way — makes a range look surveyed and costs a corridor. Here the
+ * distances are fixed (they are the whole point of a DOPE range) and the lateral
+ * position is free, so the trees keep their ground and the targets move. What
+ * comes out is irregular, tucked-into-the-terrain placement, and the left-right
+ * traverse the owner asked for arrives as a side effect rather than as a pattern
+ * anyone had to author.
+ *
+ * `groundRunM` is what gets handed to the search, not `losRangeM`: the station's
+ * x/z are built from the horizontal run, and passing the slant range would place
+ * every target slightly too far out.
+ */
+export function withSolvedOffsets(
+  layout: ElrProbeLayout,
+  trees: readonly TreePlacement[],
+): ElrProbeLayout {
+  const eye = { x: 0, y: layout.eyeYM, z: 0 };
+  const stations = layout.stations.map((st) => {
+    const capM = (OFFSET_CAP_MRAD / 1000) * st.groundRunM;
+    const candidates = offsetCandidates(capM, (2 * capM) / (OFFSET_SAMPLES - 1));
+    const picked = chooseOffset(
+      eye,
+      st.groundRunM,
+      st.y,
+      st.gongDiameterM / 2,
+      trees,
+      { candidates },
+    );
+    // Express the result as an azimuth so the rest of the layout — occlusion
+    // checks, sight lines, sign placement — keeps working off one representation
+    // rather than gaining a second, parallel notion of "sideways".
+    const azimuthDeg =
+      (Math.asin(Math.max(-1, Math.min(1, picked.offsetM / st.groundRunM))) * 180) / Math.PI;
+    const a = (azimuthDeg * Math.PI) / 180;
+    return {
+      ...st,
+      azimuthDeg,
+      x: st.groundRunM * Math.sin(a),
+      z: -st.groundRunM * Math.cos(a),
+    };
+  });
+  return { ...layout, stations };
 }

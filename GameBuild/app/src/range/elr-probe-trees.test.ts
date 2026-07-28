@@ -3,16 +3,13 @@ import {
   generateProbeTreePlacements,
   isPlaceable,
   TREE_COUNT_STEPS,
-  LANE_HALF_WIDTH_M,
-  TARGET_CLEAR_RADIUS_M,
+  MAX_TREES,
   SHOOTER_CLEAR_RADIUS_M,
 } from './elr-probe-trees';
-import { snapshotElrProbe, slopeGroundY, GROUND_WIDTH_M, GROUND_LENGTH_M } from './elr-probe-config';
+import { slopeGroundY, GROUND_WIDTH_M, GROUND_LENGTH_M } from './elr-probe-config';
 import { TREE_VARIANTS_PER_KIND } from './environment/environment-config';
 
-const layout = snapshotElrProbe('slope');
-const targets = layout.stations.map((s) => ({ x: s.x, z: s.z }));
-const opts = { groundY: slopeGroundY, targets, paletteSize: 4 };
+const opts = { groundY: slopeGroundY, paletteSize: 4 };
 
 describe('generateProbeTreePlacements', () => {
   it('returns the requested count at every ramp step', () => {
@@ -41,16 +38,17 @@ describe('generateProbeTreePlacements', () => {
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(10);
   });
 
-  it('keeps the sight line, the targets and the shooter clear', () => {
-    for (const t of generateProbeTreePlacements(2000, opts)) {
-      expect(Math.abs(t.x)).toBeGreaterThanOrEqual(LANE_HALF_WIDTH_M);
+  // The ONLY exclusion now. Trees deliberately stand in the sight lines and on
+  // top of where a target would naively go — the targets move instead
+  // (`withSolvedOffsets`). Keeping trees out of the lane is what made the first
+  // clearance study circular.
+  it('keeps only the shooter clear, and lets trees stand anywhere else', () => {
+    const trees = generateProbeTreePlacements(2000, opts);
+    for (const t of trees) {
       expect(Math.hypot(t.x, t.z)).toBeGreaterThanOrEqual(SHOOTER_CLEAR_RADIUS_M);
-      for (const target of targets) {
-        expect(Math.hypot(t.x - target.x, t.z - target.z)).toBeGreaterThanOrEqual(
-          TARGET_CLEAR_RADIUS_M,
-        );
-      }
     }
+    // Prove the lane really is populated, or the assertion above is vacuous.
+    expect(trees.some((t) => Math.abs(t.x) < 20)).toBe(true);
   });
 
   it('stays inside the ground the probe actually draws', () => {
@@ -80,15 +78,15 @@ describe('generateProbeTreePlacements', () => {
     expect(trees.some((t) => Math.abs(t.scaleXZ - t.scaleY) > 1e-6)).toBe(true);
   });
 
-  it('degrades to fewer trees rather than spinning when there is nowhere to stand', () => {
-    // Every candidate rejected: the attempt budget must run out and return.
-    const nowhere = generateProbeTreePlacements(100, {
-      ...opts,
-      targets: [],
-      // A lane wider than the ground leaves no placeable x at all.
-      groundY: slopeGroundY,
-    });
-    expect(nowhere.length).toBeLessThanOrEqual(100);
+  // The ramp draws prefixes of ONE field generated at MAX_TREES. If that ever
+  // stopped holding, the station offsets — solved against the full field — would
+  // no longer be valid at the smaller steps, and gongs would sit behind trees.
+  it('generates the full field as a superset of every ramp step', () => {
+    const full = generateProbeTreePlacements(MAX_TREES, opts);
+    expect(full).toHaveLength(MAX_TREES);
+    for (const n of TREE_COUNT_STEPS) {
+      expect(full.slice(0, n)).toEqual(generateProbeTreePlacements(n, opts));
+    }
   });
 
   it('starts the ramp at zero so the empty baseline is re-measurable in-session', () => {
@@ -98,15 +96,9 @@ describe('generateProbeTreePlacements', () => {
 });
 
 describe('isPlaceable', () => {
-  it('rejects the lane, accepts well outside it', () => {
-    expect(isPlaceable(0, -1000, [])).toBe(false);
-    expect(isPlaceable(LANE_HALF_WIDTH_M - 1, -1000, [])).toBe(false);
-    expect(isPlaceable(LANE_HALF_WIDTH_M + 1, -1000, [])).toBe(true);
-  });
-
-  it('rejects a ring around each target', () => {
-    const t = [{ x: 200, z: -1000 }];
-    expect(isPlaceable(200, -1000 + TARGET_CLEAR_RADIUS_M - 1, t)).toBe(false);
-    expect(isPlaceable(200, -1000 + TARGET_CLEAR_RADIUS_M + 1, t)).toBe(true);
+  it('rejects only the ring around the shooter', () => {
+    expect(isPlaceable(0, -(SHOOTER_CLEAR_RADIUS_M - 1))).toBe(false);
+    expect(isPlaceable(0, -(SHOOTER_CLEAR_RADIUS_M + 1))).toBe(true);
+    expect(isPlaceable(0, -1000)).toBe(true); // straight down the sight line
   });
 });

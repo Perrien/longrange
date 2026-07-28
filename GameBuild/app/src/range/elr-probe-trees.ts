@@ -29,16 +29,29 @@ import { GROUND_WIDTH_M, GROUND_LENGTH_M } from './elr-probe-config';
  *  from the same session to be comparable. */
 export const TREE_COUNT_STEPS = [0, 250, 500, 1000, 2000, 4000] as const;
 
-/** Trees are kept out of a corridor around the sight line so they never occlude
- *  the gongs. The probe is measuring COST, not composition; a tree that hides a
- *  target turns a clean frame-time reading into an argument about layout. */
-export const LANE_HALF_WIDTH_M = 45;
+/**
+ * The field is generated ONCE at this size and every ramp step draws a prefix of
+ * it. That prefix-stability is load-bearing, not an optimisation: target offsets
+ * are solved against the FULL field, so every smaller step is a strict subset and
+ * the sight lines stay clear at every setting. Re-solving per step would make the
+ * gongs jump around as you ramp, which would wreck both the perf comparison and
+ * the composition you are trying to judge.
+ */
+export const MAX_TREES = 4000;
 
-/** ...and out of a radius around each target, for the same reason. */
-export const TARGET_CLEAR_RADIUS_M = 25;
-
-/** Nothing right on top of the shooter — a canopy through the camera would
- *  dominate fill rate and flatter/ruin the number depending on where you looked. */
+/**
+ * Nothing right on top of the shooter — a canopy through the camera would
+ * dominate fill rate and flatter or ruin the reading depending on where you
+ * happened to be looking.
+ *
+ * This is now the ONLY exclusion. There was a 45 m cleared lane and a 25 m ring
+ * around each gong, which made the range a mown corridor and — worse — made the
+ * sight-clearance study circular: it reported zero occluders everywhere because
+ * the trees had been kept out of the sight lines by construction. The owner's
+ * call after seeing 4000 trees on device was that no swaths are needed, so the
+ * trees now go everywhere and the TARGETS move to suit them
+ * (`sight-clearance.ts`), which is the honest version of the problem.
+ */
 export const SHOOTER_CLEAR_RADIUS_M = 30;
 
 const SCALE_MIN = 0.75;
@@ -51,25 +64,14 @@ export interface ProbeTreeOptions {
   /** Ground height (m) at a downrange distance — the probe's own profile, so
    *  trees sit on the convex slope rather than on an imaginary flat plane. */
   groundY: (downrangeM: number) => number;
-  /** Target positions to keep clear, in world XZ. */
-  targets: ReadonlyArray<{ x: number; z: number }>;
   /** Palette length, so `tintIndex` stays in range for the renderer. */
   paletteSize: number;
   seed?: number;
 }
 
 /** True if a candidate point is somewhere a tree is allowed to stand. */
-export function isPlaceable(
-  x: number,
-  z: number,
-  targets: ProbeTreeOptions['targets'],
-): boolean {
-  if (Math.abs(x) < LANE_HALF_WIDTH_M) return false;
-  if (Math.hypot(x, z) < SHOOTER_CLEAR_RADIUS_M) return false;
-  for (const t of targets) {
-    if (Math.hypot(x - t.x, z - t.z) < TARGET_CLEAR_RADIUS_M) return false;
-  }
-  return true;
+export function isPlaceable(x: number, z: number): boolean {
+  return Math.hypot(x, z) >= SHOOTER_CLEAR_RADIUS_M;
 }
 
 /**
@@ -96,7 +98,7 @@ export function generateProbeTreePlacements(
   for (let attempt = 0; attempt < maxAttempts && placements.length < count; attempt++) {
     const x = (rand() * 2 - 1) * halfWidth;
     const z = -rand() * GROUND_LENGTH_M;
-    if (!isPlaceable(x, z, opts.targets)) continue;
+    if (!isPlaceable(x, z)) continue;
 
     const scale = SCALE_MIN + rand() * (SCALE_MAX - SCALE_MIN);
     placements.push({

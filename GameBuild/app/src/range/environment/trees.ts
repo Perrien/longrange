@@ -88,6 +88,41 @@ const DECIDUOUS_VARIANTS: Blob[][] = [
 ];
 
 /**
+ * Conservative bounding cylinder for one tree variant, at unit scale.
+ *
+ * DERIVED from the same `CONIFER_VARIANTS` / `DECIDUOUS_VARIANTS` tables that
+ * build the meshes, never hand-copied — sight-line clearance depends on these
+ * numbers, and a hard-coded table would silently go stale the first time anyone
+ * adds a variant or reshapes a crown. A tree that is taller than the clearance
+ * code believes is a target the player cannot see.
+ *
+ * `ConeGeometry` is centred on its own origin before `translate(0, y, 0)`, so a
+ * tier's top is `y + height / 2` — not `y + height`. Getting that wrong would
+ * over-estimate every conifer by half a tier.
+ *
+ * Deliberately conservative: one radius covering the whole height, rather than a
+ * true silhouette. It over-rejects slightly near the ground (where only a thin
+ * trunk really stands) and that is the correct direction to be wrong in.
+ */
+export function treeUnitBounds(
+  kind: 'conifer' | 'deciduous',
+  variantIndex: number,
+): { radius: number; top: number } {
+  if (kind === 'conifer') {
+    const tiers = CONIFER_VARIANTS[variantIndex % CONIFER_VARIANTS.length];
+    return {
+      radius: Math.max(...tiers.map((t) => t.radius)),
+      top: Math.max(...tiers.map((t) => t.y + t.height / 2)),
+    };
+  }
+  const blobs = DECIDUOUS_VARIANTS[variantIndex % DECIDUOUS_VARIANTS.length];
+  return {
+    radius: Math.max(...blobs.map((b) => Math.hypot(b.x, b.z) + b.r)),
+    top: Math.max(...blobs.map((b) => b.y + b.r)),
+  };
+}
+
+/**
  * Bake a vertical shade gradient into the geometry's `color` attribute: dark at
  * the canopy base, full brightness at the top, with downward-facing surfaces
  * pushed darker still.

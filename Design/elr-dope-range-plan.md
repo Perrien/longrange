@@ -3,6 +3,68 @@
 Status: **UNVALIDATED — do not build from this yet.**
 Date: 2026-07-27 · banner added 2026-07-27 · **cap revised 3000 → 2000 on 2026-07-27**
 
+> ### Revision — a wooded hillside, with target offsets CHOSEN BY THE FOREST (owner, 2026-07-28)
+>
+> The range is no longer a cleared lane. Owner's observation from the tree probe: at
+> 4000 trees "there's still plenty of open ground left for targets without carving out
+> swaths." Targets sit in natural ground, and the far stations are fired **over** a
+> treeline. That answers the earlier lateral-offset question in a better way than any
+> of the three options on the table: **don't author the offsets — search for them.**
+>
+> A DOPE range's *distances* are fixed, so the only free parameter is how far left or
+> right a station sits. `GameBuild/app/src/range/sight-clearance.ts` (built 2026-07-28,
+> 23 tests) picks, for each station, the offset at which the existing forest most nearly
+> leaves the target in the clear. The result is irregular, tucked-into-the-terrain
+> placement that produces natural left-right traverse for free, and it costs almost no
+> trees. The test is a **cone**, not a ray — the plate's whole shadow volume must be
+> clear, or a trunk covering all but the centre pixel counts as "visible" — and it
+> checks **height as well as plan position**, because on a rising slope a tree 800 m out
+> on low ground sits under the sight line and blocks nothing.
+>
+> **Measured** (4000 trees over 1200 × 2100 m, no cleared lane, 8 forest seeds, offsets
+> capped in ANGLE — the same constant-angular rule the 1 MIL gongs already follow):
+>
+> | cap | metres at 250 m / 2000 m | mean trees to cut (all 8 stations) | traverse at 20× |
+> |---|---|---|---|
+> | ±10 mrad | 2.5 / 20 m | 9.5 | 1.0 fields |
+> | **±20 mrad** | **5 / 40 m** | **6.5** | **1.9 fields** |
+> | ±30 mrad | 7.5 / 60 m | 5.5 | 2.9 fields |
+> | ±45 mrad | 11 / 90 m | 4.4 | 4.3 fields |
+>
+> **±20–30 mrad is the knee.** Past it, extra freedom buys about one tree and costs a
+> field of view of traverse — targets become tiring to find rather than interesting.
+>
+> **The honest number is 4–10 trees, not zero.** A first single-seed run reported zero
+> culls at every station and was simply lucky; across multiple seeds the search gets
+> most of the way and a handful of individual trees still need removing. That is still
+> the owner's ask exactly — **individual trees, never a corridor**.
+>
+> Offsets must be solved as `z = -√(d² - offset²)`, not applied along a fixed z, or a
+> station slides off the distance that is the entire point of it.
+>
+> **The convex slope is what makes a WOODED range possible at all — a second, stronger
+> argument for it than "it looks better".** Solving both probe variants against the same
+> 4000-tree field, with trees everywhere and no cleared lane:
+>
+> | station | Probe A (flat) occluders | Probe B (convex slope) occluders |
+> |---|---|---|
+> | 500 m | 1 | 1 |
+> | 1000 m | 4 | **0** |
+> | 1500 m | 5 | **0** |
+> | 2000 m | 10 | **0** |
+> | 2500 m | 12 | **0** |
+> | 3000 m | 15 | **0** |
+>
+> On flat ground the sight line is level, so *every* tree between shooter and target
+> reaches it and the far stations need a dozen trees cut each. On the rising convex
+> hillside the sight line climbs away from the intervening canopy, and the searched
+> offsets come out **completely clear at every station and every tree density** — one
+> occluder in the whole range, at 500 m. The terrain is doing the clearing that a
+> corridor would otherwise have to do.
+>
+> Solved offsets on Probe B, for reference: −7.9, +10.0, −1.3, −48.3, −6.2, +39.9 m.
+> Irregular, modest, and nobody authored them.
+
 > ### Revision — the bluff and the fan are retired; the range sits on a convex slope (owner, 2026-07-28)
 >
 > **The probe answered this on device.** Probe B's rising convex hillside beat the flat
