@@ -26,8 +26,16 @@ import { RANGE_A_GROUND } from '../range/range-a-config';
 import { TestRangeScene } from '../range/TestRangeScene';
 import { ELRProbeScene } from '../range/ELRProbeScene';
 import { probeVariantFromSearch } from '../range/elr-probe-config';
+import { TREE_COUNT_STEPS } from '../range/elr-probe-trees';
 import { projectMissToGround, FLAT_GROUND } from './miss-projection';
-import { FrameTimer, FRAME_BUDGET_MS, readDepthBits } from './perf-hud';
+import {
+  FrameTimer,
+  FRAME_BUDGET_MS,
+  readDepthBits,
+  RenderCostMeter,
+  headroomVerdict,
+  type SceneCost,
+} from './perf-hud';
 import { pickAimedPlate, resolveTargetPlate } from './aim-pick';
 
 import { TEST_RANGE_GROUND } from '../range/test-range-config';
@@ -255,6 +263,16 @@ export function ScopeView({
   // 25–30 ms frame the probe measured on device. Set once per shot, so it reads
   // as "the last shot cost this", not as a live counter.
   const [shotMs, setShotMs] = useState<string | null>(null);
+  // Tree headroom sweep (P13) — DIAGNOSTIC, probe only. `sceneCost` is what the
+  // 17 ms vsync-capped frame time cannot tell you: how much of that frame is
+  // actual work. `treeStep` indexes TREE_COUNT_STEPS.
+  const [sceneCost, setSceneCost] = useState<SceneCost | null>(null);
+  const [treeStep, setTreeStep] = useState(0);
+  const probeRef = useRef<ELRProbeScene | null>(null);
+  /** Clears the rolling frame-time and render-cost windows. Set by the render
+   *  effect; called when the tree count changes so the build hitch and the old
+   *  count's frames do not pollute the new reading. */
+  const resetPerfRef = useRef<(() => void) | null>(null);
   // Frame-time readout (owner request, 2026-07-27: "numbers would be good to see a
   // slowdown before it's too bad"). Shown on EVERY range, not just the probes —
   // the point is to catch a regression while it is still small, and a number you
@@ -334,6 +352,10 @@ export function ScopeView({
     // switches on `sceneType`, which is that field's actual job.
     const isSightIn = rangeDefinition.targetKind === 'paper';
     let range: SteelSceneApi | null = null;
+    // The probe scene, when it IS the probe — typed concretely because the tree
+    // ramp and the tree count are diagnostic-only and deliberately absent from
+    // `SteelSceneApi` (the shipped ranges must not grow a probe's surface).
+    let probeScene: ELRProbeScene | null = null;
     let sightIn: PaperBayScene | null = null;
     if (sceneType === 'wooded-zero') {
       // Same D3 entry snapshot. Wind is NOT zeroed here (plan §7.3, owner
@@ -367,10 +389,18 @@ export function ScopeView({
       // over a convex rising hillside. One scene builder, one station list, one
       // config: the variant is the single thing that differs, which is what makes
       // A-vs-B a fair comparison rather than two separate ranges.
-      range = new ELRProbeScene(
+      // Bound to the concrete type first: `range` is a `SteelSceneApi`, and the
+      // tree ramp is deliberately NOT on that interface (a probe's diagnostic
+      // surface has no business on the shipped ranges).
+      const probe = new ELRProbeScene(
         scene,
         probeVariantFromSearch(typeof window === 'undefined' ? '' : window.location.search),
       );
+      range = probe;
+      // Held so the tree ramp (P13) can rebuild the field and the readout can
+      // report how many are actually standing.
+      probeScene = probe;
+      probeRef.current = probe;
       store().setWind({ speedMps: 0, directionDeg: 0 });
       // Auto-commit the near station so there is no commit step — the probe is a
       // sandbox, not an engagement.
@@ -416,6 +446,11 @@ export function ScopeView({
     // per-range camera `near` decision assumes 24 bits, and a device reporting 16
     // would make the far stations z-fight no matter what near/far are set to.
     const frameTimer = new FrameTimer();
+    const renderCost = new RenderCostMeter();
+    resetPerfRef.current = () => {
+      frameTimer.reset();
+      renderCost.reset();
+    };
     const depthBits = readDepthBits(renderer.getContext());
     // Push to React a few times a second, not every frame — a 60 Hz setState would
     // itself become a measurable share of the frame time being measured.
@@ -1553,6 +1588,16 @@ export function ScopeView({
           worst: sample.worstMs,
           bits: depthBits,
         });
+        // Scene cost (P13). `renderer.info` is free — it is counters the renderer
+        // already keeps — so this costs nothing beyond the state push it rides on.
+        if (probeScene) {
+          setSceneCost({
+            renderMs: renderCost.meanMs(),
+            drawCalls: renderer.info.render.calls,
+            triangles: renderer.info.render.triangles,
+            trees: probeScene.placedTreeCount,
+          });
+        }
       }
       // Disturbance spring-damper (recoil + micro-jerks).
       st.dist.vy += (-SPRING_K * st.dist.y - SPRING_C * st.dist.vy) * dt;
@@ -1658,6 +1703,10 @@ export function ScopeView({
       // — when off, skip the two-pass post-process entirely and render
       // straight to the screen, same as before 1.7c existed (also the
       // cheaper path, no offscreen pass to pay for while it's parked).
+      // Bracket the render call (P13) — this is the only cost that can be told
+      // apart from vsync waiting. See `RenderCostMeter` for what it does and does
+      // not measure.
+      const renderStartMs = performance.now();
       if (store().settings.mirageEnabled) {
         const mirageWind = windAtForMarkers({ x: 0, y: eyeHeightM, z: -MIRAGE_REFERENCE_DISTANCE_M });
         renderSceneWithMirage(scene, camera, {
@@ -1669,6 +1718,7 @@ export function ScopeView({
       } else {
         renderer.render(scene, camera);
       }
+      renderCost.push(performance.now() - renderStartMs);
       drawReticle();
       raf = requestAnimationFrame(frame);
     }
@@ -2234,6 +2284,61 @@ export function ScopeView({
             }}
           >
             FIRE blocked: {fireBlocked}
+          </div>
+        )}
+        {probeRef.current && (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', pointerEvents: 'auto' }}>
+            <span
+              style={{
+                font: '11px/1.3 ui-monospace, Menlo, monospace',
+                color: '#9aa5b1',
+                letterSpacing: 0.5,
+              }}
+            >
+              TREES
+            </span>
+            {TREE_COUNT_STEPS.map((n, i) => (
+              <button
+                key={n}
+                onClick={() => {
+                  // Rebuild, then clear the rolling averages: the frames spent
+                  // building are not frames the new tree count costs, and leaving
+                  // them in the window would smear the reading you just asked for.
+                  probeRef.current?.setTreeCount(n);
+                  setTreeStep(i);
+                  resetPerfRef.current?.();
+                }}
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  border: '1px solid rgba(255,255,255,0.25)',
+                  background: treeStep === i ? 'rgba(120,150,200,0.55)' : 'rgba(0,0,0,0.45)',
+                  color: '#e8ecf1',
+                  font: '11px/1.3 ui-monospace, Menlo, monospace',
+                }}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        )}
+        {sceneCost && perf && (
+          <div
+            style={{
+              padding: '3px 9px',
+              borderRadius: 5,
+              background: 'rgba(0,0,0,0.5)',
+              color:
+                headroomVerdict(sceneCost.renderMs, perf.ms) === 'over'
+                  ? '#ff9b9b'
+                  : headroomVerdict(sceneCost.renderMs, perf.ms) === 'tight'
+                    ? '#ffd79b'
+                    : '#bfe6bf',
+              font: '12px/1.3 ui-monospace, Menlo, monospace',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {`render ${sceneCost.renderMs.toFixed(1)} ms \u00b7 ${headroomVerdict(sceneCost.renderMs, perf.ms)} \u00b7 ${sceneCost.drawCalls} calls \u00b7 ${(sceneCost.triangles / 1000).toFixed(0)}k tris \u00b7 ${sceneCost.trees} trees`}
           </div>
         )}
         {shotMs && (

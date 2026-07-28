@@ -176,3 +176,96 @@ export function readDepthBits(gl: WebGLRenderingContext | WebGL2RenderingContext
     return 0;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Render cost — step P13. Separating real work from waiting for the display.
+//
+// THE PROBLEM WITH THE NUMBER ABOVE. `FrameTimer` measures wall time between
+// frames, and on a vsync-locked device that is pinned at ~16.7 ms no matter how
+// little work the frame did. The probe's empty 3 km scene reads 17 ms on the
+// iPad — which is equally consistent with 8 ms of work and half a frame spare,
+// or 16.9 ms with none. Those imply completely different tree budgets for a 2 km
+// wooded range, and no amount of staring at a capped frame time separates them.
+//
+// Timing the render CALL does separate them, with one honest caveat: WebGL is
+// asynchronous, so `renderer.render()` returns once commands are submitted, not
+// once the GPU has finished. This therefore measures CPU-side cost — scene
+// traversal, culling, uniform and draw-call submission — and UNDERSTATES a
+// GPU-bound scene. That is the right bias here: trees are a draw-call and
+// vertex-count story first, and if this number climbs the CPU side is already
+// the problem. The tree ramp is what catches the GPU side, by pushing until the
+// capped frame time itself finally breaks.
+//
+// Read the two together:
+//   render 3 ms / frame 17 ms  -> lots of headroom, the cap is doing the waiting
+//   render 15 ms / frame 17 ms -> nearly none, next feature pushes it over
+//   render 15 ms / frame 30 ms -> already over, and it is CPU-side
+//   render 4 ms / frame 30 ms  -> already over, and it is NOT CPU-side (GPU/fill)
+// ---------------------------------------------------------------------------
+
+/** What the scene is asking the driver to do — the units a tree budget is in. */
+export interface SceneCost {
+  /** Mean CPU ms inside the render call. */
+  renderMs: number;
+  drawCalls: number;
+  triangles: number;
+  /** Trees currently placed, so a reading is self-describing in a screenshot. */
+  trees: number;
+}
+
+/**
+ * Rolling mean of the render call's CPU cost. Same ring-buffer discipline as
+ * `FrameTimer` — no per-frame allocation, because a meter that allocates is
+ * measuring itself.
+ */
+export class RenderCostMeter {
+  private readonly samples: Float64Array;
+  private index = 0;
+  private count = 0;
+
+  constructor(window: number = SAMPLE_WINDOW) {
+    this.samples = new Float64Array(Math.max(1, window));
+  }
+
+  push(ms: number): void {
+    this.samples[this.index] = ms;
+    this.index = (this.index + 1) % this.samples.length;
+    if (this.count < this.samples.length) this.count++;
+  }
+
+  meanMs(): number {
+    if (this.count === 0) return 0;
+    let total = 0;
+    for (let i = 0; i < this.count; i++) total += this.samples[i];
+    return total / this.count;
+  }
+
+  reset(): void {
+    this.index = 0;
+    this.count = 0;
+  }
+}
+
+/**
+ * How much of the frame the render call actually accounts for, 0..1.
+ *
+ * This is the headroom question stated as one number: at 0.2 the frame is mostly
+ * waiting for the display and there is room to spend; near 1.0 the budget is
+ * gone. Guards a zero/absent frame time rather than returning NaN, because this
+ * is read on the first frames when the average has nothing in it yet.
+ */
+export function frameUtilisation(renderMs: number, frameMs: number): number {
+  if (!(frameMs > 0)) return 0;
+  return Math.min(1, Math.max(0, renderMs / frameMs));
+}
+
+/** Utilisation bands, for colouring the readout and for saying what it means. */
+export type HeadroomVerdict = 'roomy' | 'comfortable' | 'tight' | 'over';
+
+export function headroomVerdict(renderMs: number, frameMs: number): HeadroomVerdict {
+  if (frameMs > FRAME_BUDGET_MS * 1.5) return 'over'; // already missing frames
+  const used = frameUtilisation(renderMs, frameMs);
+  if (used < 0.35) return 'roomy';
+  if (used < 0.7) return 'comfortable';
+  return 'tight';
+}

@@ -20,6 +20,9 @@ import { createPlateDiscGeometry } from './plate-geometry';
 import { createPlateSurface, createPlateMaterial, type PlateSurface } from './plate-surface';
 import { buildBullseyeLayer } from './bullseye-texture';
 import type { SteelSceneApi } from './steel-scene-api';
+import { buildTrees } from './environment/trees';
+import { WOODED_ZERO_ENVIRONMENT } from './wooded-zero-environment';
+import { generateProbeTreePlacements } from './elr-probe-trees';
 import { MIN_PLATE_STANDOFF_M } from '../scope/perf-hud';
 import {
   snapshotElrProbe,
@@ -75,6 +78,11 @@ export class ELRProbeScene implements SteelSceneApi {
 
   private readonly scene: THREE.Scene;
   private readonly disposables: Array<{ dispose(): void }> = [];
+  /** Tree resources, kept apart from `disposables` so a tree rebuild does not
+   *  take the gongs and the ground with it. */
+  private readonly treeDisposables: Array<{ dispose(): void }> = [];
+  private readonly treeObjects: THREE.Object3D[] = [];
+  private treeCount = 0;
   private readonly objects: THREE.Object3D[] = [];
   private readonly prevBackground: THREE.Scene['background'];
   private readonly prevFog: THREE.Scene['fog'];
@@ -284,6 +292,49 @@ export class ELRProbeScene implements SteelSceneApi {
     }
   }
 
+  /**
+   * Replace the tree field with `count` trees (step P13).
+   *
+   * Rebuilds rather than toggling instance counts, deliberately: the reading that
+   * matters is the STEADY-STATE frame time after the change settles, and a rebuild
+   * hitch is over long before you read the number. Toggling `InstancedMesh.count`
+   * would avoid that hitch but leaves the full geometry and every material resident,
+   * so "0 trees" would not actually measure an empty scene — and the empty baseline
+   * is half the comparison.
+   *
+   * Tree resources are tracked separately from the rest of the scene so a rebuild
+   * disposes only them; disposing the shared `disposables` list would take the
+   * gongs and ground with it.
+   */
+  setTreeCount(count: number): void {
+    for (const o of this.treeObjects) this.scene.remove(o);
+    for (const d of this.treeDisposables) d.dispose();
+    this.treeObjects.length = 0;
+    this.treeDisposables.length = 0;
+    this.treeCount = 0;
+    if (count <= 0) return;
+
+    const placements = generateProbeTreePlacements(count, {
+      groundY: this.groundYAt,
+      targets: this.layout.stations.map((s) => ({ x: s.x, z: s.z })),
+      paletteSize: WOODED_ZERO_ENVIRONMENT.trees.palette.length,
+    });
+    // Reuses the Wooded Zero Range's renderer and palette on purpose — a budget
+    // measured against stand-in geometry would be a budget for the wrong trees.
+    const handle = buildTrees(this.scene, WOODED_ZERO_ENVIRONMENT, placements, (d) => {
+      this.treeDisposables.push(d);
+      return d;
+    });
+    for (const m of handle.meshes) this.treeObjects.push(m);
+    this.treeCount = placements.length;
+  }
+
+  /** Actual trees standing — may be under what was asked for if placement ran out
+   *  of room, and the readout shows this number rather than the request. */
+  get placedTreeCount(): number {
+    return this.treeCount;
+  }
+
   private add(obj: THREE.Object3D): void {
     this.objects.push(obj);
     this.scene.add(obj);
@@ -299,6 +350,7 @@ export class ELRProbeScene implements SteelSceneApi {
     // wearing its sky and fog.
     this.scene.background = this.prevBackground;
     this.scene.fog = this.prevFog;
+    this.setTreeCount(0); // releases the tree field's own geometry/materials
     for (const o of this.objects) this.scene.remove(o);
     for (const d of this.disposables) d.dispose();
     this.objects.length = 0;

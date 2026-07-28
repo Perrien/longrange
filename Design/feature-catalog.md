@@ -221,6 +221,38 @@ in-repo: `Design/archive/mil-zero-range-plan.md` §7.1 (Inspect), `range/plate-s
 (hit marks already live in the plate's own texture, so the data the cam would show
 already exists).
 
+#### Trajectory clearance — "line of sight is not the bullet's path"
+
+At long range the bullet arcs far above your sight line, so an obstruction you can see
+*over* is not necessarily one the bullet clears. Measured apex above the line of sight,
+target-zeroed at ICAO sea level, no wind (computed 2026-07-28 against the engine):
+
+| station | 6.5 CM | .338 LM | .50 BMG | apex occurs at |
+|---|---|---|---|---|
+| 500 m | 0.6 m | 0.6 m | 0.5 m | ~52% downrange |
+| 1000 m | 3.5 m | 3.1 m | 2.9 m | ~55% |
+| 1500 m | 12.3 m | 9.9 m | 9.6 m | ~58% |
+| 2000 m | **32.1 m** | 25.8 m | 26.0 m | ~60% |
+
+So a 2000 m shot is **32 m above the sight line** as it passes the 1200 m mark. Fire
+through a slot in a treeline and the round leaves the slot climbing and comes down
+through the canopy beyond it. Real shooters call this overhead clearance; it is a live
+concern shooting under bridges, through windows, or over berms and spectators.
+
+Three reasons this is worth keeping: the difficulty ladder is **produced by physics
+rather than authored** (500 m ignores trees, 1000 m clears a bush, 1500 m a mature tree,
+2000 m needs 30 m of room); it gives flatter cartridges a **reason to exist beyond wind**
+(the .50 apexes 6 m lower than the 6.5 at 2000 m); and almost no shooting game models it,
+so it is differentiating as well as correct.
+
+**Not built** — logged 2026-07-28 during ELR range design. **Owner decision the same day:
+trees ship as SCENERY first**, so the composition (firing over a treeline at 1500/2000)
+can be judged before paying for the mechanic. Building it needs (a) trajectory-vs-canopy
+collision — nothing in the app does path-obstacle collision today, the engine's
+`rendering/impact_detector` is unused from TS — and (b) feedback for a strike the player
+cannot see, 1200 m away and 30 m up, which is the point at which **spotter cam stops
+being optional**. Prerequisite ordering: spotter cam, then this.
+
 #### Reticle ranging
 Measure a known-size target's apparent size against reticle subtensions to estimate
 range (`size×1000÷mils` / `size_in×95.5÷MOA`); FFP keeps the read true at any zoom.

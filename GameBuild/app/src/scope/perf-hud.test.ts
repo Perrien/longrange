@@ -8,6 +8,9 @@ import {
   depthReport,
   readDepthBits,
   MIN_PLATE_STANDOFF_M,
+  RenderCostMeter,
+  frameUtilisation,
+  headroomVerdict,
 } from './perf-hud';
 
 describe('FrameTimer', () => {
@@ -180,5 +183,58 @@ describe('readDepthBits', () => {
 
     const liar = { DEPTH_BITS: 1, getParameter: () => 'twenty-four' };
     expect(readDepthBits(liar as unknown as WebGLRenderingContext)).toBe(0);
+  });
+});
+
+describe('RenderCostMeter', () => {
+  it('averages what it is given', () => {
+    const m = new RenderCostMeter(4);
+    for (const v of [2, 4, 6, 8]) m.push(v);
+    expect(m.meanMs()).toBeCloseTo(5, 9);
+  });
+
+  it('rolls, so an old spike stops dominating', () => {
+    const m = new RenderCostMeter(3);
+    m.push(100);
+    m.push(1);
+    m.push(1);
+    expect(m.meanMs()).toBeCloseTo(34, 9);
+    m.push(1);
+    expect(m.meanMs()).toBeCloseTo(1, 9);
+  });
+
+  it('reads zero before anything is pushed, and after a reset', () => {
+    const m = new RenderCostMeter(8);
+    expect(m.meanMs()).toBe(0);
+    m.push(9);
+    m.reset();
+    expect(m.meanMs()).toBe(0);
+  });
+});
+
+describe('frameUtilisation / headroomVerdict', () => {
+  // THE CASE THE WHOLE THING EXISTS FOR. Two identical 17 ms frame times that
+  // mean opposite things — the capped number alone cannot tell them apart.
+  it('separates an idle vsync-capped frame from a saturated one', () => {
+    expect(frameUtilisation(3, 17)).toBeCloseTo(0.176, 3);
+    expect(headroomVerdict(3, 17)).toBe('roomy');
+
+    expect(frameUtilisation(15, 17)).toBeCloseTo(0.882, 3);
+    expect(headroomVerdict(15, 17)).toBe('tight');
+  });
+
+  it('calls a blown budget over, whatever the render call says', () => {
+    expect(headroomVerdict(15, 30)).toBe('over'); // CPU-side
+    expect(headroomVerdict(4, 30)).toBe('over'); // GPU/fill-side
+  });
+
+  it('never returns NaN on the first frames, when nothing is averaged yet', () => {
+    expect(frameUtilisation(0, 0)).toBe(0);
+    expect(frameUtilisation(5, 0)).toBe(0);
+    expect(Number.isNaN(frameUtilisation(0, 17))).toBe(false);
+  });
+
+  it('clamps rather than reporting more than a whole frame', () => {
+    expect(frameUtilisation(40, 17)).toBe(1);
   });
 });
