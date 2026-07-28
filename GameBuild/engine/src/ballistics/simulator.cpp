@@ -310,7 +310,11 @@ namespace btk::ballistics
     // is immune to that bouncing.
     constexpr float kMeaningfulImprovement = 0.999f;
     constexpr int kTrialsWithoutImprovement = 6;
-    float best_error = std::numeric_limits<float>::infinity();
+    // `max()`, not `infinity()`. The WASM build compiles with `-ffast-math`, which
+    // tells the compiler infinities cannot occur — so naming one is undefined
+    // behaviour and `-Wnan-infinity-disabled -Werror` rejects it. A finite "worse
+    // than any real error" sentinel does the identical job here.
+    float best_error = std::numeric_limits<float>::max();
     float best_error_pitch = best_pitch;
     float best_error_yaw = best_yaw;
     int trials_since_improvement = 0;

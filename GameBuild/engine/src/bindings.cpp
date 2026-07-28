@@ -210,15 +210,13 @@ EMSCRIPTEN_BINDINGS(ballistics_toolkit)
                                                   int max_iterations, float tolerance,
                                                   float spin_rate) -> const btk::ballistics::Bullet& {
                 return self.computeZero(mv, target, dt, max_iterations, tolerance, spin_rate);
-              }),
-              return_value_policy::reference())
+              }))
     .function("computeZeroWithMaxTime", optional_override([](btk::ballistics::Simulator& self, float mv,
                                                              const btk::math::Vector3D& target, float dt,
                                                              int max_iterations, float tolerance,
                                                              float spin_rate, float max_time) -> const btk::ballistics::Bullet& {
                 return self.computeZero(mv, target, dt, max_iterations, tolerance, spin_rate, max_time);
-              }),
-              return_value_policy::reference())
+              }))
     .function("simulate", select_overload<void(float, float, float)>(&btk::ballistics::Simulator::simulate))
     .function("simulateWithWind", select_overload<void(float, float, float, const WindGenerator&)>(&btk::ballistics::Simulator::simulate))
     .function("getTrajectory", select_overload<Trajectory&()>(&btk::ballistics::Simulator::getTrajectory), return_value_policy::reference())
