@@ -144,6 +144,20 @@ export const MIL_CLICK_RAD = milToRad(0.1);
 /** MOA turret detent: 1/4 MOA per click. */
 export const MOA_CLICK_RAD = moaToRad(0.25);
 
+/**
+ * Clicks moved by the coarse (`++` / `−−`) turret buttons.
+ *
+ * ELR come-ups are large — 12 MIL is 120 single clicks, which is tedious rather
+ * than interesting — so the dial gets a coarse step alongside the fine one.
+ *
+ * **20 is 2 MIL *and* 5 MOA**, because 20 × 0.1 mrad = 2 mrad and 20 × 0.25 MOA =
+ * 5 MOA. That is a coincidence of the two detent sizes rather than a design, but it
+ * is a convenient one: the coarse step is a single click COUNT, so it needs no unit
+ * branch and cannot drift between the two systems. Both are also round numbers a
+ * shooter would actually think in.
+ */
+export const COARSE_CLICKS = 20;
+
 // Floor is 1× (true unaided-eye view), not 0× — see scope-projection.ts's
 // SCOPE_MAG_MIN comment (FOV = BASE_FOV / magnification is infinite at 0×).
 export const ZOOM_MIN = 1.0;
@@ -491,6 +505,25 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       },
     })),
 
+  /**
+   * Engage a target. Refills the shot budget, resets the group, bumps
+   * `targetsEngaged` — and **leaves the turret exactly where the player set it**.
+   *
+   * It used to zero elevation and windage here. That was defensible when COMMIT
+   * was purely "start a fresh engagement", but it is wrong now for two reasons
+   * (owner, 2026-07-27):
+   *
+   *   1. **Commit-preferred aim resolution** (`scope/aim-pick.ts`) means committing
+   *      is how you *hold* a target through a holdover. Dialling 12 MIL and then
+   *      committing so the shot resolves correctly would throw the 12 MIL away —
+   *      the two features would actively fight each other.
+   *   2. **Real turrets do not spring back when you look at something else.** The
+   *      dial is a physical setting; only zeroing (which composes the dial into the
+   *      stored zero, `setPlayerZero`) legitimately returns it to 0.
+   *
+   * The group state (`shotsAtCurrentTarget`, `lastShots`) still resets, because
+   * that genuinely belongs to the previous target.
+   */
   commitTarget: (plateInstanceId, distanceM, budget = DEFAULT_SHOT_BUDGET) =>
     set((s) => ({
       session: {
@@ -499,7 +532,6 @@ export const useGameStore = create<GameStore>()((set, get) => ({
         currentTarget: { plateInstanceId, distanceM },
         shotsAtCurrentTarget: 0,
         shotBudget: budget,
-        scope: { ...s.session.scope, elevationRad: 0, windageRad: 0 },
         lastShots: [],
       },
       score: { ...s.score, targetsEngaged: s.score.targetsEngaged + 1 },

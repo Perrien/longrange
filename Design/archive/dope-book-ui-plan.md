@@ -1,8 +1,8 @@
 # DOPE book UI plan — the rifle-scoped, multi-page DOPE book
 
-**Status:** P1–P4 BUILT 2026-07-27 (awaiting owner device check), + DOPE-first step 3
-(chrono→MV) pulled forward. Only step 5 (confirm-hold → BC) remains on the DOPE-first
-plan. Expands
+**Status:** COMPLETE — P1–P4 built + owner-confirmed on device 2026-07-27; DOPE-first
+step 3 (chrono→MV) pulled forward here too. Archived. Only step 5 (confirm-hold → BC)
+remains on the DOPE-first plan (separate work). Expands
 [`dope-first-plan.md`](./dope-first-plan.md) **step 2** into the full DOPE book the
 owner specified (2026-07-27): a **tabbed, rifle-scoped book**. The come-up table is
 one page; a rifle + ammo overview is the other. The book is the surface future

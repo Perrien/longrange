@@ -130,6 +130,67 @@ describe('engine-bridge/solveTrajectory sight height over bore (task 1.6a)', () 
   });
 });
 
+// ELR probe P0. The engine exits `simulate` on whichever comes first, distance or
+// TIME. A 3 km shot with this load is ~9.4 s in the air and the solver asks for
+// maxRangeM × 1.05, so the old hardcoded 10 s wall stopped the bullet 42 m short of
+// what `atDistance` needed — leaving the far rows with no margin, and none at all
+// once wind or a cold day slowed it further. See DEFAULT_MAX_TIME_S.
+describe('engine-bridge/solveTrajectory — extreme range and the time wall', () => {
+  const ELR_OPTS = { zeroRangeM: 100, maxRangeM: 3000, stepM: 500 } as const;
+
+  it('resolves every station out to 3000 m', () => {
+    const table = bridge.solveTrajectory(LOAD, ATMOSPHERE, NO_WIND, ELR_OPTS);
+    expect(table.map((r) => Math.round(r.rangeM))).toEqual([500, 1000, 1500, 2000, 2500, 3000]);
+  });
+
+  it('the 3000 m row is a real solve — long flight, subsonic, big drop', () => {
+    const table = bridge.solveTrajectory(LOAD, ATMOSPHERE, NO_WIND, ELR_OPTS);
+    const far = table[table.length - 1];
+    // ~9.4 s by the reference integrator; bracket it loosely so this pins the
+    // ORDER of magnitude, not the engine's exact answer (that is the oracle's job).
+    expect(far.timeOfFlightS).toBeGreaterThan(8);
+    expect(far.timeOfFlightS).toBeLessThan(12);
+    // Deep subsonic out there — well under the ~340 m/s speed of sound.
+    expect(far.velocityMps).toBeLessThan(260);
+    // Drop is measured in hundreds of metres at this range, not metres.
+    expect(far.dropM).toBeLessThan(-200);
+  });
+
+  // A COLD MORNING IS ENOUGH. Denser air at 0 °C plus a 15 mph headwind puts the
+  // flight time to 3000 m at 10.18 s — past the old 10 s wall. Measured against
+  // the engine itself, the old code returned FIVE rows here and stopped at 2500 m,
+  // with no error: the 3000 m station simply had no firing solution. Nothing about
+  // this case is exotic, which is why it is the regression guard.
+  const COLD: AtmosphereInput = { temperatureK: 273.15, altitudeM: 0, humidity: 0.5 };
+  const HEADWIND: WindVec = { x: 0, y: 0, z: 6.7 }; // ~15 mph, slows the bullet
+
+  it('resolves 3000 m on a cold day into a headwind — the case that broke the old wall', () => {
+    const table = bridge.solveTrajectory(LOAD, COLD, HEADWIND, ELR_OPTS);
+    expect(table.map((r) => Math.round(r.rangeM))).toEqual([500, 1000, 1500, 2000, 2500, 3000]);
+    // Confirm this really is past the old limit, so the test keeps its meaning
+    // even if the engine's numbers shift slightly.
+    expect(table[table.length - 1].timeOfFlightS).toBeGreaterThan(10);
+  });
+
+  it('a too-short maxTimeS truncates SILENTLY — the old failure mode, pinned', () => {
+    // Reproduces the bug on demand. The table comes back short with no error and
+    // no gap: the caller cannot tell a truncated solve from a legitimate one, and
+    // that is precisely why the wall had to stop being a hidden constant.
+    const table = bridge.solveTrajectory(LOAD, COLD, HEADWIND, { ...ELR_OPTS, maxTimeS: 10 });
+    expect(table.length).toBe(5);
+    expect(Math.round(table[table.length - 1].rangeM)).toBe(2500);
+  });
+
+  it('short-range tables are byte-identical with a tight or a generous wall', () => {
+    // Distance is the binding exit condition at normal ranges, so raising the
+    // default must not perturb any existing range's numbers.
+    const opts = { zeroRangeM: 100, maxRangeM: 500, stepM: 100 };
+    const generous = bridge.solveTrajectory(LOAD, ATMOSPHERE, NO_WIND, opts);
+    const tight = bridge.solveTrajectory(LOAD, ATMOSPHERE, NO_WIND, { ...opts, maxTimeS: 10 });
+    expect(generous).toEqual(tight);
+  });
+});
+
 describe('engine-bridge/computeZero', () => {
   it('returns a small positive launch elevation for a 100 m zero', () => {
     const z = bridge.computeZero(LOAD, ATMOSPHERE, NO_WIND, 100);

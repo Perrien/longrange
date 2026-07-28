@@ -292,6 +292,75 @@ architectural choices the build-plan does not cover:
   this one.
 
 
+## ELR Probe (owner-requested plan, `Design/elr-probe-plan.md`)
+
+Origin: owner asked (2026-07-27) for a long-range DOPE range out to ~3000. Design work
+established the ceiling (**.50 BMG, supersonic to 2267 m / 2479 yd**) and produced
+`Design/elr-dope-range-plan.md` — then the owner correctly called for a **throwaway probe
+first**: *"a very simple test of flat ground, gongs every 500 to 3k … learn what works and
+doesn't and then build on that."* The full plan is now banner-marked UNVALIDATED and the
+probe is the live build. Two scenes: **Probe A** (dead flat) and **Probe B** (10 m bluff over
+a convex rising slope). Steps P0–P3, STOP after each.
+
+| Step | Status | Date | Commit | Note |
+|---|---|---|---|---|
+| P0 | **DONE — gates green, awaiting owner go-ahead for P1** | 2026-07-27 | (pending — agent cannot commit, see queue) | **Lifted the solver's hardcoded 10-second flight cap.** `engine-bridge/index.ts:148` called `sim.simulate(maxRangeM * 1.05, dt, 10.0)`; the third argument is **max time of flight**, and `Simulator::simulate` (`engine/src/ballistics/simulator.cpp:372–386`) exits on **whichever comes first, distance or time**. Invisible at 500 yd; binding at 3 km. **Measured against the engine itself, the bug was worse than the plan's estimate**: nominal 15 °C calm gives TOF 9.45 s to 3000 m (0.55 s of margin), but **0 °C with a 15 mph headwind is 10.18 s** and the old code returned **five rows, stopping at 2500 m** — the 3000 m station silently had NO firing solution, with no error and no gap, so a caller could not distinguish a truncated solve from a legitimate one. Colder/slower/bulk-lot variants run to 10.83 s. Fix: new optional `SolveOptions.maxTimeS` + exported `DEFAULT_MAX_TIME_S = 30`, documented at length with the measured numbers so the constant cannot be quietly re-tightened. Distance remains the binding exit condition at every existing range, so the cost is zero. **5 new tests** in `engine-bridge/engine-bridge.test.ts` (all six stations resolve to 3000 m; the far row is a real solve — >8 s TOF, subsonic, >200 m drop; the cold-day-plus-headwind case that broke the old wall, asserting TOF > 10 s so the test keeps its meaning if engine numbers shift; a guard that **reproduces the silent truncation on demand** at `maxTimeS: 10`; and short-range tables byte-identical under a tight vs generous wall). Gates: vitest 46 files / **606** tests green (was 46/601), `tsc --noEmit` clean, **golden-vector harness 36 cases, worst relative diff 0.000e+0** (provably behaviour-preserving for every existing range), `npm run build` green, PWA precache regenerated (32 entries). |
+| P1 | **DONE — all gates green** | 2026-07-27 | (pending, owner-side) | **Per-range camera reach + probe registry row + perf model.** `range/ranges.ts`: new `CameraReach` capability + `DEFAULT_CAMERA_REACH = {0.5, 3000}` (exactly what every range shipped with, so omitting the field is a *guarantee* of no change) + `cameraReachFor()`; `'elr-probe'` added to `RangeSceneType`; `ELR_PROBE` row in `UNLISTED` (6 stations 500→3000, ±1.5° fan, `camera: {10, 12000}`, `windMarkers: false`, metric-only). `ScopeView.tsx`: camera built from `cameraReachFor(rangeDefinition)` instead of the hardcoded `0.5, 3000` — the same per-bay pattern as `eyeHeightM`. **Sky dome radius and fog turned out to be already per-range** (`cfg.sky.domeRadiusM`, `cfg.fog.density`), so no work there. New **`range/elr-probe-config.ts`** (pure, no THREE): 1 MIL constant-angular gongs, white/blue/white ring fractions, dark-panel palette, LOS→ground-run solve, occlusion helpers, and both variants — flat (Probe A) and the **convex** rising slope (Probe B). New **`scope/perf-hud.ts`** (pure): `FrameTimer` ring buffer (mean + worst, since a mean hides hitching), `depthResolutionM`, `depthVerdict`, `readDepthBits`. **43 new tests** (`elr-probe-config.test.ts` 20, `perf-hud.test.ts` 23) — including the linear-vs-convex slope proof, the straight-lane self-occlusion proof, and a guard that every other range still resolves to `DEFAULT_CAMERA_REACH`. Gates: **typecheck clean · golden vectors 36 cases, worst rel diff 0.000e+0 · `npm run build` green (32 precache entries)** · vitest **648 passed / 1 failed**, the failure being the unrelated pre-existing flake below. |
+| P2 | **DONE (gates) — AWAITING OWNER on device** | 2026-07-27 | (pending, owner-side) | **Probe A — the flat 3 km scene.** New **`range/ELRProbeScene.ts`** implementing `SteelSceneApi` structurally, so ScopeView's fire path / steel reaction / hit marks / paint chipping work with **one** scene-branch case and nothing else changed. Six 1 MIL gongs on the ±1.5° fan, white bullseye faces standing `MIN_PLATE_STANDOFF_M` (0.15 m) proud of dark charcoal backer panels, posts, per-station distance signs, chains (the reaction loop indexes `chainRest[id*2+ci]` unconditionally, so they must exist), flat mid-neutral ground 300 × 3100 m, `FogExp2` at **1.7e−4** and a matching sky — the shared 7.45e−4 would put the 3000 m gong at 98 % fog, i.e. invisible. No trees/scrub/rocks/grass/ridges/clouds: every piece of dressing is a confound in the shot-loop answer and a cost in the frame-time number. `dispose()` restores the previous background+fog so a throwaway scene cannot leave the next range wearing its sky. New **`range/bullseye-texture.ts`** (pure): builds one plate-atlas layer from the existing `PlateSurface.writeLayer()` API — the paint system is reused **unmodified**. Per-plate layers, not one shared layer, or every plate's chip damage would smear onto all six. **`App.tsx`: `?range=<id>` deep link** — the probe is `UNLISTED` on purpose (a measuring instrument, not content) but had to be REACHABLE or it cannot do its job; unknown ids fall back to the landing screen. **12 new tests** (`bullseye-texture.test.ts`), including a per-axis-normalisation guard (the disc spans ¼ of the tile width but ½ its height, so naive normalisation yields ovals) and a texel-count check that the blue band covers ⅓ of the disc area. Gates: vitest **661 passed / 49 files** (was 649/48), `tsc --noEmit` clean, golden vectors **36 cases, 0.000e+0**, `npm run build` green. **OWNER CHECK — this is the first thing to actually look at:** open `?range=elr-probe`, then work through `Design/elr-probe-plan.md` §5. |
+| P2-fix | **DONE (gates) — AWAITING OWNER retest** | 2026-07-27 | (pending, owner-side) | **Three defects found on device, all mine, plus one real pre-existing bug the probe was built to surface.** (1) **Deep link raced the scene build.** `ScopeView`'s scene effect is `}, []);` — it runs ONCE on mount and reads `store().session.rangeId` directly. Setting the range id during App's *render* meant the update could land after that effect had already run, so the probe could build **Range A** and, with an empty dep array, never rebuild. Now resolved and applied at **module scope**, before React renders anything. (2) **"shots left: Infinity"** — the probe copied the Test Range's infinite budget but not its hidden readout, so the counter never moved, destroying the cheapest signal that a shot happened. Finite **999** now. (3) **Signs read "YARDS" on a metric range** — `makeSignTexture` hardcoded it; now an optional arg defaulting to `YARDS`, probe passes `METRES`. **(4) THE REAL FIND — `findAimed` ranked targets by LINEAR miss at each plate's own distance, which is systematically biased toward near plates** (a fixed angular error subtends more metres further out). Owner dialled onto the 1000 m gong and held 8 MIL for the 1500: the linear rule scored the 500 m plate at **11.38 m** vs the 1500 m plate's **12.00 m**, picked the near one, resolved the shot on the `z = −500` plane, put the impact **5.5 m above the ground** there — and because that is ABOVE ground, ScopeView's project-onto-the-dirt fallback never ran, so the dust puff hung in mid-air ("appearing in the sky"). In **angle** the same shot is 22.8 mrad vs 8.0 mrad and picks correctly. Extracted to a pure, tested **`scope/aim-pick.ts`** (`pickAimedPlate` / `angularMissRad`) rather than left inline. **The bias existed on every range** — only an ELR holdover made it visible; near-field ranking is unchanged because plates at similar distances rank the same either way. **6 new tests** including the exact reported shot and a holdover sweep, one of which asserts the OLD rule really did prefer the near plate so a reversion fails loudly. Gates: vitest **667 passed / 50 files**, `tsc --noEmit` clean, `npm run build` green. |
+| P2-fix2 | **DONE (gates) — AWAITING OWNER retest** | 2026-07-27 | (pending, owner-side) | **Commit-preferred target resolution** (owner choice, 2026-07-27). Owner spotted that the angular fix is necessary but not sufficient: holdover and wind hold *deliberately* put the crosshair off target, so any "nearest the crosshair" rule answers the wrong question. Measured — engaging the 1000 m gong with **6 MIL up + 6 MIL wind hold**, the nearest-by-angle plate is the **1500 m** one. Windage is what does it (stations are stacked vertically but fanned laterally). New `resolveTargetPlate()` in `scope/aim-pick.ts`: a committed target keeps the engagement through **any** hold, and only loses it when the crosshair is actually ON a different plate — threshold sized off the *candidate's own angular radius* (2×, floored at 1.5 mrad). **A cone was rejected**: one wide enough for a 12 MIL hold is ~15 mrad, but adjacent stations are only 5–10 mrad apart, so it would swallow the neighbour and make switching impossible. With nothing committed it degrades exactly to `pickAimedPlate`, so swing-and-shoot is unchanged and no range gains a commit step it lacked. `commitRef` deliberately still picks purely by aim (COMMIT means "engage what I am pointing at", or the target could never be changed). **Known limit, accepted and documented in source, not solved:** a very large PURE-windage hold can still park the crosshair on a neighbour; elevation hold never can, and any elevation breaks the coincidence. Wind is off on the probe, so this is parked (owner: "we can kick that can down the road"). **9 new tests**; a speculative 20-MIL-pure-windage test was written and then REMOVED rather than tuned — it asserted an edge case in a scenario the owner had just descoped. Gates: vitest **676 passed / 50 files**, `tsc --noEmit` clean, `npm run build` green. |
+| P3-fix2 | **DONE (gates) — AWAITING OWNER retest** | 2026-07-27 | (pending, owner-side) | **Target frames were sunk into the ground** (owner, on device: *"the farther targets are slightly below the ground… more obvious on these farther ones"*, and correctly noted it affected the flat build too). Cause: gongs are **constant-angular**, so their frames grow with distance — 2× the gong diameter, i.e. **6 m tall at 3000 m** — but every centre was pinned at a fixed 1.0 m. The frame's bottom edge is therefore `1.0 − frameH/2`, which goes negative past 1000 m and reaches **−2.0 m at the far station**. Exactly matches the reported gradient: fine near, worse far. Fixed with `targetCenterYFor(gongDiameter) = max(1.0, frameH/2 + 0.3)` — small near targets keep the standard height, big ones go on taller stands, and every frame now has 0.3 m of air under it. That is also what real ELR ranges do: a 3 m plate cannot have its centre a metre off the deck without being half-buried. Resulting centres: 1.00 / 1.30 / 1.80 / 2.30 / 2.80 / **3.30 m**. Occlusion margins re-verified unchanged (the fan dominates; the added elevation spread is under 0.06°). **4 tests reworked/added** — the two that encoded the old fixed-1.0 rule now assert the real invariant (*every frame clears the terrain directly beneath it*) rather than a magic number. Gates: vitest **695 passed / 52 files**, `tsc --noEmit` clean, `npm run build` green. |
+| P3-fix | **DONE (gates) — superseded by P3-fix2 above** | 2026-07-27 | (pending, owner-side) | **"Get the ground and the targets to meet" (owner, on device).** Two separate bugs, both mine, both invisible on the flat variant. **(1) The terrain plane's local-y → downrange mapping was wrong.** `-localY - L/2 + L/2` collapses to `-localY`, and with an `Math.abs()` on top became `\|localY\|` — a **V-shaped valley, high at BOTH ends and zero in the middle**. On the slope that put **53 m of hill where the shooter stands**, burying the 11.7 m camera 41 m underground; the visible symptom was a thin band of terrain with the targets floating above it. Extracted to a named, tested `groundLocalYToDownrangeM()` precisely because this class of error is silent on flat ground. **(2) Target height was read at the LOS range but the target is PLACED at its ground run** — mildly circular on a slope, and it left every gong floating up to 0.14 m off the terrain. Now settled by three fixed-point passes (13 % max gradient ⇒ sub-millimetre residual; flat converges on pass one by construction). Also **widened the ground 300 → 1200 m**: 300 m across 3 km is a 1:10 ribbon whose side edges sit only ±2.9° off the sight line, well inside the scope's field — 1200 m pushes them past ±11° so they leave the picture. **5 new tests**: end-to-end mapping, monotonicity, an explicit "no hill where the shooter stands" regression that also asserts what the OLD formula produced, and per-station checks that every gong sits exactly `TARGET_CENTER_Y_M` above its own terrain in both variants. Gates: vitest **693 passed / 52 files**, `tsc --noEmit` clean, `npm run build` green. |
+| P3 | **DONE (gates) — superseded by P3-fix above** | 2026-07-27 | (pending, owner-side) | **Probe B — the convex rising-slope variant.** Selected by URL: **`?range=elr-probe&probe=slope`** (Probe A stays the default). Deliberately a query param rather than a second registry row or a store field — both probes share one station list and one config, a duplicate row would duplicate that list, and a store field would put throwaway diagnostic state into the save schema. Two capability gaps in `SteelSceneApi` had to be filled, both of which were latent rather than new: **(1) `eyeHeightM?`** — paper bays have reported their own eye height since the Wooded Zero knoll, but steel scenes had none, so Probe B's camera would have sat at 1.6 m while the targets climb to 200 m and every sight line ran into dirt. **(2) `groundYAt?(downrangeM)`** — the low-miss dust projection assumed **flat ground at y = 0**, true of all four shipped ranges and false for a hillside: on the slope it put the puff far past the real strike and underground, which would have quietly broken the one question Probe B exists to answer (*is the impact splash more legible on a slope facing you?*). Replaced the closed-form flat solve with a ray-march against the profile in new pure **`scope/miss-projection.ts`** — marching, not solving, because a convex profile can be crossed at more than one radius and the FIRST crossing is the one that stops the bullet. Both fields optional, so all four shipped ranges are untouched by construction. **8 new tests** including a flat-vs-closed-form equivalence check (proves the replacement is faithful where it used to apply), a never-below-the-surface sweep across all six stations, and step-size insensitivity. Gates: vitest **688 passed / 52 files**, `tsc --noEmit` clean, golden vectors **36 cases, 0.000e+0**, `npm run build` green. **OWNER CHECK:** shoot A and B back to back at the same magnification — `Design/elr-probe-plan.md` §5.3 is the checklist. The headline question is whether the hillside reads better than the flat deck, since a yes retires the full plan's 12 m bluff **and** its ±2° fan. Also expect the far stations to land ~0.45 MIL low: that is the flat-fire solver, measured, not a bug. |
+
+### RESOLVED 2026-07-27 — pre-existing flaky wind test, seeded (owner-authorised)
+
+`src/engine-bridge/wind-field.test.ts` → *"a freshly built preset, ensembled over time at a
+fixed point, averages toward ≈0 (zero-mean turbulence)"* fails roughly **1 run in 6**.
+
+**It is not caused by P0 or P1.** Evidence: it fails in isolation with only that file running;
+nothing in the P0/P1 diff touches `wind-field.ts`; and the test never calls
+`solveTrajectoryField` (the only function in that module that mirrors the code P0 changed) —
+it uses `createWindField` / `advance` / `sample` only.
+
+**Root cause.** `WindGenerator` draws its per-octave phase offsets from `btk::math::Random`
+(`engine/src/physics/wind_generator.cpp:223–225`), and `bindings.cpp:326` states the game
+leaves that RNG **clock-seeded**. So every `createWindField` builds a different field, and the
+test's tolerance — `avgMag < 0.4 × meanAbsSample`, with a comment noting the empirical value
+is "~0.2 … 0.4 leaves margin" — is not wide enough for unlucky draws. Observed failure:
+0.682 vs a 0.593 bound, i.e. a ratio of 0.46 against the 0.40 limit.
+
+**FIX APPLIED (owner-authorised 2026-07-27): seed the RNG, do not widen the tolerance.**
+`beforeEach` in `wind-field.test.ts` now calls `module.Random.seed(1337)` — `beforeEach` and
+not `beforeAll` because field construction consumes RNG, so a single seed would leave each
+test dependent on how many fields ran before it (deterministic, but order-dependent — a
+subtler version of the same bug). Verified **8/8 clean runs** in isolation, where the
+unseeded version failed roughly 1 in 6, and the full suite is green at **649 tests**. The
+game is unchanged: this seeds the TEST only. `Random::seed(uint32_t)`
+is **already exposed in the bindings for exactly this purpose** — its comment says it exists
+"so the app / validation harness can make the MatchSimulator's per-shot sampling reproducible",
+and that binding an existing seed function "cannot alter any computed solve output". That makes
+the test deterministic without weakening what it asserts, which is the distinction
+`execution-protocol.md` §4.2/§4.3 draws.
+
+Alternatives if the owner prefers: lengthen `DURATION_S` (more correlation times → tighter
+ensemble, slower test), or run the assertion over several seeds and require the median to pass.
+**Widening 0.4 is the one option to avoid** — it weakens the check to hide a determinism gap.
+
+**OWNER NOTE (2026-07-27): "we'll have to circle back to that wind issue because it keeps
+coming up."** Seeding fixes the test's determinism, not whatever keeps recurring in the wind
+model itself. Logged here as a standing item rather than closed.
+
+**Answered while planning, no work needed:** `range/steel-scene-api.ts` is a purely structural
+interface with no `sceneType` gating, so the full plan's open item #3 (capability extraction,
+its Stage 3) is a **no-op and can be dropped** — `ELRProbeScene` need only satisfy the same
+shape `RangeScene` and `TestRangeScene` already do.
+
+**Deferred observation (P1 will need it):** `ScopeView` derives `laneLenM` for wind-marker
+filtering from a per-scene constant with an `else` fallback to `RANGE_A_GROUND.laneLengthM`. A
+new scene type lands in that fallback. The probe sets `windMarkers: false` so it does not bite,
+but the full ELR range must supply its own value or every flag past 500 yd is filtered out.
+
 ## App dependency pins (GameBuild/app, task 0.4a — owner-approved latest-stable 2026-07-13)
 `dependencies`: react 19.2.7, react-dom 19.2.7, three 0.185.1, zustand 5.0.14, idb 8.0.3.
 `devDependencies`: vite 8.1.4, @vitejs/plugin-react 6.0.3, vite-plugin-pwa 1.3.0,
@@ -341,6 +410,54 @@ v22.22.3 vs the owner machine's v26.5.0.
 
 **All installs complete.** cmake 4.4.0, GoogleTest 1.17.0, emscripten 6.0.2, npm
 (via cafile fix) — nothing outstanding.
+
+### ELR Probe P0–P2 — COMMIT PENDING (owner-side, 2026-07-27)
+Same EPERM class as below. Three commits' worth of work; the tree also carries
+pre-existing unrelated changes (`Design/Plans/dope-first-plan.md`, and
+`Design/Plans/dope-book-ui-plan.md` → `Design/archive/`), so name paths explicitly:
+
+```bash
+cd /Users/analyst/CCode/LongRange
+# P0
+git add GameBuild/app/src/engine-bridge/index.ts \
+        GameBuild/app/src/engine-bridge/types.ts \
+        GameBuild/app/src/engine-bridge/engine-bridge.test.ts
+git commit -m "elr-probe/P0: solver max time of flight is a parameter, not a hidden 10 s wall"
+# P1 (+ the seeded wind test)
+git add GameBuild/app/src/range/ranges.ts \
+        GameBuild/app/src/range/elr-probe-config.ts \
+        GameBuild/app/src/range/elr-probe-config.test.ts \
+        GameBuild/app/src/scope/perf-hud.ts \
+        GameBuild/app/src/scope/perf-hud.test.ts \
+        GameBuild/app/src/engine-bridge/wind-field.test.ts
+git commit -m "elr-probe/P1: per-range camera reach, probe registry row, perf model; seed the flaky wind test"
+# P2
+git add GameBuild/app/src/range/ELRProbeScene.ts \
+        GameBuild/app/src/range/bullseye-texture.ts \
+        GameBuild/app/src/range/bullseye-texture.test.ts \
+        GameBuild/app/src/scope/ScopeView.tsx \
+        GameBuild/app/src/App.tsx \
+        Design/elr-probe-plan.md Design/elr-dope-range-plan.md Design/execution/PROGRESS.md
+git commit -m "elr-probe/P2: flat 3 km probe scene, bullseye plate faces, ?range= deep link"
+```
+
+### ELR Probe P0 (superseded by the block above) — COMMIT PENDING (owner-side, 2026-07-27)
+Same EPERM class as below — the agent cannot release `.git/index.lock`, so it did
+**not** stage anything this time. The working tree also carries pre-existing
+uncommitted changes from earlier sessions (`Design/Plans/dope-first-plan.md`, and
+`Design/Plans/dope-book-ui-plan.md` → `Design/archive/dope-book-ui-plan.md`) that are
+**not** part of P0 — name the paths explicitly so they are not swept in:
+
+```bash
+cd /Users/analyst/CCode/LongRange
+git add GameBuild/app/src/engine-bridge/index.ts \
+        GameBuild/app/src/engine-bridge/types.ts \
+        GameBuild/app/src/engine-bridge/engine-bridge.test.ts \
+        Design/elr-probe-plan.md \
+        Design/elr-dope-range-plan.md \
+        Design/execution/PROGRESS.md
+git commit -m "elr-probe/P0: solver max time of flight is a parameter, not a hidden 10 s wall"
+```
 
 ### Wooded Zero Stage 1 — COMMIT PENDING (owner-side, 2026-07-26)
 The agent staged the change but **cannot commit**: the sandbox cannot unlink files

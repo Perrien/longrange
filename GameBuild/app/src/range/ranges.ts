@@ -12,7 +12,34 @@
 // (it is not a fixed-station bay).
 
 /** Which scene builder renders a range. */
-export type RangeSceneType = 'steel-racks' | 'test-range' | 'wooded-zero';
+export type RangeSceneType = 'steel-racks' | 'test-range' | 'wooded-zero' | 'elr-probe';
+
+/**
+ * How far the camera has to see on this range (m).
+ *
+ * A property of the RANGE, not of the game — the same reasoning that made eye
+ * height per-bay (`mil-zero-range-plan.md` §7.2). The shipped defaults were sized
+ * when the longest range was 200 m and clip a 3 km world outright.
+ *
+ * **`near` is the lever that matters, not `far`.** Depth resolution goes as
+ * `z²(f−n) / ((2^bits−1)·f·n)` — it scales with 1/near and is almost independent
+ * of far. At `near = 0.5 / far = 12000` a 24-bit buffer resolves only ~1.07 m at
+ * 3000 m, so a gong and its own frame land in the same depth bucket and flicker;
+ * at `near = 10` that becomes ~0.054 m and the problem disappears. Quadrupling
+ * `far` alone changes nothing.
+ *
+ * Raising `near` is safe on any range whose content clears it: the reticle is a
+ * 2D canvas overlay (not scene geometry, so `near` never clips it) and the
+ * environment ranges keep vegetation outside `shooterClearM: 18`.
+ */
+export interface CameraReach {
+  nearM: number;
+  farM: number;
+}
+
+/** The values every range shipped with, kept as the explicit default so a range
+ *  that says nothing is provably unchanged. */
+export const DEFAULT_CAMERA_REACH: CameraReach = { nearM: 0.5, farM: 3000 };
 
 /** What a shot on this range hits. This is a CAPABILITY, deliberately separate
  *  from `sceneType` (which only picks a scene builder): the paper-bay fire path,
@@ -73,6 +100,9 @@ export interface RangeDefinition {
   /** Fixed stations for a sight-in bay; empty for a steel range (which builds its
    *  own rack ladder). */
   stations: RangeStation[];
+  /** How far the camera must see here. Omit for `DEFAULT_CAMERA_REACH` — which is
+   *  what every range shipped with, so omitting it is a guarantee of no change. */
+  camera?: CameraReach;
 }
 
 const RANGE_A: RangeDefinition = {
@@ -128,6 +158,36 @@ const WOODED_ZERO: RangeDefinition = {
   ],
 };
 
+// ELR Probe (2026-07-27): a THROWAWAY 3 km range that exists to be looked at, not
+// shipped. Six 1 MIL gongs at 500 m steps on a dead-flat plane, reached by id only.
+// Its job is to answer what no table can — whether an 18-second shot is tense or
+// tedious, whether 3 km reads as distance, and whether the frame time holds — before
+// `Design/elr-dope-range-plan.md` (capped at 2000) is built for real. Full spec and
+// the observation checklist: `Design/elr-probe-plan.md`.
+//
+// Expect to delete this row. It is deliberately not in `RANGES`.
+const ELR_PROBE: RangeDefinition = {
+  id: 'elr-probe',
+  name: 'ELR Probe',
+  shortLabel: 'ELR Probe — 500 to 3000 m flat',
+  unitCharacter: 'meters', // metric only; the probe is not testing the dual-unit path
+  sceneType: 'elr-probe',
+  targetKind: 'steel',
+  zeroable: false,
+  // Wind is checked by dialling a known crosswind and diffing drift against the
+  // predicted table — a sharper test than reading flags, and it keeps the probe small.
+  windMarkers: false,
+  camera: { nearM: 10, farM: 12000 },
+  stations: [
+    { nominalDistance: 500, side: -1, azimuthDeg: -1.5 },
+    { nominalDistance: 1000, side: -1, azimuthDeg: -0.9 },
+    { nominalDistance: 1500, side: -1, azimuthDeg: -0.3 },
+    { nominalDistance: 2000, side: 1, azimuthDeg: 0.3 },
+    { nominalDistance: 2500, side: 1, azimuthDeg: 0.9 },
+    { nominalDistance: 3000, side: 1, azimuthDeg: 1.5 },
+  ],
+};
+
 /** Every range shown on the landing screen, in order.
  *
  *  NOT simply "every range": `RangeSelect` renders one card per entry and D8
@@ -140,10 +200,17 @@ const WOODED_ZERO: RangeDefinition = {
 const RANGES: readonly RangeDefinition[] = [RANGE_A, TEST_RANGE, WOODED_ZERO];
 
 /** Ranges that exist but are not yet on the landing screen. Merged into the id
- *  lookup so config/tests resolve them normally. Empty since Stage 2b gave
- *  `WOODED_ZERO` its scene — kept because the next range under construction will
- *  want it, and because the guard test above depends on the distinction. */
-const UNLISTED: readonly RangeDefinition[] = [];
+ *  lookup so config/tests resolve them normally.
+ *
+ *  `ELR_PROBE` is here for a different reason than `WOODED_ZERO` was: not because
+ *  its scene is unfinished, but because it is a **throwaway diagnostic** that should
+ *  never appear on a player-facing card at all. */
+const UNLISTED: readonly RangeDefinition[] = [ELR_PROBE];
+
+/** Camera near/far for a range, falling back to what every range shipped with. */
+export function cameraReachFor(range: RangeDefinition): CameraReach {
+  return range.camera ?? DEFAULT_CAMERA_REACH;
+}
 
 const BY_ID = new Map([...RANGES, ...UNLISTED].map((r) => [r.id, r]));
 

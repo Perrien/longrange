@@ -191,6 +191,36 @@ An engine-generated "factory card" the player can copy and then true into their 
 profile — a real-world onramp and anti-grind valve.
 **Not built** — unscheduled (no increment assigned yet; optional).
 
+#### Spotter cam (target-side camera for calling shots at distance)
+A small secondary view alongside the scope, fed by a camera set a few yards off the
+**committed** target and pointed at it — so the player can see exactly where a round
+landed on the face. The Zero Range already solves this for paper with **Inspect**
+(a head-on close-up of the engaged target, 2.3 D10); the spotter cam is the steel and
+long-range answer to the same problem.
+
+The motivating fact is angular: a hit splat on a 1 MIL gong at 1500–2000 m is a few
+tenths of a mrad across, well under the scope's own resolution at usable
+magnification — so "did I hit centre or clip the edge?" is unanswerable from the
+firing point no matter how far you zoom. Without it the far half of an ELR range gives
+hit/miss and nothing else, which is not enough to true a DOPE curve against.
+
+**Requires a committed target** (owner, 2026-07-27) — and that is the point rather
+than a limitation: it gives *commit* a concrete reward, so past ~1000 m the player
+naturally declares a target before working it. That dovetails with the
+commit-preferred aim resolution (`scope/aim-pick.ts`), which also wants a commitment
+at distance for a different reason.
+
+Open questions for whenever this is picked up: whether the cam is always-on or
+toggled; whether it shows a live view or only a freeze-frame on impact (cheaper, and
+arguably better — you want to study the hit, not watch the plate swing); whether it
+is diegetic (a real camera the player "places", possibly a purchasable) or simply a
+range facility; and what it costs to render a second view per frame on iPad.
+
+**Not built** — unscheduled, logged 2026-07-27 from the ELR probe. Relevant prior art
+in-repo: `Design/archive/mil-zero-range-plan.md` §7.1 (Inspect), `range/plate-surface.ts`
+(hit marks already live in the plate's own texture, so the data the cam would show
+already exists).
+
 #### Reticle ranging
 Measure a known-size target's apparent size against reticle subtensions to estimate
 range (`size×1000÷mils` / `size_in×95.5÷MOA`); FFP keeps the read true at any zoom.

@@ -32,6 +32,29 @@ const DEFAULT_DT = 0.001;
 const ZERO_MAX_ITERATIONS = 50;
 const ZERO_TOLERANCE_M = 1e-5;
 
+/**
+ * Default wall on simulated time of flight (s) — see `SolveOptions.maxTimeS`.
+ *
+ * WHY THIS IS NOT 10, WHICH IT USED TO BE. `Simulator::simulate` exits on
+ * whichever comes first, distance or time (`simulator.cpp` — `max_sim_time =
+ * start_time + max_time`, and the loop breaks when the bullet passes
+ * `max_distance`). At the ranges the game shipped with, distance always won and
+ * the time wall was invisible. It stops being invisible past ~2.5 km:
+ *
+ *   6.5 CM 140 gr ELD-M, 100 m zero — time of flight to 3000 m is **9.44 s**,
+ *   and `solveTrajectory` asks the bullet to fly `maxRangeM × 1.05` = 3150 m so
+ *   `atDistance` has something to interpolate against. At the old 10 s wall the
+ *   bullet only reached **3108 m** — 42 m short. The 3000 m row still resolved,
+ *   with no margin at all: a headwind, cooler air, or a low MV draw pushes it
+ *   over and the far station silently has NO firing solution.
+ *
+ * 30 s covers every catalog load past 3 km with room to spare. The cost of a
+ * generous value is zero in the normal case (distance still wins) and bounded in
+ * the pathological one — asking for a range the bullet cannot reach burns
+ * `maxTimeS / dt` steps and then stops, instead of running forever.
+ */
+export const DEFAULT_MAX_TIME_S = 30;
+
 /** Spin rate (rad/s) from muzzle velocity and twist length (m/turn):
  * one turn per `twistM` of travel → 2π·v/twist. Engine-adjacent physics, kept
  * here so components never derive it inline. Matches validation/match-check.mjs. */
@@ -141,11 +164,14 @@ export function solveTrajectory(
 ): TrajectoryTable {
   const dt = opts.dt ?? DEFAULT_DT;
   const sightHeightM = opts.sightHeightM ?? 0;
+  const maxTimeS = opts.maxTimeS ?? DEFAULT_MAX_TIME_S;
   const { sim, owned } = setupZeroedSimulator(module, load, atmosphere, wind, opts.zeroRangeM, dt, sightHeightM);
 
   try {
     // Simulate a little past the last sample so atDistance can interpolate it.
-    sim.simulate(opts.maxRangeM * 1.05, dt, 10.0);
+    // `maxTimeS` is the OTHER exit condition, not a formality — see
+    // DEFAULT_MAX_TIME_S for why it has to clear the flight time at 3 km.
+    sim.simulate(opts.maxRangeM * 1.05, dt, maxTimeS);
     const trajectory = sim.getTrajectory(); // reference — do NOT delete
 
     const rows: TrajectoryTable = [];

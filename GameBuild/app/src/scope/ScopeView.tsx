@@ -24,19 +24,35 @@ import * as THREE from 'three';
 import { RangeScene, PLATE_THICKNESS_M, setChainInstance, type PlateInstance } from '../range/RangeScene';
 import { RANGE_A_GROUND } from '../range/range-a-config';
 import { TestRangeScene } from '../range/TestRangeScene';
+import { ELRProbeScene } from '../range/ELRProbeScene';
+import { probeVariantFromSearch } from '../range/elr-probe-config';
+import { projectMissToGround, FLAT_GROUND } from './miss-projection';
+import { pickAimedPlate, resolveTargetPlate } from './aim-pick';
+
+/** Effectively unlimited for a sandbox, but finite so the shots-left readout still
+ *  moves — see the commit call in the `elr-probe` scene branch. */
+const PROBE_SHOT_BUDGET = 999;
 import { TEST_RANGE_GROUND } from '../range/test-range-config';
 import type { SteelSceneApi } from '../range/steel-scene-api';
 import { WoodedZeroScene } from '../range/WoodedZeroScene';
 import { snapshotWoodedZero } from '../range/wooded-zero-config';
 import type { PaperBayScene, PaperTargetInstance } from '../range/paper-bay-scene';
-import { getRangeDefinition } from '../range/ranges';
+import { cameraReachFor, getRangeDefinition } from '../range/ranges';
 import { solveGear, createGearScatter, gearZeroOffset } from '../engine-bridge/gear-solve';
 import { gearSolveContext, type GearSolveContext } from '../game/active-gear';
 import { recommendedZeroM } from '../game/zero-distance';
 import { WIND_MARKERS } from '../range/wind-markers-config';
 import { initWindMarkers, updateWindMarkers, disposeWindMarkers } from './WindMarkers';
 import { initMirage, renderSceneWithMirage, disposeMirage, MIRAGE_REFERENCE_DISTANCE_M } from './Mirage';
-import { useGameStore, ZOOM_MIN, ZOOM_MAX, MIL_CLICK_RAD, MOA_CLICK_RAD, DEFAULT_WIND_PRESET } from '../state/store';
+import {
+  useGameStore,
+  ZOOM_MIN,
+  ZOOM_MAX,
+  MIL_CLICK_RAD,
+  MOA_CLICK_RAD,
+  COARSE_CLICKS,
+  DEFAULT_WIND_PRESET,
+} from '../state/store';
 import { SCOPE_BASE_FOV_DEG, fovRadForMag } from './scope-projection';
 import { buildReticle, MAJOR_HALF_PX } from './reticle';
 import { solveTrajectory, spinRateFromTwist, speedOfSound, type AtmosphereInput, type Load } from '../engine-bridge';
@@ -93,6 +109,9 @@ const WOODED_ZERO_WIND_DEG = 90;
 // A low miss resolves on the far target plane BELOW ground level; place its dust
 // where the round actually lands by projecting the sight ray onto the grass.
 const GROUND_Y_M = 0; // RangeScene grass lane height
+/** How far downrange a low miss is tracked before giving up on finding ground.
+ *  Past the longest range in the game, so it never truncates a real strike. */
+const GROUND_PROJECTION_MAX_M = 3200;
 const GROUND_PUFF_LIFT_M = 0.12; // sit the dust just above the grass, not half-buried
 
 /** Fine trajectory sampling for the bullet-trace arc (task 1.5b). */
@@ -162,6 +181,9 @@ export function ScopeView({
   // preset-picker gate `windRealism` are still read here.)
   const magnification = useGameStore((s) => s.session.scope.magnification);
   const unitsPrimary = useGameStore((s) => s.settings.unitsPrimary);
+  // COARSE_CLICKS is 2 MIL and 5 MOA — the same click COUNT in both systems (see
+  // its doc comment), so only the label needs the unit.
+  const COARSE_LABEL = unitsPrimary === 'MIL' ? '2 MIL' : '5 MOA';
 
   // Turret dial (task 1.6c, D4-A solve-only): elevation/windage read for the
   // HUD readout; the ± buttons below dispatch the store actions directly.
@@ -316,6 +338,30 @@ export function ScopeView({
       // learning the fundamentals without wind in the way — no wind
       // flags/controls either (see the markerSpecs/isTestRangeHud gating below).
       store().setWind({ speedMps: 0, directionDeg: 0 });
+    } else if (sceneType === 'elr-probe') {
+      // Throwaway 3 km diagnostic (`Design/elr-probe-plan.md`). Calm by default so
+      // the shot-loop questions — is an 18-second flight tense or tedious, does the
+      // tracer show, is the ping audible — are answered without wind smearing them;
+      // the wind check is a deliberate separate pass at a dialled known value.
+      // Probe A (flat) by default; `?probe=slope` builds Probe B — the 10 m bluff
+      // over a convex rising hillside. One scene builder, one station list, one
+      // config: the variant is the single thing that differs, which is what makes
+      // A-vs-B a fair comparison rather than two separate ranges.
+      range = new ELRProbeScene(
+        scene,
+        probeVariantFromSearch(typeof window === 'undefined' ? '' : window.location.search),
+      );
+      store().setWind({ speedMps: 0, directionDeg: 0 });
+      // Auto-commit the near station so there is no commit step — the probe is a
+      // sandbox, not an engagement.
+      //
+      // A large FINITE budget, not Infinity. The Test Range uses Infinity, but it
+      // also hides the shots-left readout (`isTestRangeHud`); the probe shows it,
+      // and "shots left: Infinity" both reads as broken and destroys the cheapest
+      // signal that a shot actually happened. A decrementing counter is the first
+      // thing to look at when the trigger seems dead.
+      const first = range.plates[0];
+      if (first) store().commitTarget(first.instanceId, first.distanceM, PROBE_SHOT_BUDGET);
     } else {
       range = new RangeScene(scene);
     }
@@ -362,9 +408,23 @@ export function ScopeView({
     // point on a knoll raises the camera, the wind sampling and the mirage
     // reference together. Flat ranges — and the sight-in bay, which reports
     // exactly `EYE_HEIGHT_M` — are unchanged by this.
-    const eyeHeightM = sightIn?.eyeHeightM ?? EYE_HEIGHT_M;
+    // Eye height is a property of the FIRING POINT, whatever kind of scene built it.
+    // Paper bays have reported it since the Wooded Zero Range's knoll; steel scenes
+    // gained it for ELR Probe B's 10 m bluff. Flat ranges report nothing and keep
+    // the global default, so this is a no-op for all four shipped ranges.
+    const eyeHeightM = sightIn?.eyeHeightM ?? range?.eyeHeightM ?? EYE_HEIGHT_M;
 
-    const camera = new THREE.PerspectiveCamera(SCOPE_BASE_FOV_DEG / magnification, 1, 0.5, 3000);
+    // Camera reach is a property of the RANGE for the same reason eye height is
+    // (`ranges.ts` `CameraReach`): the shipped 0.5/3000 was sized for a 200 m world
+    // and clips a 3 km one outright. Ranges that say nothing get exactly the old
+    // numbers back, so this is a no-op everywhere but the ELR probe.
+    const reach = cameraReachFor(rangeDefinition);
+    const camera = new THREE.PerspectiveCamera(
+      SCOPE_BASE_FOV_DEG / magnification,
+      1,
+      reach.nearM,
+      reach.farM,
+    );
     camera.position.set(0, eyeHeightM, 0);
 
     // --- firing solution plumbing (task 1.4c) --------------------------------
@@ -791,26 +851,32 @@ export function ScopeView({
       if (!range) return null; // steel-only; the sight-in bay uses findAimedTarget
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(aimQuaternion(st.t));
       if (dir.z >= -1e-3 || range.plates.length === 0) return null;
-      let aimed = range.plates[0];
-      let aimedD = Infinity;
-      for (const plate of range.plates) {
-        const tt = -plate.distanceM / dir.z;
-        const ax = camera.position.x + dir.x * tt;
-        const ay = camera.position.y + dir.y * tt;
-        const d = Math.hypot(ax - plate.position.x, ay - plate.position.y);
-        if (d < aimedD) {
-          aimedD = d;
-          aimed = plate;
-        }
-      }
-      return { dir, plate: aimed };
+      // COMMIT-PREFERRED (`scope/aim-pick.ts`): a committed target keeps the
+      // engagement through any holdover, and only loses it when the crosshair is
+      // actually ON a different plate. With nothing committed this is just the
+      // angular nearest-pick, so swing-and-shoot is unchanged.
+      const aimed = resolveTargetPlate(
+        { x: camera.position.x, y: camera.position.y },
+        { x: dir.x, y: dir.y, z: dir.z },
+        range.plates,
+        store().session.currentTarget?.plateInstanceId,
+      );
+      return aimed ? { dir, plate: aimed } : null;
     }
 
     // Commit (task 1.6c, D2): read the plate under the crosshair right now and
     // engage it — refills the shot budget, resets dials + shot count, bumps
     // score.targetsEngaged (state/store.ts commitTarget).
     commitRef.current = () => {
-      const found = findAimed();
+      // Deliberately NOT commit-preferred: COMMIT means "engage what I am pointing
+      // at", so it must always re-pick by aim or the target could never be changed.
+      const dirNow = new THREE.Vector3(0, 0, -1).applyQuaternion(aimQuaternion(st.t));
+      const picked = pickAimedPlate(
+        { x: camera.position.x, y: camera.position.y },
+        { x: dirNow.x, y: dirNow.y, z: dirNow.z },
+        range?.plates ?? [],
+      );
+      const found = picked ? { dir: dirNow, plate: picked } : null;
       if (found) store().commitTarget(found.plate.instanceId, found.plate.distanceM);
     };
 
@@ -981,11 +1047,24 @@ export function ScopeView({
           let fxX = result.impact.x;
           let fxY = result.impact.y;
           let fxZ = impactZ;
-          if (result.hitPlateId == null && fxY < GROUND_Y_M) {
-            const t = (GROUND_Y_M - eyeY) / (fxY - eyeY);
-            fxX = eyeX + t * (fxX - eyeX);
-            fxZ = eyeZ + t * (fxZ - eyeZ);
-            fxY = GROUND_Y_M + GROUND_PUFF_LIFT_M;
+          // Ground is a PROFILE, not a constant — flat on every range but ELR
+          // Probe B, whose hillside would otherwise put the puff past the real
+          // strike and underground (`scope/miss-projection.ts`).
+          const groundProfile = steel.groundYAt ?? FLAT_GROUND;
+          if (result.hitPlateId == null && fxY < groundProfile(rangeM)) {
+            const landed = projectMissToGround(
+              { x: eyeX, y: eyeY, z: eyeZ },
+              { x: fxX, y: fxY, z: fxZ },
+              groundProfile,
+              GROUND_PROJECTION_MAX_M,
+            );
+            // null = it never came down inside the range; leave the impact where the
+            // solver put it rather than inventing a strike point.
+            if (landed) {
+              fxX = landed.x;
+              fxY = landed.y;
+              fxZ = landed.z;
+            }
           }
           const puffHit = result.hitPlateId != null;
           pendingImpacts.push({
@@ -1730,7 +1809,19 @@ export function ScopeView({
             ELEV {formatAngleForDisplay(elevationRad, unitsPrimary).value.toFixed(unitsPrimary === 'MIL' ? 1 : 2)}{' '}
             {formatAngleForDisplay(elevationRad, unitsPrimary).label}
           </div>
+          {/* Coarse (−−/++) sits OUTSIDE fine (−/+) so the pair reads as one
+              scale running from big-down to big-up, and a mis-tap lands on the
+              adjacent smaller step rather than jumping the wrong way by 2 MIL. */}
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <button
+              title={`−${COARSE_LABEL}`}
+              onClick={() => {
+                dialElevationClicks(-COARSE_CLICKS);
+                clickAudioRef.current();
+              }}
+            >
+              −−
+            </button>
             <button
               onClick={() => {
                 dialElevationClicks(-1);
@@ -1747,6 +1838,16 @@ export function ScopeView({
             >
               +
             </button>
+            <button
+              title={`+${COARSE_LABEL}`}
+              onClick={() => {
+                dialElevationClicks(COARSE_CLICKS);
+                clickAudioRef.current();
+              }}
+            >
+              ++
+            </button>
+            <span style={{ opacity: 0.6, fontSize: 11 }}>±{COARSE_LABEL}</span>
           </div>
           <div style={{ marginTop: 4 }}>
             WIND {formatAngleForDisplay(windageRad, unitsPrimary).value.toFixed(unitsPrimary === 'MIL' ? 1 : 2)}{' '}

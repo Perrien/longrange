@@ -6,7 +6,7 @@ working DOPE book* — the heavy node/confidence machinery is no longer a prereq
 D15 ([`D15-two-lever-truing-independent.md`](./D15-two-lever-truing-independent.md)): two
 independent levers, chrono→MV, confirm-hold→BC.
 
-**Steps 2–4 — DONE (2026-07-27)** via the expanded [`dope-book-ui-plan.md`](./dope-book-ui-plan.md)
+**Steps 2–4 — DONE (2026-07-27)** via the expanded [`dope-book-ui-plan.md`](../archive/dope-book-ui-plan.md)
 (P1–P4): the tabbed rifle-scoped DOPE book (status header, come-up table extended past
 effective range to the transonic/subsonic wall, rifle & ammo overview with calculated
 vertical spread), inventory data model (shot count, round depletion, lot codes,

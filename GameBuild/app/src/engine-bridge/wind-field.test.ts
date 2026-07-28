@@ -7,7 +7,7 @@
 // not silently ignored) and that perturbation itself changes as time advances —
 // the engine-backed half of the §1.7 done-when "a shot's drift changes when the
 // field evolves". The on-device feel/flags check is 1.7b/1.7d's job.
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { loadBtkModule } from './wasm-module';
 import { solveTrajectory } from './index';
 import { createWindField, listWindPresets, solveTrajectoryField, sampleFieldColumn } from './wind-field';
@@ -30,6 +30,35 @@ const BOX_MAX = { x: 30, y: 50, z: 0 };
 let module: BtkModule;
 beforeAll(async () => {
   module = await loadBtkModule();
+});
+
+/**
+ * SEED THE ENGINE RNG BEFORE EVERY TEST — this file was flaky without it, ~1 run
+ * in 6 (found 2026-07-27 during the ELR probe's P1).
+ *
+ * `WindGenerator` draws its per-octave phase offsets from `btk::math::Random`
+ * (`engine/src/physics/wind_generator.cpp`), and the game deliberately leaves that
+ * RNG clock-seeded — so every `createWindField` built a DIFFERENT field, and the
+ * zero-mean assertion below (`avgMag < 0.4 × meanAbsSample`, empirically ~0.2)
+ * failed on unlucky draws. Observed: 0.46 against the 0.40 bound.
+ *
+ * Seeding is the right fix rather than widening the tolerance, which would weaken
+ * what the test asserts to hide a determinism gap (`execution-protocol.md`
+ * §4.2/§4.3). `Random::seed` is exposed in the bindings for exactly this — its
+ * comment notes it exists so the app/validation harness can make sampling
+ * reproducible, and that binding it "cannot alter any computed solve output".
+ *
+ * `beforeEach`, not `beforeAll`: field construction consumes RNG, so without a
+ * reset each test would depend on how many fields the tests before it built —
+ * deterministic, but order-dependent, which is a subtler version of the same bug.
+ *
+ * NOTE (owner, 2026-07-27): the wind model keeps surfacing issues; this seeds the
+ * TEST only and changes nothing about how the game runs. A broader look at wind
+ * determinism is queued separately.
+ */
+const WIND_TEST_SEED = 1337;
+beforeEach(() => {
+  module.Random.seed(WIND_TEST_SEED);
 });
 
 describe('wind-field/listWindPresets (task 1.7a pre-step 0)', () => {

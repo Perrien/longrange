@@ -9,6 +9,7 @@ export {
   defaultChrono,
   MIL_CLICK_RAD,
   MOA_CLICK_RAD,
+  COARSE_CLICKS,
   ZOOM_MIN,
   ZOOM_MAX,
   DEFAULT_MAGNIFICATION,

@@ -415,7 +415,11 @@ function makeUnitBermGeometry(): THREE.BufferGeometry {
 /** White board with black distance text, drawn to a canvas texture. Exported so
  * TestRangeScene (Stage 1 of the environment plan) can reuse the same board
  * look for its one sign instead of duplicating the canvas helper. */
-export function makeSignTexture(text: string): THREE.CanvasTexture {
+/** `unitLabel` defaults to 'YARDS' so every existing caller is unchanged. The ELR
+ *  probe is metric-only and passes 'METRES' — without this the 3000 m station read
+ *  "3000 / YARDS", which is not a cosmetic quibble on a range whose entire purpose
+ *  is reading distance correctly. */
+export function makeSignTexture(text: string, unitLabel = 'YARDS'): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 128;
@@ -428,7 +432,7 @@ export function makeSignTexture(text: string): THREE.CanvasTexture {
   ctx.textBaseline = 'middle';
   ctx.fillText(text, canvas.width / 2, canvas.height / 2 - 6);
   ctx.font = 'bold 34px Arial';
-  ctx.fillText('YARDS', canvas.width / 2, canvas.height - 24);
+  ctx.fillText(unitLabel, canvas.width / 2, canvas.height - 24);
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
   return tex;

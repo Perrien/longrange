@@ -21,6 +21,7 @@ import {
   defaultChrono,
   MIL_CLICK_RAD,
   MOA_CLICK_RAD,
+  COARSE_CLICKS,
   ZOOM_MIN,
   ZOOM_MAX,
   DEFAULT_WIND_PRESET,
@@ -117,6 +118,22 @@ describe('scope dialing', () => {
     expect(subtensionMmInch(elev, yardsToMeters(100)).inch).toBeCloseTo(0.262, 3);
   });
 
+  // The coarse turret step (++/--) is a click COUNT, so it must land on exactly
+  // 2 MIL and exactly 5 MOA without a unit branch. If either detent size ever
+  // changes, this is where that assumption breaks.
+  it('COARSE_CLICKS is exactly 2 MIL and exactly 5 MOA', () => {
+    expect(COARSE_CLICKS * MIL_CLICK_RAD).toBeCloseTo(milToRad(2), 12);
+    expect(COARSE_CLICKS * MOA_CLICK_RAD).toBeCloseTo(moaToRad(5), 12);
+  });
+
+  it('dialing a coarse step up then down returns to where it started', () => {
+    const s = useGameStore.getState();
+    s.dialElevationClicks(COARSE_CLICKS);
+    expect(useGameStore.getState().session.scope.elevationRad).toBeCloseTo(milToRad(2), 12);
+    s.dialElevationClicks(-COARSE_CLICKS);
+    expect(useGameStore.getState().session.scope.elevationRad).toBeCloseTo(0, 12);
+  });
+
   it('clamps zoom to the optic range', () => {
     const st = useGameStore.getState();
     st.setZoom(1000);
@@ -171,16 +188,38 @@ describe('target select / reset', () => {
 describe('scoring & engagement (task 1.6b, D2)', () => {
   it('commitTarget sets currentTarget, resets shot count, refills budget, bumps targetsEngaged', () => {
     const st = useGameStore.getState();
-    st.dialElevationClicks(4);
     st.decrementBudget();
     st.commitTarget(7, yardsToMeters(300));
     const s = useGameStore.getState().session;
     expect(s.currentTarget).toEqual({ plateInstanceId: 7, distanceM: yardsToMeters(300) });
     expect(s.shotsAtCurrentTarget).toBe(0);
     expect(s.shotBudget).toBe(3);
-    expect(s.scope.elevationRad).toBe(0);
     expect(s.lastShots).toEqual([]);
     expect(useGameStore.getState().score.targetsEngaged).toBe(1);
+  });
+
+  // Committing used to zero the turret. It must not: commit-preferred aim
+  // resolution makes COMMIT the way you HOLD a target through a big holdover, so
+  // resetting the dial would throw away the very solution the player committed to
+  // protect. Real turrets do not spring back when you look at another target.
+  it('commitTarget PRESERVES the dialled elevation and windage', () => {
+    const st = useGameStore.getState();
+    st.dialElevationClicks(120); // 12 MIL — an ELR come-up
+    st.dialWindageClicks(-15);
+    const before = useGameStore.getState().session.scope;
+    st.commitTarget(7, yardsToMeters(1500));
+    const after = useGameStore.getState().session.scope;
+    expect(after.elevationRad).toBe(before.elevationRad);
+    expect(after.windageRad).toBe(before.windageRad);
+    expect(after.elevationRad).toBeCloseTo(milToRad(12), 12);
+  });
+
+  it('re-committing to a different target still keeps the dial', () => {
+    const st = useGameStore.getState();
+    st.dialElevationClicks(60);
+    st.commitTarget(1, yardsToMeters(500));
+    st.commitTarget(2, yardsToMeters(1000));
+    expect(useGameStore.getState().session.scope.elevationRad).toBeCloseTo(milToRad(6), 12);
   });
 
   it('a hit on the first shot after commit counts as a first-round hit', () => {

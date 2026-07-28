@@ -30,8 +30,50 @@ import { useGameStore } from './state/store';
 
 type PlayerView = 'rangeSelect' | 'scope';
 
+/**
+ * Deep-link into a range by id, e.g. `?range=elr-probe`.
+ *
+ * Exists for the UNLISTED diagnostic ranges — the ELR Probe is deliberately kept
+ * off the range-select cards (it is a throwaway measuring instrument, not content),
+ * but it still has to be REACHABLE or it cannot do its job. A query parameter keeps
+ * those two facts from fighting: no player-facing surface changes, and the owner
+ * has a deterministic way in.
+ *
+ * Unknown ids are ignored rather than thrown, so a stale bookmark lands on the
+ * normal landing screen instead of a blank one.
+ */
+function deepLinkedRangeId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const id = new URLSearchParams(window.location.search).get('range');
+  if (!id) return null;
+  try {
+    return getRangeDefinition(id).id;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve and APPLY the deep link exactly once, at module scope — before React
+ * renders anything.
+ *
+ * It has to happen here rather than inside the component. Calling `setRangeId`
+ * during render updates an external store while React is rendering a subscriber of
+ * it, which is the classic "cannot update a component while rendering a different
+ * component" fault: ScopeView mounts against the OLD range id, builds that scene,
+ * then tears it down and rebuilds when the id lands. Doing it at module scope means
+ * the store already holds the right id by the time anything reads it, so ScopeView
+ * builds the right scene once and its effect never re-runs.
+ */
+const DEEP_LINKED_RANGE_ID = deepLinkedRangeId();
+if (DEEP_LINKED_RANGE_ID) {
+  useGameStore.getState().setRangeId(DEEP_LINKED_RANGE_ID);
+}
+
 export function App() {
-  const [view, setView] = useState<PlayerView>('rangeSelect'); // D5: always cold-starts here
+  // D5 still holds — a cold start lands on range select — EXCEPT when a range was
+  // asked for explicitly by URL, which is only how the unlisted probes are entered.
+  const [view, setView] = useState<PlayerView>(DEEP_LINKED_RANGE_ID ? 'scope' : 'rangeSelect');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
   const [loadoutOpen, setLoadoutOpen] = useState(false);

@@ -63,6 +63,18 @@ export interface SolveOptions {
   /** Scope height above the bore (m). Default 0 (bore-line zero/drop — matches
    * the golden-vector oracle and the 0.4 debug table, which pass none). Task 1.6a. */
   sightHeightM?: number;
+  /**
+   * Hard wall on simulated time of flight (s). Default `DEFAULT_MAX_TIME_S`.
+   *
+   * The engine's `Simulator::simulate(maxDistance, dt, maxTime)` exits on
+   * **whichever comes first** — distance or time. Normally distance wins and this
+   * value is invisible. It only bites on a shot slow enough that the bullet is
+   * still airborne when the clock runs out, at which point the trajectory is
+   * silently short and `atDistance()` returns nothing for the far rows.
+   *
+   * Raise it for extreme-range or subsonic work; see `DEFAULT_MAX_TIME_S`.
+   */
+  maxTimeS?: number;
 }
 
 /** One sampled row of a trajectory, all SI. Angular corrections (MIL/MOA) are
