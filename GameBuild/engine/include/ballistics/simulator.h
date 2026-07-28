@@ -103,7 +103,21 @@ namespace btk::ballistics
      * @param spin_rate Bullet spin rate in rad/s (default: 0.0f)
      * @return Const reference to the zeroed initial bullet
      */
-    const Bullet& computeZero(float muzzle_velocity, const btk::math::Vector3D& target_position, float dt = 0.001f, int max_iterations = 20, float tolerance = 1e-6f, float spin_rate = 0.0f);
+    /**
+     * Solve the launch angles that put the bullet on `target_position`.
+     *
+     * `max_time` is the wall (s) on each TRIAL flight. It is a trailing defaulted
+     * parameter so every pre-existing call site compiles and behaves bit-identically
+     * — the golden vectors depend on that.
+     *
+     * WHY IT IS A PARAMETER (2026-07-28). It used to be hard-coded at 5 s inside the
+     * loop, and each trial flies 1.1x the target distance. That is invisible at normal
+     * zero ranges and fatal at long ones: anything zeroing past ~2050 m runs out of
+     * time before the trial reaches the target, `atDistance` returns nullopt, and this
+     * throws. `MatchSimulator` zeroes AT THE TARGET, so that threw on every shot past
+     * 2050 m and killed the trigger on the ELR range. See Wiki/_gaps.md.
+     */
+    const Bullet& computeZero(float muzzle_velocity, const btk::math::Vector3D& target_position, float dt = 0.001f, int max_iterations = 20, float tolerance = 1e-6f, float spin_rate = 0.0f, float max_time = 5.0f);
 
     /**
      * @brief Simulate trajectory from current state to maximum distance

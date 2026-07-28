@@ -198,7 +198,27 @@ EMSCRIPTEN_BINDINGS(ballistics_toolkit)
     .function("getAtmosphere", &btk::ballistics::Simulator::getAtmosphere)
     .function("getWind", &btk::ballistics::Simulator::getWind)
     .function("resetToInitial", &btk::ballistics::Simulator::resetToInitial)
-    .function("computeZero", &btk::ballistics::Simulator::computeZero)
+    // computeZero gained a trailing `max_time` parameter (2026-07-28). embind does
+    // NOT honour C++ default arguments — it binds the full arity — so binding the
+    // member pointer directly would silently require every JS caller to pass a 7th
+    // argument, breaking `engine-bridge/index.ts` and `validation/solve-driver.mjs`
+    // and, worse, invalidating the golden vectors. Two explicit bindings instead:
+    // the 6-arg name keeps the exact pre-existing JS surface and old 5 s behaviour,
+    // and a separate name exposes the wall for callers that zero at long range.
+    .function("computeZero", optional_override([](btk::ballistics::Simulator& self, float mv,
+                                                  const btk::math::Vector3D& target, float dt,
+                                                  int max_iterations, float tolerance,
+                                                  float spin_rate) -> const btk::ballistics::Bullet& {
+                return self.computeZero(mv, target, dt, max_iterations, tolerance, spin_rate);
+              }),
+              return_value_policy::reference())
+    .function("computeZeroWithMaxTime", optional_override([](btk::ballistics::Simulator& self, float mv,
+                                                             const btk::math::Vector3D& target, float dt,
+                                                             int max_iterations, float tolerance,
+                                                             float spin_rate, float max_time) -> const btk::ballistics::Bullet& {
+                return self.computeZero(mv, target, dt, max_iterations, tolerance, spin_rate, max_time);
+              }),
+              return_value_policy::reference())
     .function("simulate", select_overload<void(float, float, float)>(&btk::ballistics::Simulator::simulate))
     .function("simulateWithWind", select_overload<void(float, float, float, const WindGenerator&)>(&btk::ballistics::Simulator::simulate))
     .function("getTrajectory", select_overload<Trajectory&()>(&btk::ballistics::Simulator::getTrajectory), return_value_policy::reference())

@@ -40,7 +40,17 @@ namespace btk::match
     btk::math::Vector3D target_position(0.0f, 0.0f, -target_range);
     btk::math::Vector3D calm_wind(0.0f, 0.0f, 0.0f);
     simulator_.setWind(calm_wind);
-    zeroed_bullet_ = simulator_.computeZero(nominal_mv, target_position, timestep, 1000, 1e-6, spin_rate);
+    // max_time = 30 s, matching the app bridge's DEFAULT_MAX_TIME_S.
+    //
+    // NOT decorative. This simulator zeroes AT THE TARGET, and computeZero flies each
+    // trial 1.1x that distance. On computeZero's old hard-coded 5 s wall a 6.5 CM
+    // could not cover 2.2 km in time, so constructing this object THREW for every
+    // target past ~2050 m — measured against pristine BTK: fine at 2000 m, throws at
+    // 2100 m. The app builds one of these per station, so the throw happened before
+    // the shot existed and the trigger simply went dead on the ELR range (recoil still
+    // played, since the kick is applied after the catch). 30 s covers every catalog
+    // load past 3 km. Root-cause write-up in Wiki/_gaps.md.
+    zeroed_bullet_ = simulator_.computeZero(nominal_mv, target_position, timestep, 1000, 1e-6, spin_rate, 30.0f);
   }
 
   SimulatedShot Simulator::fireShot()

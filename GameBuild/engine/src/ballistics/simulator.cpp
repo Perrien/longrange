@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
+#include <string>
 #include <stdexcept>
 #include <utility>
 
@@ -288,7 +290,7 @@ namespace btk::ballistics
   }
 
   // Compute zeroed initial state (instance method)
-  const Bullet& Simulator::computeZero(float muzzle_velocity, const btk::math::Vector3D& target_position, float dt, int max_iterations, float tolerance, float spin_rate)
+  const Bullet& Simulator::computeZero(float muzzle_velocity, const btk::math::Vector3D& target_position, float dt, int max_iterations, float tolerance, float spin_rate, float max_time)
   {
     if(std::abs(target_position.z) < 1e-6f)
     {
@@ -297,6 +299,21 @@ namespace btk::ballistics
 
     float best_pitch = 0.01f; // Start with reasonable elevation guess (about 0.57 degrees)
     float best_yaw = 0.0f;    // azimuth/windage (rad)
+
+    // Stall detection (2026-07-28). See the block above the check below for why.
+    // Measured: this loop converges at a clean 0.50 error ratio per iteration at
+    // EVERY range — it is well behaved. What it cannot do is beat float32 noise.
+    // Measured against the BEST error so far, not the previous one. Near the noise
+    // floor the residual bounces (8e-6, 5e-6, 9e-6, 4e-6...), so a previous-vs-current
+    // test keeps seeing an "improvement" and resets — 2500 m and 3000 m stopped but
+    // 2000 m still ground out all 1000 trials. "No new best for six straight trials"
+    // is immune to that bouncing.
+    constexpr float kMeaningfulImprovement = 0.999f;
+    constexpr int kTrialsWithoutImprovement = 6;
+    float best_error = std::numeric_limits<float>::infinity();
+    float best_error_pitch = best_pitch;
+    float best_error_yaw = best_yaw;
+    int trials_since_improvement = 0;
 
     for(int i = 0; i < max_iterations; ++i)
     {
@@ -317,7 +334,7 @@ namespace btk::ballistics
       float sim_dist = -target_position.z * 1.1f;
       setInitialBullet(test_state);
       current_time_ = 0.0f; // Reset clock for each trial
-      simulate(sim_dist, dt, 5.0f);
+      simulate(sim_dist, dt, max_time);
       Trajectory& trajectory = getTrajectory();
 
       // Get state at target distance using interpolation
@@ -325,7 +342,13 @@ namespace btk::ballistics
 
       if(!point_at_target)
       {
-        throw std::runtime_error("computeZero: bullet cannot reach target distance (MV too low or range too far)");
+        // Say WHICH wall was hit. The old message blamed the bullet for what is
+        // usually the time cap: a trial flies 1.1x the target distance, so a long
+        // zero needs a long max_time. Naming both numbers turns this from a
+        // multi-session mystery into a one-line diagnosis.
+        throw std::runtime_error("computeZero: trial flight did not reach " + std::to_string(sim_dist) +
+                                 " m within max_time=" + std::to_string(max_time) +
+                                 " s (raise max_time, or the MV is too low for this range)");
       }
 
       // Calculate error at target plane; ignore downrange (z) interpolation residue
@@ -338,6 +361,50 @@ namespace btk::ballistics
       // Check if we're close enough
       if(xy_error_magnitude < tolerance)
       {
+        break;
+      }
+
+      if(xy_error_magnitude < best_error * kMeaningfulImprovement)
+      {
+        trials_since_improvement = 0;
+      }
+      else
+      {
+        ++trials_since_improvement;
+      }
+      if(xy_error_magnitude < best_error)
+      {
+        best_error = xy_error_magnitude;
+        best_error_pitch = best_pitch;
+        best_error_yaw = best_yaw;
+      }
+
+      // STOP GRINDING ON AN UNREACHABLE TOLERANCE (2026-07-28).
+      //
+      // The caller picks `tolerance` in METRES, and nothing stops it asking for a
+      // precision the integrator physically cannot deliver. `MatchSimulator` asks
+      // for 1e-6 m — one micron — and at long range that is far below the float32
+      // noise floor of a 9,000-step trajectory: measured residuals bottom out
+      // around 5e-6 m at 2500-3000 m. The old loop had no way to notice, so it ran
+      // its FULL iteration ceiling (1000 trials) chasing a target it had already
+      // got as close to as arithmetic allows. That cost 1111 ms at 3000 m against
+      // 10 ms at 1500 m, and read on device as a one-second freeze.
+      //
+      // The fix is not a better root-finder — the iteration is already healthy, at
+      // a clean 0.50 error ratio per step at every range. It is knowing when to
+      // stop. Once a step stops materially improving the error, every further
+      // trial is pure cost, so bail and keep the best iterate seen.
+      //
+      // DELIBERATELY A NO-OP ON EVERY CONVERGING CASE, and that is load-bearing:
+      // the golden vectors are generated through this function, so a changed
+      // answer on the validated path would be indistinguishable from an engine
+      // regression. At a 0.50 ratio this check cannot fire before the tolerance
+      // break does — verified by diffing the full 36-case matrix against the
+      // pristine oracle, which stays bit-identical.
+      if(trials_since_improvement >= kTrialsWithoutImprovement)
+      {
+        best_pitch = best_error_pitch;
+        best_yaw = best_error_yaw;
         break;
       }
 
