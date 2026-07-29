@@ -138,9 +138,9 @@ export function switchThresholdRad(plate: AimablePlate): number {
  * still park the crosshair on a neighbouring plate, which then takes the
  * engagement. Elevation hold never can — every gong centre is at the same height,
  * so holding up moves away from all of them at once — and any elevation at all
- * breaks the coincidence. Wind is switched off on the probe for now, so this is
- * parked rather than solved; if it ever bites, the fix is a switch threshold that
- * shrinks as applied hold grows, not a wider one.
+ * breaks the coincidence. Parked rather than solved (it was found on a range with
+ * wind switched off); if it ever bites, the fix is a switch threshold that shrinks
+ * as applied hold grows, not a wider one.
  */
 export function resolveTargetPlate<T extends AimablePlate>(
   eye: AimPoint,

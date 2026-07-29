@@ -48,6 +48,26 @@ export interface PlateInstance {
    * target-surface TS-C feeds it to the C++ paint buffer so splats chip through
    * the same paint the rendered plate shows). */
   paintColor: number;
+  /**
+   * Does this plate HANG, or is it BOLTED? Omitted ⇒ hangs, so every existing
+   * range is unchanged.
+   *
+   * A bolted plate still takes paint and still registers hits; it just never
+   * enters the swing physics. Set `false` for stake-mounted plates, which are
+   * bolted to a post in reality and whose chain geometry degenerates anyway —
+   * see `chainOutwardOffsetM`.
+   */
+  swings?: boolean;
+  /**
+   * Per-plate override for the chain anchor's inward offset (m). Omitted ⇒ the
+   * shared `CHAIN_OUTWARD_OFFSET_M`, so every existing range is unchanged.
+   *
+   * The shared constant is 5 cm ABSOLUTE, which is 3 % of a 2 m gong but 100 %
+   * of a 5 cm one — past that point the physics anchor crosses the centreline
+   * and the two chains form an X with lever arms wider than the plate. Ranges
+   * with constant-angular (i.e. very small near) plates must scale it.
+   */
+  chainOutwardOffsetM?: number;
 }
 
 /**
@@ -416,8 +436,8 @@ function makeUnitBermGeometry(): THREE.BufferGeometry {
  * TestRangeScene (Stage 1 of the environment plan) can reuse the same board
  * look for its one sign instead of duplicating the canvas helper. */
 /** `unitLabel` defaults to 'YARDS' so every existing caller is unchanged. The ELR
- *  probe is metric-only and passes 'METRES' — without this the 3000 m station read
- *  "3000 / YARDS", which is not a cosmetic quibble on a range whose entire purpose
+ *  Range is laid out in metres and passes 'M' — without this its 2000 m station read
+ *  "2000 / YARDS", which is not a cosmetic quibble on a range whose entire purpose
  *  is reading distance correctly. */
 export function makeSignTexture(text: string, unitLabel = 'YARDS'): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -427,9 +447,18 @@ export function makeSignTexture(text: string, unitLabel = 'YARDS'): THREE.Canvas
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#111111';
-  ctx.font = 'bold 90px Arial';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  // Shrink to fit rather than trusting one hard-coded size. At a fixed 90px,
+  // "500" fitted and "1250 M" ran off both ends of the 256 px canvas — the ELR
+  // range's four-digit signs were all clipped. Measure, then step down.
+  const maxTextWidth = canvas.width - 24;
+  let size = 90;
+  ctx.font = `bold ${size}px Arial`;
+  while (size > 24 && ctx.measureText(text).width > maxTextWidth) {
+    size -= 4;
+    ctx.font = `bold ${size}px Arial`;
+  }
   ctx.fillText(text, canvas.width / 2, canvas.height / 2 - 6);
   ctx.font = 'bold 34px Arial';
   ctx.fillText(unitLabel, canvas.width / 2, canvas.height - 24);

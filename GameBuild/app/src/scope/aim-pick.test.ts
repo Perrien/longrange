@@ -6,7 +6,6 @@ import {
   resolveTargetPlate,
   switchThresholdRad,
 } from './aim-pick';
-import { snapshotElrProbe } from '../range/elr-probe-config';
 
 const EYE = { x: 0, y: 1.7 };
 
@@ -18,20 +17,48 @@ function aimAt(x: number, y: number, distanceM: number) {
   return { x: dx / len, y: dy / len, z: -distanceM / len };
 }
 
-const probePlates = snapshotElrProbe('flat').stations.map((s, i) => ({
-  distanceM: s.losRangeM,
-  position: { x: s.x, y: s.y },
-  diameterM: s.gongDiameterM,
-  instanceId: i,
-  station: s.nominalDistance,
-}));
-const idOf = (station: number) => probePlates.find((p) => p.station === station)!.instanceId;
+/**
+ * The plate ladder these tests are calibrated against: six 1 MIL gongs at 500 m
+ * steps on flat ground, fanned across ±1.5°.
+ *
+ * This is a LOCAL FIXTURE on purpose. It is the geometry of the deleted ELR probe
+ * range (removed 2026-07-29), which is where the near-plate-steals-the-pick
+ * regression was found — the numbers in the assertions below (an 11.38 m vs 12.00 m
+ * linear miss, a 0.45 mrad edge, a 6 mrad miss) only mean anything against these
+ * spacings. Rebuilding it here keeps the regression coverage without tying a unit
+ * test of ray-vs-plate maths to whichever range happens to exist. Do NOT repoint it
+ * at a live range's layout: that would silently recalibrate the test.
+ */
+const DEG = Math.PI / 180;
+const LADDER = [
+  { losRangeM: 500, azimuthDeg: -1.5 },
+  { losRangeM: 1000, azimuthDeg: -0.9 },
+  { losRangeM: 1500, azimuthDeg: -0.3 },
+  { losRangeM: 2000, azimuthDeg: 0.3 },
+  { losRangeM: 2500, azimuthDeg: 0.9 },
+  { losRangeM: 3000, azimuthDeg: 1.5 },
+];
+const ladderPlates = LADDER.map(({ losRangeM, azimuthDeg }, i) => {
+  const diameterM = losRangeM / 1000; // 1 MIL gong
+  // Centre high enough that a 2×-diameter frame clears the dirt by 0.3 m.
+  const y = Math.max(1, diameterM + 0.3);
+  // Ground run solved FROM the line-of-sight range, as every ELR layout does.
+  const groundRunM = Math.sqrt(losRangeM * losRangeM - (y - EYE.y) ** 2);
+  return {
+    distanceM: losRangeM,
+    position: { x: groundRunM * Math.sin(azimuthDeg * DEG), y },
+    diameterM,
+    instanceId: i,
+    station: losRangeM,
+  };
+});
+const idOf = (station: number) => ladderPlates.find((p) => p.station === station)!.instanceId;
 
 describe('pickAimedPlate', () => {
   it('picks the plate the crosshair is actually on', () => {
-    for (const p of probePlates) {
+    for (const p of ladderPlates) {
       const dir = aimAt(p.position.x, p.position.y, p.distanceM);
-      expect(pickAimedPlate(EYE, dir, probePlates)?.station).toBe(p.station);
+      expect(pickAimedPlate(EYE, dir, ladderPlates)?.station).toBe(p.station);
     }
   });
 
@@ -41,35 +68,35 @@ describe('pickAimedPlate', () => {
   // one, resolving the shot on the z = -500 plane and leaving the dust puff hanging
   // 5.5 m in the air.
   it('holding 8 MIL over the 1500 m gong still picks the 1500 m gong', () => {
-    const target = probePlates.find((p) => p.station === 1500)!;
+    const target = ladderPlates.find((p) => p.station === 1500)!;
     const holdMil = 8;
     const dir = aimAt(
       target.position.x,
       target.position.y + (holdMil / 1000) * target.distanceM,
       target.distanceM,
     );
-    expect(pickAimedPlate(EYE, dir, probePlates)?.station).toBe(1500);
+    expect(pickAimedPlate(EYE, dir, ladderPlates)?.station).toBe(1500);
 
     // And show the old rule really did prefer the near plate, so the test fails
     // loudly if anyone reinstates it.
-    const linearMiss = (p: (typeof probePlates)[number]) => {
+    const linearMiss = (p: (typeof ladderPlates)[number]) => {
       const q = rayPointAtDistance(EYE, dir, p.distanceM);
       return Math.hypot(q.x - p.position.x, q.y - p.position.y);
     };
-    const near = probePlates.find((p) => p.station === 500)!;
+    const near = ladderPlates.find((p) => p.station === 500)!;
     expect(linearMiss(near)).toBeLessThan(linearMiss(target)); // the old bug
     expect(angularMissRad(EYE, dir, near)).toBeGreaterThan(angularMissRad(EYE, dir, target));
   });
 
   it('holds up across a sweep of holdovers, not just the one that was reported', () => {
-    const target = probePlates.find((p) => p.station === 2000)!;
+    const target = ladderPlates.find((p) => p.station === 2000)!;
     for (const holdMil of [0, 1, 2, 4, 6, 8, 10]) {
       const dir = aimAt(
         target.position.x,
         target.position.y + (holdMil / 1000) * target.distanceM,
         target.distanceM,
       );
-      expect(pickAimedPlate(EYE, dir, probePlates)?.station).toBe(2000);
+      expect(pickAimedPlate(EYE, dir, ladderPlates)?.station).toBe(2000);
     }
   });
 
@@ -84,8 +111,8 @@ describe('pickAimedPlate', () => {
   });
 
   it('returns null when not pointing downrange or with nothing to shoot', () => {
-    expect(pickAimedPlate(EYE, { x: 0, y: 0, z: 1 }, probePlates)).toBeNull();
-    expect(pickAimedPlate(EYE, { x: 0, y: 0, z: 0 }, probePlates)).toBeNull();
+    expect(pickAimedPlate(EYE, { x: 0, y: 0, z: 1 }, ladderPlates)).toBeNull();
+    expect(pickAimedPlate(EYE, { x: 0, y: 0, z: 0 }, ladderPlates)).toBeNull();
     expect(pickAimedPlate(EYE, aimAt(0, 1, 500), [])).toBeNull();
   });
 
@@ -102,7 +129,7 @@ describe('pickAimedPlate', () => {
 
 describe('resolveTargetPlate — commit-preferred', () => {
   const engage = (station: number, upMil: number, rightMil: number) => {
-    const t = probePlates.find((p) => p.station === station)!;
+    const t = ladderPlates.find((p) => p.station === station)!;
     return aimAt(
       t.position.x + (rightMil / 1000) * t.distanceM,
       t.position.y + (upMil / 1000) * t.distanceM,
@@ -111,10 +138,10 @@ describe('resolveTargetPlate — commit-preferred', () => {
   };
 
   it('with nothing committed it is exactly pickAimedPlate — casual play unchanged', () => {
-    for (const p of probePlates) {
+    for (const p of ladderPlates) {
       const dir = aimAt(p.position.x, p.position.y, p.distanceM);
-      expect(resolveTargetPlate(EYE, dir, probePlates, null)?.station).toBe(
-        pickAimedPlate(EYE, dir, probePlates)?.station,
+      expect(resolveTargetPlate(EYE, dir, ladderPlates, null)?.station).toBe(
+        pickAimedPlate(EYE, dir, ladderPlates)?.station,
       );
     }
   });
@@ -123,14 +150,14 @@ describe('resolveTargetPlate — commit-preferred', () => {
   // puts the crosshair angularly nearer the 1500 m one; the commitment must hold.
   it('keeps the committed target through a combined elevation + wind hold', () => {
     const dir = engage(1000, 6, 6);
-    expect(pickAimedPlate(EYE, dir, probePlates)?.station).toBe(1500); // the trap
-    expect(resolveTargetPlate(EYE, dir, probePlates, idOf(1000))?.station).toBe(1000);
+    expect(pickAimedPlate(EYE, dir, ladderPlates)?.station).toBe(1500); // the trap
+    expect(resolveTargetPlate(EYE, dir, ladderPlates, idOf(1000))?.station).toBe(1000);
   });
 
   it('survives every realistic hold — elevation to 25 MIL, wind to 12', () => {
     for (const up of [0, 3, 6, 10, 15, 25]) {
       for (const right of [0, 3, 6, 12]) {
-        expect(resolveTargetPlate(EYE, engage(1000, up, right), probePlates, idOf(1000))?.station)
+        expect(resolveTargetPlate(EYE, engage(1000, up, right), ladderPlates, idOf(1000))?.station)
           .toBe(1000);
       }
     }
@@ -140,7 +167,7 @@ describe('resolveTargetPlate — commit-preferred', () => {
     // Every gong centre sits at the same height, so holding UP moves away from all
     // of them at once. Only lateral hold can walk the crosshair onto a neighbour.
     for (const up of [5, 15, 30, 60]) {
-      expect(resolveTargetPlate(EYE, engage(1000, up, 0), probePlates, idOf(1000))?.station)
+      expect(resolveTargetPlate(EYE, engage(1000, up, 0), ladderPlates, idOf(1000))?.station)
         .toBe(1000);
     }
   });
@@ -149,23 +176,23 @@ describe('resolveTargetPlate — commit-preferred', () => {
   // hands it the engagement immediately, with no commit step.
   it('switches the moment the crosshair is actually on a different plate', () => {
     for (const station of [500, 1500, 2000, 3000]) {
-      const t = probePlates.find((p) => p.station === station)!;
+      const t = ladderPlates.find((p) => p.station === station)!;
       const dir = aimAt(t.position.x, t.position.y, t.distanceM);
-      expect(resolveTargetPlate(EYE, dir, probePlates, idOf(1000))?.station).toBe(station);
+      expect(resolveTargetPlate(EYE, dir, ladderPlates, idOf(1000))?.station).toBe(station);
     }
   });
 
   it('switches when just off a plate edge, but not a plate-width away', () => {
-    const t = probePlates.find((p) => p.station === 2000)!;
+    const t = ladderPlates.find((p) => p.station === 2000)!;
     const near = aimAt(t.position.x + 0.9, t.position.y, t.distanceM); // ~0.45 mrad
-    expect(resolveTargetPlate(EYE, near, probePlates, idOf(1000))?.station).toBe(2000);
+    expect(resolveTargetPlate(EYE, near, ladderPlates, idOf(1000))?.station).toBe(2000);
     const away = aimAt(t.position.x + 12, t.position.y, t.distanceM); // ~6 mrad
-    expect(resolveTargetPlate(EYE, away, probePlates, idOf(1000))?.station).toBe(1000);
+    expect(resolveTargetPlate(EYE, away, ladderPlates, idOf(1000))?.station).toBe(1000);
   });
 
   it('falls back to aim-pick if the committed plate is gone (scene rebuilt)', () => {
     const dir = engage(1000, 6, 6);
-    expect(resolveTargetPlate(EYE, dir, probePlates, 999)?.station).toBe(1500);
+    expect(resolveTargetPlate(EYE, dir, ladderPlates, 999)?.station).toBe(1500);
   });
 
   it('the switch threshold has a floor, so small far plates stay selectable', () => {
@@ -176,6 +203,6 @@ describe('resolveTargetPlate — commit-preferred', () => {
   });
 
   it('returns null when not pointing downrange, committed or not', () => {
-    expect(resolveTargetPlate(EYE, { x: 0, y: 0, z: 1 }, probePlates, idOf(1000))).toBeNull();
+    expect(resolveTargetPlate(EYE, { x: 0, y: 0, z: 1 }, ladderPlates, idOf(1000))).toBeNull();
   });
 });

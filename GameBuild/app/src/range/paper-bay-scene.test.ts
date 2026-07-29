@@ -53,7 +53,7 @@ describe('landing screen only lists ranges that can actually be entered', () => 
   // under a Wooded Zero label. A range joins `listRanges()` only when its scene
   // exists. Stage 2b built that scene, so it is listed now; the guard stays for
   // the next range under construction.
-  const SCENES_THAT_EXIST = ['steel-racks', 'test-range', 'wooded-zero'];
+  const SCENES_THAT_EXIST = ['steel-racks', 'test-range', 'wooded-zero', 'elr-range'];
 
   it('gives every listed range a scene builder that exists', () => {
     for (const r of listRanges()) {

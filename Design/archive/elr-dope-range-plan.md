@@ -1,3 +1,33 @@
+> ## ⚠ ARCHIVED 2026-07-29 — the range was built from this; it is no longer live
+>
+> The ELR range **shipped** and is playable: two firing points, 18 stations, terrain,
+> forest, solved placement, targets, the shot path, firing-point switching and Mach-state
+> marking are all built and owner-signed on device. Execution ran from
+> [`elr-range-build-spec.md`](./elr-range-build-spec.md) (also archived, alongside this).
+>
+> **Not built, and deliberately so:**
+> - **Task 11 — wind markers along the range.** Deferred by the owner, who wants to do more
+>   design work on wind first. §6 of this document is still the requirement when it resumes.
+> - **Task 12 — the `.300 WM` / `.338 LM` / `.50 BMG` catalog entries.** Blocked on data, not
+>   effort: `bullet-catalog/catalog-starting-values.md` carries **no bullet geometry for any
+>   cartridge**, and the four shipped ones only avoided that by borrowing from the golden-vector
+>   fixture, which has no `.300 WM` at all. **Prompt D** in
+>   [`../bullet-catalog/catalog-data-research-prompts.md`](../bullet-catalog/catalog-data-research-prompts.md)
+>   is written and ready to run. `effectiveRangeYd` additionally needs an owner decision — see
+>   §13.6, which already records why no physical rule gives a defensible value.
+> - **§5.4's scope elevation-travel model.** Never started; still a prerequisite for the §5
+>   holdover lesson this range was designed around.
+>
+> **Changed on device after the spec was written** (the spec does not describe these): the
+> low line's near stations use **stakes** at 50–150 m and **hanging racks** at 200–500 m, not
+> the frames-and-panels the spec assumed — the high line kept panels, preserving D4's measured
+> contrast. Stake plates are **bolted** and do not swing. Ammo lots are 100 rounds and the
+> three-shot budget is gone (COMMIT remains). See `../execution/PROGRESS.md` for the full log.
+>
+> Everything below is the design record as it stood at build time. Per this folder's
+> convention, **relative links inside archived files are not rewritten** except where both
+> ends moved together.
+
 # ELR DOPE Range — a wooded hillside, 50 m to 2000 m, two firing points
 
 Status: **READY TO BUILD.** Every load-bearing assumption in this document has been
@@ -5,7 +35,7 @@ measured on device or computed against the engine. Where something is still a gu
 says so.
 
 Date: 2026-07-28. Supersedes the 2026-07-27 draft, archived at
-[`archive/elr-dope-range-plan-2026-07-27.md`](./archive/elr-dope-range-plan-2026-07-27.md).
+[`elr-dope-range-plan-2026-07-27.md`](./elr-dope-range-plan-2026-07-27.md).
 
 ---
 
@@ -14,7 +44,7 @@ Date: 2026-07-28. Supersedes the 2026-07-27 draft, archived at
 The 2026-07-27 draft was written before anything had been on a device. It proposed a
 **12 m firing bluff**, a **±1.5° fan of lanes** across flat ground, and a **two-pass
 depth split** to make 3 km renderable. A throwaway probe was then built to test those
-ideas (archived at [`archive/elr-probe-plan.md`](./archive/elr-probe-plan.md)), and it
+ideas (archived at [`elr-probe-plan.md`](./elr-probe-plan.md)), and it
 retired all three.
 
 By the end, everything true about the range lived in five stacked revision banners
@@ -43,11 +73,15 @@ stable.
 
 | | firing point | steps | stations | cartridges |
 |---|---|---|---|---|
-| **Rimfire ladder** | low line, ground level | **50 m** to 500 | 10 | .22 LR, .22 WMR |
+| **Rimfire ladder** | low line, ground level | **50 m** to 500 | 10 | .22 LR (Center-X / CCI SV) |
 | **Centrefire ladder** | high line, elevated | **250 m** to 2000 | 8 | .223 through .50 BMG |
 
 **250 m is a shared station** — the far end of the rimfire ladder and the near end of
 the centrefire one. Shoot it with both and §1.3's scaling stops being a table.
+
+Both catalog .22 LR loads are **subsonic** (1073 and 1055 fps). Supersonic rimfire —
+high-velocity .22 LR and .22 WMR — is deliberately absent: the data does not exist yet
+*and* it should wait for gap N4 (§13.4).
 
 ### 1.2 Why the cap is 2000 m — trust, not reach
 
@@ -112,6 +146,28 @@ degeneracy and delivers **+0.532°** of clearance margin on a single straight la
 That one property is what retired the ±1.5° fan of the old draft. The fan existed
 solely to buy angular separation; the slope buys it for free, on one lane, and looks
 like terrain instead of a survey.
+
+> **The rise must keep going past the last station — a rule learned the hard way.**
+> The first build used a 140 m rise over a 2100 m span inside a 2300 m ground, with
+> stations to 2000. Three faults followed from that one choice, and only the first was
+> obvious on screen:
+>
+> 1. `groundY` clamps at the span, so the slope went from 7.6° to flat **in one step** —
+>    a curvature crease straight across the terrain, visible as a hard seam.
+> 2. On a convex hill the apparent ground angle **peaks where the rise stops**, so the
+>    crease *was* the skyline and the last 200 m of terrain — with all its trees — hid
+>    behind its own crest.
+> 3. Worst and least obvious: the 2000 m gong ended up **2.4 mrad below the skyline**.
+>    The gong is 1 mrad. Two plate-widths of hillside behind it, i.e. effectively
+>    silhouetted against sky — which quietly destroys §4.2's white-plate-on-dark-panel
+>    contrast design, since that assumes hillside as the backdrop.
+>
+> **Two rules, both now asserted in tests:** `SLOPE_SPAN_M >= GROUND_LENGTH_M`, so the
+> clamp never falls inside the drawn ground; and the ground runs **at least 1 km past
+> the farthest station**, so the hill is still climbing where the far targets sit.
+> Shipping values: **rise 200 m over a 3000 m span, ground 3000 m long, stations to
+> 2000.** That gives the 2000 m gong **22.6 mrad** of hillside behind it and hides
+> nothing.
 
 ### 2.2 The forest
 
@@ -304,7 +360,7 @@ solution, not a bad hold.** At 2 MOA, marksmanship noise competed with DOPE erro
 > 1.60 m at 2000 yd**. Owner accepted this as "roughly the same" (2026-07-27); the
 > alternatives are worse (3.44 MOA is unusable for a MOA shooter, 0.87 MIL for a MIL
 > one). Flagged rather than hidden — same class of thing as the 22-inch MOA face that
-> read wrong on device (`archive/mil-zero-range-plan.md` §5.1).
+> read wrong on device (`mil-zero-range-plan.md` §5.1).
 
 At the 2000 m cap the largest plate is 2.00 m — a 234 kg disc in ⅜″ AR500, squarely
 inside what real ELR ranges hang. (The retired 3000 m plan needed 3 m / 527 kg.)
@@ -578,15 +634,20 @@ Until it is, treat 4000 trees over 1200 × 2100 m as *demonstrated to look right
    Zero Range has never rendered 2 km of depth.
 7. **Wind markers along the range** (§6).
 8. **Mach-state marking + travel readout** (§4.5, §5.3).
-9. **Catalog entries**: .50 BMG, .338 LM, .300 WM (pure data — verified, no code); plus
-   high-velocity .22 LR and .22 WMR for the rimfire ladder.
+9. **Ground dressing** — grass, tufts, mud, scatter, textures. Deferred; see §13.10.
+10. **Catalog entries**: .50 BMG, .338 LM, .300 WM (pure data — verified, no code).
+   **Not** high-velocity .22 LR or .22 WMR: neither exists in
+   `bullet-catalog/catalog-starting-values.md` (the `.22 LR` section documents only
+   Lapua Center-X at 1073 fps and CCI Standard Velocity at 1055 fps, both subsonic, and
+   `.22 WMR` is not in the teaching ladder). They need a research pass, and they should
+   wait for gap N4 regardless — see §13.
 
 ---
 
 ## 9. Build stages
 
 > **There is a step-by-step build spec.** For execution, use
-> [`execution/elr-range-build-spec.md`](./execution/elr-range-build-spec.md) — twelve
+> [`elr-range-build-spec.md`](./elr-range-build-spec.md) — twelve
 > numbered tasks with exact file paths, exact code, exact test assertions and a runnable
 > "done when" gate each, written to be followed without needing this document. The
 > stages below are the same work at a coarser grain.
@@ -688,6 +749,12 @@ and true (hidden) BC — not box BC.
 4. **Transonic dispersion (`_gaps.md` N4).** Not modelled, so high-velocity rimfire is
    strictly better in-game and strictly worse in life, and §4.5's "dispersion opens"
    label overstates the model. Affects the centrefire Mach 1.2 threshold too.
+   **Blocks two catalog additions:** high-velocity .22 LR and .22 WMR are not in
+   `bullet-catalog/catalog-starting-values.md` and need a research pass — but they
+   should not be added until N4 exists anyway, or the game teaches that buying the
+   faster rimfire is a straight upgrade, which is the reverse of the truth. Research
+   prompt belongs in `bullet-catalog/catalog-data-research-prompts.md` (Prompt A
+   shape): a supersonic .22 LR load and the .22 WMR as an eighth ladder cartridge.
 5. **Wind model circle-back** (§6) — `computeZero` bakes session wind into the zero.
 6. **The `effectiveRangeYd` rule.** Shipped values are provisional and physically
    inconsistent (.223's 600 yd is short of its 865 yd limit; .308's 1000 is 4 % past its
@@ -704,7 +771,20 @@ and true (hidden) BC — not box BC.
    the DOPE curve but is the station most affected by the high line's downward angle.
    Now that it is also the rimfire ladder's far end, it may want to belong to the low
    line only. Look at it on device.
-9. **Metric vs imperial for the rimfire ladder.** The centrefire ladder is 250 m / 250 yd
+10. **Ground dressing — grass, tufts, mud patches, bushes, rocks, textures.** Owner
+   raised 2026-07-28: the ground is currently a plain coloured surface and needs to read
+   as real terrain. **Deliberately deferred out of the build spec**, for three reasons:
+   it is additive and isolated (no effect on geometry, station placement or the
+   clearance solver); the machinery already exists and is a reuse job, not new tech
+   (`environment/ground-cover.ts`, `environment/terrain.ts`,
+   `environment/texture-loader.ts`, plus dirt/grass/rock textures already on disk); and
+   most importantly **it is the other half of the tree-budget question**. Ground scatter
+   and trees compete for the same frame time, and the tree ramp has not been swept yet
+   (§13.1). Adding scatter before that number exists would confound it. Do this after
+   the range is shootable and the budget is known — and expect it to want iteration
+   against the owner's eye rather than a spec.
+
+11. **Metric vs imperial for the rimfire ladder.** The centrefire ladder is 250 m / 250 yd
    with matched station counts. The rimfire ladder was specified as "every 50 yards out
    to 500" but is computed here in metres. Same shared-azimuth invariant applies; check
    it holds at 50 m steps.
@@ -713,10 +793,10 @@ and true (hidden) BC — not box BC.
 
 ## Sources
 
-- `archive/elr-dope-range-plan-2026-07-27.md` — the superseded draft; retains the full
+- `elr-dope-range-plan-2026-07-27.md` — the superseded draft; retains the full
   derivations for the fan geometry, depth-precision analysis and biome notes.
-- `archive/elr-probe-plan.md` §5.0 — the probe's on-device findings.
-- `archive/mil-zero-range-plan.md` — the Wooded Zero Range, whose corridor/knoll model,
+- `elr-probe-plan.md` §5.0 — the probe's on-device findings.
+- `mil-zero-range-plan.md` — the Wooded Zero Range, whose corridor/knoll model,
   tree renderer and dual-unit superset this range reuses and scales.
 - `Design/execution/PROGRESS.md` P0–P17 — the build and measurement log behind every
   number in §7.

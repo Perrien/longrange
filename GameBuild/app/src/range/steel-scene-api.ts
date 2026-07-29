@@ -15,18 +15,18 @@ export interface SteelSceneApi {
    *
    * The paper-bay side already had this (`PaperBayScene.eyeHeightM`, added when the
    * Wooded Zero Range put the firing point on a knoll). The steel side needed it
-   * once a steel range did the same: ELR Probe B sits on a 10 m bluff, and without
-   * this the camera stays at 1.6 m while the targets climb a hillside — every sight
-   * line then runs into the ground.
+   * once a steel range did the same: the ELR Range's high line stands on a platform,
+   * and without this the camera stays at 1.6 m while the targets climb a hillside —
+   * every sight line then runs into the ground.
    */
   eyeHeightM?: number;
   /**
    * Ground height (m) at a downrange distance (m). Optional — omit for flat ground,
-   * which is every range but ELR Probe B.
+   * which is every range but the ELR Range.
    *
    * Needed so a low miss draws its dust where the round actually strikes. The flat
-   * assumption was invisible until a range had a hillside; on Probe B's convex slope
-   * it would put the puff far past the real impact and underground.
+   * assumption was invisible until a range had a hillside; on the ELR Range's convex
+   * slope it would put the puff far past the real impact and underground.
    */
   groundYAt?(downrangeM: number): number;
   plates: PlateInstance[];

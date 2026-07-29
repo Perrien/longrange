@@ -35,6 +35,37 @@ export function transonicBand(mach: number): TransonicBand {
   return 'supersonic';
 }
 
+/**
+ * Mach-state marking for a COMMITTED target (ELR build spec task 10).
+ *
+ * Returns the text to show beside the engagement, or `null` when there is
+ * nothing worth saying. Built on `transonicBand` rather than re-deriving the
+ * thresholds, so the in-scope marking and the DOPE card can never disagree
+ * about where transonic starts.
+ *
+ * ⚠️ **`'TRANSONIC'` is deliberately bare — do not add "dispersion opens" or any
+ * equivalent.** The drag rise through Mach 1 IS modelled, so the trajectory is
+ * right; the group opening is NOT (the engine's only scatter sources are MV SD,
+ * BC SD and rifle precision, none of which know the bullet's Mach number). A
+ * label promising wider groups would describe physics the game does not
+ * simulate. See `Wiki/_gaps.md` N4 and `Design/feature-catalog.md` §A.
+ *
+ * The subsonic string may name a consequence because that one is real and
+ * already modelled: past Mach 1 the round has lost the energy and the flat
+ * trajectory that make the shot worth taking. Nothing is GATED either way —
+ * every station stays shootable (owner, 2026-07-29).
+ */
+export function machStateLabel(mach: number): string | null {
+  switch (transonicBand(mach)) {
+    case 'subsonic':
+      return 'SUBSONIC — past effective range';
+    case 'transonic':
+      return 'TRANSONIC';
+    default:
+      return null;
+  }
+}
+
 /** Nearest row to a target range (m), or `undefined` if none within `tolM`.
  *  Shared by both DOPE surfaces to map a uniform solve grid onto the exact ladder
  *  stations (the grid is stepped by the ladder's base gap, so a station's row sits
@@ -133,12 +164,29 @@ export function assembleComeUp(
   ctx: DopeRowContext = {},
 ): ComeUpDisplayRow[] {
   const out: ComeUpDisplayRow[] = [];
+  // Does this load have a supersonic phase AT ALL? Decided from the first row,
+  // and it is what makes the trim below meaningful.
+  //
+  // The wall exists because a centrefire round going subsonic has reached the end
+  // of its useful trajectory — there is nothing worth tabling past it. A RIMFIRE
+  // round never had that phase: both catalog .22 LR loads leave the muzzle at
+  // ~1060–1070 fps against a ~1118 fps speed of sound, i.e. subsonic by design,
+  // which is exactly why match shooters buy them. Applying the wall to those
+  // trimmed the card to a SINGLE ROW (owner, on device 2026-07-29) — the first
+  // station is already subsonic, so it pushed one row and broke immediately.
+  // That made the rimfire ladder useless for the one thing it exists to do.
+  let startedSupersonic: boolean | undefined;
   for (const st of stations) {
     const r = nearestRow(solvedTable, st.stationM);
     if (!r) continue;
     const dr = formatDopeRow({ ...r, rangeM: st.stationM }, ctx);
+    if (startedSupersonic === undefined) startedSupersonic = dr.transonic !== 'subsonic';
     out.push({ ...dr, beyondEffective: st.beyondEffective });
-    if (dr.transonic === 'subsonic') break; // include the first subsonic row, then stop
+    // Include the first subsonic row, then stop — but only for a load that was
+    // supersonic to begin with. With no speed of sound in `ctx` the band is
+    // undefined, `startedSupersonic` is true and the break never fires, exactly
+    // as before.
+    if (startedSupersonic && dr.transonic === 'subsonic') break;
   }
   return out;
 }

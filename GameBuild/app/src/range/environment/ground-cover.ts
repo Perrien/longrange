@@ -202,7 +202,11 @@ function mergeManyGeometriesSimple(geos: THREE.BufferGeometry[]): THREE.BufferGe
   return geo;
 }
 
-function buildGrassTuftMesh(scene: THREE.Scene, placements: ScatterPlacement[], track: TrackFn): THREE.InstancedMesh {
+/** Exported so a range that wants ONLY grass can have it without building (and
+ *  texture-loading) bushes and rocks it has no placements for — the ELR Range
+ *  reuses exactly this mesh, which is what keeps its ground cover identical to
+ *  the Wooded Zero Range's rather than merely similar. */
+export function buildGrassTuftMesh(scene: THREE.Scene, placements: ScatterPlacement[], track: TrackFn): THREE.InstancedMesh {
   const geo = track(buildGrassTuftGeometry());
   const material = track(new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
   const mesh = new THREE.InstancedMesh(geo, material, Math.max(placements.length, 1));

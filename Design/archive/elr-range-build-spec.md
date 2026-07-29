@@ -1,8 +1,27 @@
+> ## ⚠ ARCHIVED 2026-07-29 — tasks 1–10 executed; 11 deferred, 12 blocked
+>
+> This spec was followed and the range shipped. **Tasks 1–10 are done and signed off on
+> device.** Task **11 (wind markers)** was deferred by the owner pending more wind design
+> work. Task **12 (catalog entries)** stopped exactly as its own rule 2 instructs — the
+> required bullet geometry is not in `catalog-starting-values.md`, so nothing was invented;
+> **Prompt D** in `../bullet-catalog/catalog-data-research-prompts.md` will supply it.
+>
+> **Two things in here are now WRONG, and are corrected in the built code:**
+> 1. **Task 10's Done-when is wrong.** It says a 6.5 CM reads `TRANSONIC` at 1250 m. Measured
+>    against the engine, that load is Mach 1.195 at **1000 m** (transonic) and Mach 0.944 at
+>    **1300 m** — so 1250 m is already **SUBSONIC**. This agrees with §11 of the plan and
+>    disagrees with the spec. The plan is right.
+> 2. **Task 7's frames-and-panels applies to the HIGH line only.** The low line was rebuilt on
+>    device: stakes at 50–150 m, hanging racks at 200–500 m. The spec predates that.
+>
+> Design rationale lives in [`elr-dope-range-plan.md`](./elr-dope-range-plan.md), archived
+> beside this file. Live build history is `../execution/PROGRESS.md`.
+
 # ELR Range — Build Spec
 
 **Audience:** the agent or developer building the range. This document tells you
 *what to do*, not *why*. Design rationale lives in
-[`../elr-dope-range-plan.md`](../elr-dope-range-plan.md); you should not need it, but
+[`./elr-dope-range-plan.md`](./elr-dope-range-plan.md); you should not need it, but
 section references are given if you want it.
 
 **Working directory for every command in this document:** `GameBuild/app`
@@ -99,14 +118,24 @@ gongs, frames, panels, chains and signs correctly.
 | 5 | Registry row | — | tests |
 | 6 | Scene: terrain + forest | `ELRRangeScene.ts` | tests + on device |
 | 7 | Scene: targets | — | on device |
-| 8 | ScopeView wiring | — | on device |
+| 8 | Verify the shot path | — | on device |
 | 9 | Firing-point switching | — | on device |
 | 10 | Mach-state marking | — | on device |
 | 11 | Wind markers | — | on device |
 | 12 | Catalog entries | — | on device |
 
-**Out of scope for this document:** the scope elevation-travel model. It is a separate
-prerequisite (plan §5.4) and is specced elsewhere.
+**Out of scope for this document — do NOT build these, even if they seem obviously
+missing:**
+
+- **The scope elevation-travel model.** A separate prerequisite (plan §5.4), specced
+  elsewhere.
+- **Ground dressing: grass, tufts, mud patches, bushes, rocks, ground textures.** The
+  ground stays a plain coloured surface for the whole of this spec. It will look bare,
+  and that is correct — dressing is a deliberate follow-up (plan §13.10) that has to be
+  spent against a MEASURED tree budget, and the tree budget has not been measured yet.
+  `environment/ground-cover.ts` and `environment/texture-loader.ts` already exist; do
+  not call them. Adding scatter now would confound the frame-time readings that Tasks 6
+  and 8 exist to produce.
 
 ---
 
@@ -200,16 +229,30 @@ export type FiringPoint = 'low' | 'high';
 // --- terrain ---------------------------------------------------------------
 /** Ground extent, centred on x = 0, spanning z ∈ [0, −GROUND_LENGTH_M]. */
 export const GROUND_WIDTH_M = 1400;
-export const GROUND_LENGTH_M = 2300;
+export const GROUND_LENGTH_M = 3000;
 /** Total rise of the convex slope over SLOPE_SPAN_M. */
-export const SLOPE_RISE_M = 140;
-export const SLOPE_SPAN_M = 2100;
+export const SLOPE_RISE_M = 200;
+export const SLOPE_SPAN_M = 3000;
 export const GROUND_HEX = 0x6d7355;
 
-/** Convex ground profile. r is downrange distance in metres, POSITIVE. */
+/**
+ * Convex ground profile. `r` is downrange distance in metres, POSITIVE.
+ *
+ * ⚠️ **`SLOPE_SPAN_M` must be >= `GROUND_LENGTH_M`.** This clamps `t` at 1, so past
+ * the span the ground goes flat — and the slope does not ease off, it stops dead.
+ * That is a curvature discontinuity and it renders as a hard crease across the
+ * terrain. Worse, on a convex hill the crease lands at the SKYLINE, so everything
+ * past it hides behind it, and the far gong ends up silhouetted against sky instead
+ * of hillside. Corrected 2026-07-29 after exactly that showed up on device.
+ */
 export function groundY(r: number): number {
   const t = Math.min(1, Math.max(0, r / SLOPE_SPAN_M));
   return SLOPE_RISE_M * t * t;
+}
+
+/** The terrain invariant, exported so it can be asserted rather than remembered. */
+export function groundInvariantHolds(): boolean {
+  return SLOPE_SPAN_M >= GROUND_LENGTH_M;
 }
 
 // --- firing points ---------------------------------------------------------
@@ -339,6 +382,17 @@ describe('ladders', () => {
     for (const d of [...LOW_STATIONS_M, ...HIGH_STATIONS_M]) {
       expect(d).toBeLessThanOrEqual(GROUND_LENGTH_M);
     }
+  });
+
+  // The ground must keep RISING past the last station, or the hill crests at the
+  // targets and they end up on the skyline instead of against hillside.
+  it('runs the ground a full kilometre past the farthest station', () => {
+    const farthest = Math.max(...LOW_STATIONS_M, ...HIGH_STATIONS_M);
+    expect(GROUND_LENGTH_M - farthest).toBeGreaterThanOrEqual(1000);
+  });
+
+  it('holds the terrain invariant — the rise never clamps inside the ground', () => {
+    expect(groundInvariantHolds()).toBe(true);
   });
 });
 
@@ -1007,6 +1061,27 @@ hillside.
 4. Trees: call `buildTrees(scene, WOODED_ZERO_ENVIRONMENT, placements, track)`. Track
    tree resources in a **separate** array from the rest of the scene's disposables.
 
+5. **Wire it into `ScopeView.tsx` now, or you cannot check any of this.** Find the
+   scene-branch chain (search for `sceneType === 'elr-probe'`) and add a branch
+   immediately after it:
+
+   ```ts
+   } else if (sceneType === 'elr-range') {
+     const elr = new ELRRangeScene(scene, 'high'); // firing-point switching is Task 9
+     range = elr;
+   ```
+
+   > **This is why it matters, and the failure is silent.** The chain ends in a bare
+   > `else` that builds `RangeScene`. An unhandled `sceneType` therefore does not throw
+   > and does not warn — **it quietly loads Range A**. If you enter the ELR range and
+   > see the 50–500 yd steel bays, this branch is missing or misspelled. Nothing in the
+   > console will tell you.
+
+   Import `ELRRangeScene` and `FiringPoint` at the top of `ScopeView.tsx`.
+
+6. Do **not** set wind to zero and do **not** auto-commit a station. The probe does
+   both; this range is real content and wants neither. (Task 8 re-checks this.)
+
 ### Tests to add
 
 Scene classes need THREE.js and are not unit-tested here. Instead, add to
@@ -1070,33 +1145,32 @@ it('has a tree field the scene can draw without regenerating', () => {
 
 ---
 
-# Task 8 — ScopeView wiring
+# Task 8 — Verify the shot path
 
-**Goal.** Make the range enterable and shootable.
+**Goal.** Confirm the range is fully shootable. The scene branch was added in Task 6;
+this task checks the fire path end to end and confirms three things the probe does that
+this range must NOT.
 
-**File:** `src/scope/ScopeView.tsx` (edit)
+**File:** `src/scope/ScopeView.tsx` (check, and edit only if something below is wrong)
 
 ### Steps
 
-1. Find the scene-branch chain (search for `sceneType === 'elr-probe'`). Add a branch
-   for `'elr-range'` immediately after it, following the same pattern:
+1. Re-read the `elr-range` branch you added in Task 6. Confirm all three:
 
-```ts
-} else if (sceneType === 'elr-range') {
-  const elr = new ELRRangeScene(scene, 'high'); // firing point switching is Task 9
-  range = elr;
-}
-```
+   - **Wind is NOT forced to zero.** The probe calls `store().setWind({ speedMps: 0, ... })`;
+     this range must not. Wind is the point of it past 1000 m.
+   - **No station is auto-committed.** The probe auto-engages its nearest station
+     because it is a sandbox. This range uses the normal in-game commit flow.
+     ("Commit" here is the in-game engage-a-target action — see rule 11. Nothing to do
+     with version control.)
+   - **No `shotBudget` override.** The registry row from Task 5 omits it, so the range
+     gets the standard budget. Do not add one.
 
-2. Do **not** set wind to zero here. This range wants wind.
+2. Camera reach comes from the registry via the existing `cameraReachFor(...)` call —
+   no change needed. Confirm it is not hardcoded anywhere in your branch.
 
-3. Do **not** auto-commit a station. ("Commit" here is the in-game engage-a-target
-   action — see rule 11. Nothing to do with version control.) This range is real
-   content and uses the normal in-game commit flow, unlike the probe which auto-engaged
-   its nearest station.
-
-4. Camera reach comes from the registry via the existing `cameraReachFor(...)` call —
-   no change needed.
+3. If any of the three above is wrong, fix it. If all three are right, this task is
+   verification only and you will change no code — that is a valid outcome, say so.
 
 ### Done when
 
@@ -1208,12 +1282,19 @@ it('has a tree field the scene can draw without regenerating', () => {
 ### Steps
 
 1. In `src/game/catalog.data.json`, add entries keyed `50bmg`, `338lm`, `300wm`,
-   copying the shape of the existing `65cm` entry exactly.
+   copying the shape of the existing `65cm` entry exactly. **These three only.**
 
-2. Values come from `Design/bullet-catalog/catalog-starting-values.md`. Do not invent
-   numbers. If a value is missing there, STOP and report.
+2. Values come from `Design/bullet-catalog/catalog-starting-values.md`, which has a
+   full section for each of the three. Do not invent numbers. If a value is missing
+   there, STOP and report.
 
-3. For the rimfire ladder, add a high-velocity .22 LR and a .22 WMR entry.
+3. **Do NOT add any rimfire cartridge.** An earlier draft of this spec asked for a
+   high-velocity .22 LR and a .22 WMR; neither exists in the catalog data. The `.22 LR`
+   section documents only two loads — Lapua Center-X (1073 fps) and CCI Standard
+   Velocity (1055 fps) — both subsonic, and `.22 WMR` is not in the teaching ladder at
+   all. Those additions need a research pass first and are deferred (see the note
+   below). **The rimfire ladder works today on the existing .22 LR loads** — nothing in
+   Tasks 1–11 depends on new rimfire data.
 
 4. There are no hardcoded cartridge lists anywhere — only
    `DEFAULT_GAME_LOAD_CARTRIDGE_ID`. A same-shaped entry typechecks for free.
@@ -1222,9 +1303,19 @@ it('has a tree field the scene can draw without regenerating', () => {
 
 - [ ] `npx tsc --noEmit` — no output
 - [ ] `npx vitest run` — all pass
-- [ ] **On device**: each new cartridge is selectable in the loadout and produces a
-      firing solution at 1000 m
+- [ ] **On device**: each of the three new cartridges is selectable in the loadout and
+      produces a firing solution at 1000 m
+- [ ] The existing .22 LR loads still produce a firing solution at 500 m on the low line
 - [ ] `node ../validation/run.mjs` — still `0.000e+0`
+
+> **Deferred, and deliberately so: high-velocity .22 LR and .22 WMR.** Beyond the
+> missing data, adding a supersonic rimfire *now* would teach the wrong thing. HV .22
+> leaves the muzzle at Mach 1.12 and is back through Mach 1 by 50 m; in reality it
+> groups worse than standard velocity for exactly that reason, which is why competitors
+> buy subsonic match ammo. The engine does not model transonic dispersion
+> (`Wiki/_gaps.md` N4), so in-game the faster round would be strictly better — a
+> correct-looking model teaching the opposite of the truth. **Add these after N4 is
+> built, not before.**
 
 **STOP. The range is built.**
 
@@ -1248,7 +1339,7 @@ On device:
 - [ ] No gong hidden by a tree at either firing point
 - [ ] Frame time inside 16 ms mean on iPad
 - [ ] A come-up table can be built end to end: engage each station, record the dialled
-      solution, and the numbers match `../elr-dope-range-plan.md` §5.1 and §11
+      solution, and the numbers match `./elr-dope-range-plan.md` §5.1 and §11
 
 ---
 

@@ -42,8 +42,14 @@ export interface AcquireOptions {
 }
 
 /** Rounds in a freshly-acquired lot (P2). A TESTING value — real lot sizes will
- *  scale to a few hundred / up to ~1000; this becomes per-catalog later. */
-export const DEFAULT_LOT_ROUNDS = 20;
+ *  scale to a few hundred / up to ~1000; this becomes per-catalog later.
+ *
+ *  Raised 20 → 100 (owner, 2026-07-29): 20 rounds does not survive building a
+ *  come-up table across an 18-station range, and replenishing mid-session is
+ *  friction with no teaching value at this stage. A real box is 20 and a real
+ *  case is 500–1000, so 100 stays inside the plausible range while it lasts a
+ *  full DOPE session. */
+export const DEFAULT_LOT_ROUNDS = 100;
 
 const EMPTY_LOT_NUMBERS: ReadonlySet<string> = new Set();
 

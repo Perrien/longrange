@@ -73,6 +73,34 @@ Launch/target elevation with real gravity decomposition (default-off); needed fo
 valley/field missions.
 **Not built** — planned Increment 3, gated on `angle-incline-shooting.md` (unwritten).
 
+#### Transonic dispersion — group opening through Mach 1
+The drag RISE through transonic is already modelled (it is in the G7 curve the engine
+integrates), so trajectories bend correctly and come-ups are right. What is **not**
+modelled is the *dispersion*: as a bullet decelerates through Mach 1 its shock wave
+moves back over the boat tail, the centre of pressure shifts abruptly, and — because a
+spinning bullet is always coning slightly — each round takes that kick at a different
+point in its precession cycle. Real groups open up, unpredictably. The engine's only
+scatter sources are **MV SD, BC SD and rifle precision, none of which know the bullet's
+Mach number**, so a round arriving at Mach 0.9 gets exactly the same angular scatter as
+one arriving at Mach 2.5.
+
+**Consequence, and why it is worth fixing:** going transonic currently costs the player
+nothing. The sharpest case is rimfire — high-velocity .22 LR leaves at Mach 1.12 and is
+subsonic by 50 m, shoots flatter than standard velocity (29.4 vs 34.6 MIL at 500 m), and
+would therefore be a straight upgrade in game, while in reality competitors buy
+*subsonic* match ammo precisely because HV groups worse. Shipping HV rimfire before this
+exists would teach the reverse of the truth. Same mechanism sets the ELR range's Mach 1.2
+threshold (1.2, not 1.0, because the trouble starts while still supersonic).
+
+**Not built — research first, then implement. Deliberately left alone for now (owner,
+2026-07-29).** Interim policy, also owner's call: **no range or station is gated** — the
+player may shoot anything at any distance — and the honesty burden sits on the **DOPE
+book**, which marks transonic rows amber and subsonic rows red with a footnote saying the
+model is least trustworthy there. Shipped 2026-07-29 (`scope/DopePanel.tsx`).
+Blocks two catalog additions (HV .22 LR, .22 WMR — see `archive/elr-dope-range-plan.md` §13.4).
+Any in-game label must say the bare word `TRANSONIC` and **must not claim dispersion
+opens**, since it does not. Tracked as **N4** in `Wiki/_gaps.md`.
+
 #### Temperature sensitivity of muzzle velocity
 Per-load temp-sensitivity characteristic (temp-stable vs. temp-sensitive powders) so a
 DOPE card trued on a warm day drifts on a cold one — distinct from air-density's effect
@@ -274,7 +302,7 @@ Unlocks after KD mastery on Range A.
 
 #### Range C — ELR (250-step ladder to 2000)
 **Not built — but de-risked and next up.** Superseded in scope by
-[`elr-dope-range-plan.md`](./elr-dope-range-plan.md): **250 m/yd steps to 2000**, not
+[`archive/elr-dope-range-plan.md`](./archive/elr-dope-range-plan.md): **250 m/yd steps to 2000**, not
 500-steps to 2500. 2000 is where the engine is validated (oracle to 1800, extendable by
 data edit) *and* where the .50 BMG is still supersonic (M1.0 at 2267 m); the scope's
 elevation-travel ceiling is designed in as the lesson, met by **holdover** rather than a
@@ -288,9 +316,14 @@ mechanic needed), the iPad holds **60 fps** at 3 km with `near = 10 m`, the dept
 on a **convex rising slope** — which retires both the 12 m bluff and the ±1.5° fan, since the
 slope buys the angular separation on its own on a single straight lane.
 
-The plan doc still needs a rewrite against those findings before build. Probe code
-(`ELRProbeScene.ts`, `elr-probe-config.ts`) is retained as the reference implementation for
-the terrain profile.
+The plan doc still needs a rewrite against those findings before build. **The probe code is
+deleted (2026-07-29)** — both probe ranges (flat and slope) and their config/scene/tests went
+with it, once the real ELR range had its own tested equivalents (`elr-range-config.ts` carries
+the convex `groundY` profile and the LOS→ground-run fixed-point solve; `sight-clearance.ts`
+carries the occlusion search). What the probe left behind and the ELR range still uses:
+`bullseye-texture.ts`, `scope/perf-hud.ts`, `scope/miss-projection.ts`, `scope/phase-timer.ts`,
+and the `eyeHeightM` / `groundYAt` capabilities on `SteelSceneApi`. The probe's findings live
+on in [`archive/elr-probe-plan.md`](./archive/elr-probe-plan.md) §5.0.
 
 #### Mission / UKD ranges
 Unlabeled, irregularly placed targets; terrain + incline/decline; ranging via

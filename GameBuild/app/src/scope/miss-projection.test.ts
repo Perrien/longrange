@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { projectMissToGround, FLAT_GROUND, GROUND_PUFF_LIFT_M } from './miss-projection';
-import { slopeGroundY, eyeYFor } from '../range/elr-probe-config';
+import { groundY, eyeYFor, GROUND_LENGTH_M, HIGH_STATIONS_M } from '../range/elr-range-config';
 
 const flatEye = { x: 0, y: 1.7, z: 0 };
 
@@ -28,15 +28,15 @@ describe('projectMissToGround — flat ground', () => {
   });
 });
 
-describe('projectMissToGround — Probe B hillside', () => {
-  const eye = { x: 0, y: eyeYFor('slope'), z: 0 }; // 11.7 m on the bluff
-  const ground = (r: number) => slopeGroundY(r);
+describe('projectMissToGround — ELR Range hillside', () => {
+  const eye = { x: 0, y: eyeYFor('high'), z: 0 }; // 9.7 m on the high-line platform
+  const ground = (r: number) => groundY(r);
 
   // THE REASON THIS MODULE EXISTS. On a rising hill the flat-plane solve puts the
   // puff far beyond the real strike and deep underground.
   it('strikes the hillside, not the y = 0 plane far beyond it', () => {
-    const impact = { x: 0, y: 60, z: -1500 }; // 1 m low on the 1500 m gong (ground 50 m)
-    const hit = projectMissToGround(eye, impact, ground, 3100)!;
+    const impact = { x: 0, y: ground(1500) + 10, z: -1500 }; // high over the 1500 m gong
+    const hit = projectMissToGround(eye, impact, ground, GROUND_LENGTH_M)!;
     expect(hit).not.toBeNull();
     // It lands ON the slope, at the slope's own height there.
     expect(hit.y).toBeCloseTo(ground(Math.abs(hit.z)) + GROUND_PUFF_LIFT_M, 1);
@@ -47,29 +47,29 @@ describe('projectMissToGround — Probe B hillside', () => {
   it('a low miss lands SHORT of the target it was aimed at', () => {
     const targetR = 2000;
     const impact = { x: 0, y: ground(targetR) - 3, z: -targetR };
-    const hit = projectMissToGround(eye, impact, ground, 3100)!;
+    const hit = projectMissToGround(eye, impact, ground, GROUND_LENGTH_M)!;
     expect(Math.abs(hit.z)).toBeLessThan(targetR);
     expect(Math.abs(hit.z)).toBeGreaterThan(targetR * 0.5); // but not absurdly short
   });
 
   it('never reports a strike below the surface', () => {
-    for (const targetR of [500, 1000, 1500, 2000, 2500, 3000]) {
+    for (const targetR of HIGH_STATIONS_M) {
       const impact = { x: 0, y: ground(targetR) - 2, z: -targetR };
-      const hit = projectMissToGround(eye, impact, ground, 3100);
+      const hit = projectMissToGround(eye, impact, ground, GROUND_LENGTH_M);
       if (hit) expect(hit.y).toBeGreaterThanOrEqual(ground(Math.abs(hit.z)));
     }
   });
 
   it('is insensitive to step size — 2 m and 0.25 m agree closely', () => {
-    const impact = { x: 1, y: 40, z: -1500 };
-    const coarse = projectMissToGround(eye, impact, ground, 3100, 2)!;
-    const fine = projectMissToGround(eye, impact, ground, 3100, 0.25)!;
+    const impact = { x: 1, y: ground(1500) - 10, z: -1500 };
+    const coarse = projectMissToGround(eye, impact, ground, GROUND_LENGTH_M, 2)!;
+    const fine = projectMissToGround(eye, impact, ground, GROUND_LENGTH_M, 0.25)!;
     expect(coarse.z).toBeCloseTo(fine.z, 0);
     expect(coarse.y).toBeCloseTo(fine.y, 0);
   });
 
   it('returns null if the shooter is somehow already underground', () => {
     const buried = { x: 0, y: -5, z: 0 };
-    expect(projectMissToGround(buried, { x: 0, y: -10, z: -100 }, ground, 3100)).toBeNull();
+    expect(projectMissToGround(buried, { x: 0, y: -10, z: -100 }, ground, GROUND_LENGTH_M)).toBeNull();
   });
 });

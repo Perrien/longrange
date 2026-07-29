@@ -24,9 +24,7 @@ import * as THREE from 'three';
 import { RangeScene, PLATE_THICKNESS_M, setChainInstance, type PlateInstance } from '../range/RangeScene';
 import { RANGE_A_GROUND } from '../range/range-a-config';
 import { TestRangeScene } from '../range/TestRangeScene';
-import { ELRProbeScene } from '../range/ELRProbeScene';
-import { probeVariantFromSearch } from '../range/elr-probe-config';
-import { TREE_COUNT_STEPS } from '../range/elr-probe-trees';
+import { ELRRangeScene } from '../range/ELRRangeScene';
 import { projectMissToGround, FLAT_GROUND } from './miss-projection';
 import {
   FrameTimer,
@@ -66,6 +64,7 @@ import { AudioManager } from '../audio/audio-manager';
 import { loadBtkModule } from '../engine-bridge/wasm-module';
 import { describeThrown } from '../engine-bridge/describe-thrown';
 import { PhaseTimer } from './phase-timer';
+import { machStateLabel } from '../game/dope-row';
 import { createScatterSimulator, type ScatterSimulator } from '../engine-bridge/match-sim';
 import { createSteelReaction, type SteelReaction } from '../engine-bridge/steel-target';
 import {
@@ -224,6 +223,14 @@ export function ScopeView({
   // and the header label; the effect reads the same off the store.
   const rangeId = useGameStore((s) => s.session.rangeId);
   const rangeDef = getRangeDefinition(rangeId);
+  // ELR firing line (build spec task 9). In the scene effect's dep array, so
+  // switching lines tears the world down and rebuilds it — the layout is solved
+  // per eye, and the forest is seed-deterministic, so only the stations and the
+  // eye height actually move. Only meaningful on the ELR range; every other
+  // scene ignores it, and since it never changes there the rebuild never fires.
+  const firingPoint = useGameStore((s) => s.session.firingPoint);
+  const setFiringPoint = useGameStore((s) => s.setFiringPoint);
+  const isElrRange = rangeDef.sceneType === 'elr-range';
   // Capability, not scene identity (Stage 2a): the paper-target HUD — Clean,
   // Inspect, the group readout and the zeroing controls — belongs to ANY paper
   // bay, so it keys off `targetKind` rather than `sceneType === 'sight-in'`.
@@ -263,20 +270,28 @@ export function ScopeView({
   // 25–30 ms frame the probe measured on device. Set once per shot, so it reads
   // as "the last shot cost this", not as a live counter.
   const [shotMs, setShotMs] = useState<string | null>(null);
-  // Tree headroom sweep (P13) — DIAGNOSTIC, probe only. `sceneCost` is what the
-  // 17 ms vsync-capped frame time cannot tell you: how much of that frame is
-  // actual work. `treeStep` indexes TREE_COUNT_STEPS.
+  // Mach-state marking (ELR build spec task 10): what the round will be doing
+  // when it ARRIVES at the committed target. Computed once at commit, from the
+  // same solve the shot will use, and cleared whenever nothing is committed.
+  const [machState, setMachState] = useState<string | null>(null);
+  // The store drops `currentTarget` on its own in several places — switching
+  // firing lines, resetting the session. Clear the marking with it, or a stale
+  // SUBSONIC label outlives the engagement it described.
+  useEffect(() => {
+    if (!currentTarget) setMachState(null);
+  }, [currentTarget]);
+  // Scene-cost readout — DIAGNOSTIC, ELR range only (it is the only scene heavy
+  // enough for the answer to matter). `sceneCost` is what the 17 ms vsync-capped
+  // frame time cannot tell you: how much of that frame is actual work.
   const [sceneCost, setSceneCost] = useState<SceneCost | null>(null);
-  const [treeStep, setTreeStep] = useState(0);
-  const probeRef = useRef<ELRProbeScene | null>(null);
   /** Clears the rolling frame-time and render-cost windows. Set by the render
-   *  effect; called when the tree count changes so the build hitch and the old
-   *  count's frames do not pollute the new reading. */
+   *  effect; called when something rebuilds the scene so the build hitch and the
+   *  old configuration's frames do not pollute the new reading. */
   const resetPerfRef = useRef<(() => void) | null>(null);
   // Frame-time readout (owner request, 2026-07-27: "numbers would be good to see a
-  // slowdown before it's too bad"). Shown on EVERY range, not just the probes —
-  // the point is to catch a regression while it is still small, and a number you
-  // only see on the diagnostic ranges cannot do that.
+  // slowdown before it's too bad"). Shown on EVERY range — the point is to catch a
+  // regression while it is still small, and a number you only see on one range
+  // cannot do that.
   const [perf, setPerf] = useState<{ ms: number; fps: number; worst: number; bits: number } | null>(
     null,
   );
@@ -352,10 +367,10 @@ export function ScopeView({
     // switches on `sceneType`, which is that field's actual job.
     const isSightIn = rangeDefinition.targetKind === 'paper';
     let range: SteelSceneApi | null = null;
-    // The probe scene, when it IS the probe — typed concretely because the tree
-    // ramp and the tree count are diagnostic-only and deliberately absent from
-    // `SteelSceneApi` (the shipped ranges must not grow a probe's surface).
-    let probeScene: ELRProbeScene | null = null;
+    // The ELR scene, when it IS the ELR range — typed concretely because its tree
+    // count feeds the scene-cost readout and is deliberately absent from
+    // `SteelSceneApi` (a diagnostic surface has no business on the other ranges).
+    let elrScene: ELRRangeScene | null = null;
     let sightIn: PaperBayScene | null = null;
     if (sceneType === 'wooded-zero') {
       // Same D3 entry snapshot. Wind is NOT zeroed here (plan §7.3, owner
@@ -380,40 +395,11 @@ export function ScopeView({
       // learning the fundamentals without wind in the way — no wind
       // flags/controls either (see the markerSpecs/isTestRangeHud gating below).
       store().setWind({ speedMps: 0, directionDeg: 0 });
-    } else if (sceneType === 'elr-probe') {
-      // Throwaway 3 km diagnostic (`Design/elr-probe-plan.md`). Calm by default so
-      // the shot-loop questions — is an 18-second flight tense or tedious, does the
-      // tracer show, is the ping audible — are answered without wind smearing them;
-      // the wind check is a deliberate separate pass at a dialled known value.
-      // Probe A (flat) by default; `?probe=slope` builds Probe B — the 10 m bluff
-      // over a convex rising hillside. One scene builder, one station list, one
-      // config: the variant is the single thing that differs, which is what makes
-      // A-vs-B a fair comparison rather than two separate ranges.
-      // Bound to the concrete type first: `range` is a `SteelSceneApi`, and the
-      // tree ramp is deliberately NOT on that interface (a probe's diagnostic
-      // surface has no business on the shipped ranges).
-      const probe = new ELRProbeScene(
-        scene,
-        probeVariantFromSearch(typeof window === 'undefined' ? '' : window.location.search),
-      );
-      range = probe;
-      // Held so the tree ramp (P13) can rebuild the field and the readout can
-      // report how many are actually standing.
-      probeScene = probe;
-      probeRef.current = probe;
-      store().setWind({ speedMps: 0, directionDeg: 0 });
-      // Auto-commit the near station so there is no commit step — the probe is a
-      // sandbox, not an engagement.
-      //
-      // A large FINITE budget, not Infinity. The Test Range uses Infinity, but it
-      // also hides the shots-left readout (`isTestRangeHud`); the probe shows it,
-      // and "shots left: Infinity" both reads as broken and destroys the cheapest
-      // signal that a shot actually happened. A decrementing counter is the first
-      // thing to look at when the trigger seems dead.
-      const first = range.plates[0];
-      if (first) {
-        store().commitTarget(first.instanceId, first.distanceM, shotBudgetFor(rangeDefinition));
-      }
+    } else if (sceneType === 'elr-range') {
+      const elr = new ELRRangeScene(scene, store().session.firingPoint);
+      range = elr;
+      // Held so the scene-cost readout can report how many trees are standing.
+      elrScene = elr;
     } else {
       range = new RangeScene(scene);
     }
@@ -477,14 +463,14 @@ export function ScopeView({
     // exactly `EYE_HEIGHT_M` — are unchanged by this.
     // Eye height is a property of the FIRING POINT, whatever kind of scene built it.
     // Paper bays have reported it since the Wooded Zero Range's knoll; steel scenes
-    // gained it for ELR Probe B's 10 m bluff. Flat ranges report nothing and keep
-    // the global default, so this is a no-op for all four shipped ranges.
+    // gained it for the ELR Range's raised high line. Flat ranges report nothing and
+    // keep the global default, so this is a no-op for the other three ranges.
     const eyeHeightM = sightIn?.eyeHeightM ?? range?.eyeHeightM ?? EYE_HEIGHT_M;
 
     // Camera reach is a property of the RANGE for the same reason eye height is
     // (`ranges.ts` `CameraReach`): the shipped 0.5/3000 was sized for a 200 m world
-    // and clips a 3 km one outright. Ranges that say nothing get exactly the old
-    // numbers back, so this is a no-op everywhere but the ELR probe.
+    // and clips a multi-kilometre one outright. Ranges that say nothing get exactly
+    // the old numbers back, so this is a no-op everywhere but the ELR Range.
     const reach = cameraReachFor(rangeDefinition);
     const camera = new THREE.PerspectiveCamera(
       SCOPE_BASE_FOV_DEG / magnification,
@@ -955,6 +941,19 @@ export function ScopeView({
           found.plate.distanceM,
           shotBudgetFor(rangeDefinition),
         );
+        // Mach state at the target (task 10). Solved through the SAME cached
+        // path the shot will take, so the marking cannot disagree with what
+        // actually arrives. `solveAt` is per-station cached, so on a station
+        // already engaged this is free; on a fresh one it pays the same solve
+        // the first shot would have paid anyway.
+        try {
+          const solvedAtTarget = solveAt(found.plate.distanceM, store().session.wind, steelGearCtx());
+          const v = solvedAtTarget.velocityMps;
+          setMachState(v > 0 && speedOfSoundMps > 0 ? machStateLabel(v / speedOfSoundMps) : null);
+        } catch {
+          // A marking is a nicety; never let it break the engagement.
+          setMachState(null);
+        }
       }
     };
 
@@ -1082,6 +1081,11 @@ export function ScopeView({
               pendingImpacts.push({
                 dueAt: st.t + timeOfFlightS,
                 run: () => {
+                  // A BOLTED plate (stake-mounted) still needs its native target
+                  // — that is what holds the paint buffer and records the splat —
+                  // but it must never join `reactions`, because that map is what
+                  // gets stepped and posed each frame. Bolted steel does not swing.
+                  const swings = hitPlate.swings !== false;
                   let entry = reactions.get(hitPlate.instanceId);
                   if (!entry) {
                     let reaction = plateTargets.get(hitPlate.instanceId);
@@ -1096,8 +1100,15 @@ export function ScopeView({
                         position: { x: hitPlate.position.x, y: hitPlate.position.y, z: hitPlate.position.z },
                         beamHeightM: hitPlate.beamHeightM,
                         paintColorHex: hitPlate.paintColor,
+                        chainOutwardOffsetM: hitPlate.chainOutwardOffsetM,
                       });
                       plateTargets.set(hitPlate.instanceId, reaction);
+                    }
+                    if (!swings) {
+                      // Paint it and stop. No pose, no stepping, no settle watch.
+                      reaction.strike(impactWorld, impactVel, bulletMassKg, bulletDiameterM);
+                      steel.plateSurface.writeLayer(hitPlate.instanceId, reaction.getTexture());
+                      return;
                     }
                     // Not in `reactions` ⇒ the plate is at rest, so the current
                     // instance matrix IS the rest matrix (first hit, or settled
@@ -1142,8 +1153,8 @@ export function ScopeView({
           let fxX = result.impact.x;
           let fxY = result.impact.y;
           let fxZ = impactZ;
-          // Ground is a PROFILE, not a constant — flat on every range but ELR
-          // Probe B, whose hillside would otherwise put the puff past the real
+          // Ground is a PROFILE, not a constant — flat on every range but the ELR
+          // Range, whose hillside would otherwise put the puff past the real
           // strike and underground (`scope/miss-projection.ts`).
           const groundProfile = steel.groundYAt ?? FLAT_GROUND;
           if (result.hitPlateId == null && fxY < groundProfile(rangeM)) {
@@ -1590,12 +1601,12 @@ export function ScopeView({
         });
         // Scene cost (P13). `renderer.info` is free — it is counters the renderer
         // already keeps — so this costs nothing beyond the state push it rides on.
-        if (probeScene) {
+        if (elrScene) {
           setSceneCost({
             renderMs: renderCost.meanMs(),
             drawCalls: renderer.info.render.calls,
             triangles: renderer.info.render.triangles,
-            trees: probeScene.placedTreeCount,
+            trees: elrScene.placedTreeCount,
           });
         }
       }
@@ -1751,8 +1762,12 @@ export function ScopeView({
       renderer.dispose();
       for (const sim of simCache.values()) sim.delete();
     };
+    // `firingPoint` is the ONE thing that rebuilds the world. The effect is
+    // otherwise mount-once by design (it owns the renderer, the RAF loop and
+    // every native handle), and its cleanup above tears all of that down, so a
+    // rebuild is safe. Adding anything else here is almost certainly a mistake.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [firingPoint]);
 
   // Inspect (D10): when opened, snapshot the engaged target's face canvas (art +
   // splats + centroid) into the overlay canvas, head-on and large. Read-only.
@@ -2019,6 +2034,35 @@ export function ScopeView({
             the Test Range (owner request 2026-07-21): it's a sandbox for the
             fundamentals, not an engagement — wind is dialed to calm on load
             (see the effect below) and the controls/flags stay out of the way. */}
+        {/* ELR firing line (build spec task 9). A MOVE, not a setting: the low
+            line is ground-level for the 50–500 m rimfire ladder, the high line
+            stands on the slope's shoulder for the 250–2000 m centrefire one.
+            Switching rebuilds the scene and drops any committed target, so it
+            sits away from FIRE and the dial cluster to make it hard to hit by
+            accident. Only rendered on the ELR range — no other scene has lines. */}
+        {isElrRange && (
+          <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
+            <div style={{ opacity: 0.8, marginBottom: 4 }}>firing line</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(['low', 'high'] as const).map((point) => (
+                <button
+                  key={point}
+                  onClick={() => setFiringPoint(point)}
+                  disabled={firingPoint === point}
+                  style={{
+                    flex: 1,
+                    padding: '4px 8px',
+                    opacity: firingPoint === point ? 1 : 0.65,
+                    fontWeight: firingPoint === point ? 700 : 400,
+                  }}
+                >
+                  {point === 'low' ? 'LOW 50–500' : 'HIGH 250–2000'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {!isTestRangeHud && (
           <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
             <div>
@@ -2134,6 +2178,21 @@ export function ScopeView({
                     ? `#${currentTarget.plateInstanceId} @ ${formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary).value.toFixed(0)} ${formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary).label}`
                     : 'none committed'}
                 </div>
+                {/* Mach-state marking (task 10). Nothing renders when the round
+                    arrives supersonic — the common case should be silent, so the
+                    marking means something when it appears. Amber for transonic,
+                    red for subsonic, matching the DOPE card's band colours. */}
+                {currentTarget && machState && (
+                  <div
+                    style={{
+                      marginTop: 2,
+                      fontSize: 11,
+                      color: machState.startsWith('SUBSONIC') ? '#e88' : '#e8c95a',
+                    }}
+                  >
+                    {machState}
+                  </div>
+                )}
                 <button onClick={() => commitRef.current()} style={{ marginTop: 4 }}>
                   Commit
                 </button>
@@ -2144,7 +2203,13 @@ export function ScopeView({
                 call, and running score. Shots-remaining is hidden on the Test Range
                 sandbox — there is no limit there. */}
             <div style={{ marginTop: 8, borderTop: '1px solid rgba(232,238,244,0.25)', paddingTop: 6 }}>
-              {!isTestRangeHud && <div>shots left: {shotBudget}</div>}
+              {/* Only when the budget is FINITE. The default is now unlimited
+                  (owner 2026-07-29), and "shots left: Infinity" reads as broken —
+                  the same reasoning that hid it on the Test Range. A range that
+                  sets a finite budget in the registry still shows its counter. */}
+              {!isTestRangeHud && Number.isFinite(shotBudget) && (
+                <div>shots left: {shotBudget}</div>
+              )}
               <div>
                 last call:{' '}
                 {lastCall
@@ -2284,42 +2349,6 @@ export function ScopeView({
             }}
           >
             FIRE blocked: {fireBlocked}
-          </div>
-        )}
-        {probeRef.current && (
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', pointerEvents: 'auto' }}>
-            <span
-              style={{
-                font: '11px/1.3 ui-monospace, Menlo, monospace',
-                color: '#9aa5b1',
-                letterSpacing: 0.5,
-              }}
-            >
-              TREES
-            </span>
-            {TREE_COUNT_STEPS.map((n, i) => (
-              <button
-                key={n}
-                onClick={() => {
-                  // Rebuild, then clear the rolling averages: the frames spent
-                  // building are not frames the new tree count costs, and leaving
-                  // them in the window would smear the reading you just asked for.
-                  probeRef.current?.setTreeCount(n);
-                  setTreeStep(i);
-                  resetPerfRef.current?.();
-                }}
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: 4,
-                  border: '1px solid rgba(255,255,255,0.25)',
-                  background: treeStep === i ? 'rgba(120,150,200,0.55)' : 'rgba(0,0,0,0.45)',
-                  color: '#e8ecf1',
-                  font: '11px/1.3 ui-monospace, Menlo, monospace',
-                }}
-              >
-                {n}
-              </button>
-            ))}
           </div>
         )}
         {sceneCost && perf && (

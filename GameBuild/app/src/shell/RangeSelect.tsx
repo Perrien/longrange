@@ -13,7 +13,7 @@
 // Deliberately simple: no grayed-out "coming soon" slots (D8). Plain inline
 // styles, matching every other component here.
 
-import { listRanges, listUnlistedRanges } from '../range/ranges';
+import { listRanges } from '../range/ranges';
 
 export function RangeSelect({
   onSelect,
@@ -21,8 +21,7 @@ export function RangeSelect({
   onOpenSettings,
   onOpenDopeBook,
 }: {
-  /** `variant` is the diagnostic-probe flavour ('slope'); omitted for real ranges. */
-  onSelect: (rangeId: string, variant?: string) => void;
+  onSelect: (rangeId: string) => void;
   onOpenStore: () => void;
   onOpenSettings: () => void;
   onOpenDopeBook: () => void;
@@ -79,36 +78,6 @@ export function RangeSelect({
         </button>
       ))}
 
-      {/* DIAGNOSTIC RANGES — throwaway probes, deliberately kept OFF the cards
-          above. Visually separated and plainly labelled so they never read as
-          content (D8: no throwaway entries among the real ones). Delete this block
-          together with the probes. Owner request 2026-07-27: easier than editing a
-          URL on an iPad. */}
-      {listUnlistedRanges().length > 0 && (
-        <div
-          style={{
-            marginTop: 20,
-            paddingTop: 12,
-            borderTop: '1px dashed rgba(232,238,244,0.3)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <div style={{ fontSize: 12, opacity: 0.55, letterSpacing: 1 }}>DIAGNOSTIC — TEMPORARY</div>
-          {listUnlistedRanges().map((range) => (
-            <div key={range.id} style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => onSelect(range.id)} style={DIAG_BUTTON}>
-                {range.name} · flat
-              </button>
-              <button onClick={() => onSelect(range.id, 'slope')} style={DIAG_BUTTON}>
-                {range.name} · slope
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
       <button
         onClick={onOpenStore}
         style={{
@@ -167,19 +136,3 @@ export function RangeSelect({
     </div>
   );
 }
-
-/** Deliberately drabber and smaller than the range cards — a diagnostic entry must
- *  not look like content. */
-const DIAG_BUTTON: React.CSSProperties = {
-  minWidth: 150,
-  padding: '10px 14px',
-  background: 'rgba(58,58,64,0.9)',
-  color: '#d8dde3',
-  border: '1px solid rgba(232,238,244,0.35)',
-  borderRadius: 8,
-  fontFamily: 'monospace',
-  fontSize: 13,
-  cursor: 'pointer',
-  WebkitUserSelect: 'none',
-  userSelect: 'none',
-};

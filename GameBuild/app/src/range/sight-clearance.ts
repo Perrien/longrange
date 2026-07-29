@@ -51,6 +51,20 @@ export interface SightTarget {
  */
 export const DEFAULT_MARGIN_M = 2.0;
 
+/** Minimum clearance regardless of plate size (m). */
+export const MIN_MARGIN_M = 0.5;
+
+/** Margin as a multiple of the plate's radius. */
+export const MARGIN_PLATE_RADII = 2;
+
+/**
+ * Clearance margin for a plate of radius `radiusM`.
+ * Scales with the plate, floored so tiny near plates still get real air around them.
+ */
+export function marginForPlate(radiusM: number): number {
+  return Math.max(MIN_MARGIN_M, MARGIN_PLATE_RADII * radiusM);
+}
+
 export interface OccluderBounds {
   /** Canopy radius (m) after scaling. */
   radiusM: number;
@@ -298,6 +312,11 @@ export function chooseOffset(
  *  decides, not the generator. */
 export function offsetCandidates(maxOffsetM: number, stepM: number): number[] {
   const out: number[] = [];
-  for (let o = -maxOffsetM; o <= maxOffsetM + 1e-9; o += stepM) out.push(Math.round(o * 100) / 100);
+  for (let o = -maxOffsetM; o <= maxOffsetM + 1e-9; o += stepM) {
+    const rounded = Math.round(o * 100) / 100;
+    // Clamp to ensure floating-point rounding doesn't push candidates outside the cap
+    const clamped = Math.max(-maxOffsetM, Math.min(maxOffsetM, rounded));
+    out.push(clamped);
+  }
   return out;
 }

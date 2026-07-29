@@ -1,11 +1,17 @@
 // Range-type registry tests (task 2.3a, D1).
 import { describe, expect, it } from 'vitest';
-import { getRangeDefinition, listRanges } from './ranges';
+import {
+  getRangeDefinition,
+  listRanges,
+  cameraReachFor,
+  shotBudgetFor,
+  DEFAULT_CAMERA_REACH,
+} from './ranges';
 
 describe('range registry', () => {
   it('lists all enterable ranges in landing order (range-a first)', () => {
     const ids = listRanges().map((r) => r.id);
-    expect(ids).toEqual(['range-a', 'test-range', 'wooded-zero']);
+    expect(ids).toEqual(['range-a', 'test-range', 'wooded-zero', 'elr-range']);
   });
 
   it('resolves the wooded zero range by id', () => {
@@ -59,5 +65,35 @@ describe('range registry', () => {
 
   it('throws on an unknown range id', () => {
     expect(() => getRangeDefinition('nope')).toThrow(/unknown range id/);
+  });
+
+  describe('elr-range registry row', () => {
+    it('resolves by id with the right kind', () => {
+      const def = getRangeDefinition('elr-range');
+      expect(def.sceneType).toBe('elr-range');
+      expect(def.targetKind).toBe('steel');
+      expect(def.zeroable).toBe(false);
+      expect(def.windMarkers).toBe(true);
+    });
+
+    it('carries the reach a 2 km world needs', () => {
+      const reach = cameraReachFor(getRangeDefinition('elr-range'));
+      expect(reach.farM).toBeGreaterThanOrEqual(2400);
+      expect(reach.nearM).toBeGreaterThanOrEqual(10);
+    });
+
+    it('appears on the range-select list', () => {
+      expect(listRanges().map((r) => r.id)).toContain('elr-range');
+    });
+
+    it('uses the default shot budget, like every real range', () => {
+      expect(shotBudgetFor(getRangeDefinition('elr-range'))).toBeUndefined();
+    });
+
+    it('leaves every shipped range on the default camera', () => {
+      for (const id of ['range-a', 'test-range', 'wooded-zero']) {
+        expect(cameraReachFor(getRangeDefinition(id))).toEqual(DEFAULT_CAMERA_REACH);
+      }
+    });
   });
 });

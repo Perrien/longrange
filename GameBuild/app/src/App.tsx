@@ -31,13 +31,12 @@ import { useGameStore } from './state/store';
 type PlayerView = 'rangeSelect' | 'scope';
 
 /**
- * Deep-link into a range by id, e.g. `?range=elr-probe`.
+ * Deep-link into a range by id, e.g. `?range=elr-range`.
  *
- * Exists for the UNLISTED diagnostic ranges — the ELR Probe is deliberately kept
- * off the range-select cards (it is a throwaway measuring instrument, not content),
- * but it still has to be REACHABLE or it cannot do its job. A query parameter keeps
- * those two facts from fighting: no player-facing surface changes, and the owner
- * has a deterministic way in.
+ * Originally added so the UNLISTED diagnostic probe ranges could be REACHED without
+ * appearing on a player-facing card. Those probes are gone (2026-07-29), but the
+ * deep link stays: it is the deterministic way to land straight in a specific range
+ * on device, which is worth keeping for build/QA work and costs one query parameter.
  *
  * Unknown ids are ignored rather than thrown, so a stale bookmark lands on the
  * normal landing screen instead of a blank one.
@@ -72,7 +71,7 @@ if (DEEP_LINKED_RANGE_ID) {
 
 export function App() {
   // D5 still holds — a cold start lands on range select — EXCEPT when a range was
-  // asked for explicitly by URL, which is only how the unlisted probes are entered.
+  // asked for explicitly by URL.
   const [view, setView] = useState<PlayerView>(DEEP_LINKED_RANGE_ID ? 'scope' : 'rangeSelect');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
@@ -103,20 +102,10 @@ export function App() {
       {view === 'rangeSelect' && (
         <>
           <RangeSelect
-            onSelect={(id, variant) => {
+            onSelect={(id) => {
               // Route selection through the range registry (task 2.3a): resolve
               // the definition (guards unknown ids) before entering the scope.
               const range = getRangeDefinition(id);
-              // Diagnostic probes carry a variant. ScopeView reads it from the URL
-              // (it is a throwaway knob, not store state — see
-              // `probeVariantFromSearch`), so put it there and let the scene
-              // rebuild pick it up. `replaceState` keeps it out of history.
-              if (typeof window !== 'undefined') {
-                const url = new URL(window.location.href);
-                if (variant) url.searchParams.set('probe', variant);
-                else url.searchParams.delete('probe');
-                window.history.replaceState(null, '', url);
-              }
               setRangeId(range.id);
               setView('scope');
             }}

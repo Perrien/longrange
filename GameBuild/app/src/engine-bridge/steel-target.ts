@@ -69,6 +69,30 @@ export interface SteelReactionSpec {
    * this so a splat chips through the SAME paint the rendered plate shows
    * (range config paintColor). Absent → engine default (red paint). */
   paintColorHex?: number;
+  /** Inward offset of the chains' fixed anchors (m). Omitted ⇒ the shared
+   *  `CHAIN_OUTWARD_OFFSET_M`. See `chainOutwardOffsetFor`. */
+  chainOutwardOffsetM?: number;
+}
+
+/**
+ * A chain anchor offset that cannot cross the plate's centreline.
+ *
+ * `CHAIN_OUTWARD_OFFSET_M` is an absolute 5 cm inherited from steel-sim, sized
+ * for the sort of plate Range A hangs. On a constant-angular range the near
+ * plates are far smaller than that: the ELR 50 m gong is 5 cm across, its chain
+ * attach sits 1.4 cm off centre, and a 5 cm inward nudge puts the fixed anchor
+ * 3.6 cm out the OTHER side. The chains cross hard, the lever arms exceed the
+ * plate, and the resulting oscillator is stiff enough that its angular velocity
+ * never falls under the engine's absolute 0.2 rad/s settle threshold — so the
+ * plate buzzes side to side forever instead of settling.
+ *
+ * Clamping to half the attach offset keeps the anchors on their own side at any
+ * plate size, and is a no-op for plates bigger than ~35 cm, which is every plate
+ * that was hanging before this existed.
+ */
+export function chainOutwardOffsetFor(diameterM: number): number {
+  const ax = (diameterM / 2) * Math.sin(CHAIN_ANCHOR_ANGLE_RAD);
+  return Math.min(CHAIN_OUTWARD_OFFSET_M, ax * 0.5);
 }
 
 /** One struck plate's live physics. Created lazily on the first hit, stepped
@@ -151,10 +175,11 @@ export function createSteelReaction(module: BtkModule, spec: SteelReactionSpec):
   // fixed beam anchors don't move, so store them as plain numbers.
   const chainLocals: EVector3D[] = [];
   const chainFixed: Vec3[] = [];
+  const inwardOffset = spec.chainOutwardOffsetM ?? CHAIN_OUTWARD_OFFSET_M;
   for (const sx of [-1, 1] as const) {
     const localAttach = v3(module, sx * ax, ay, az);
     const worldAttach = st.localToWorld(localAttach); // COPY → delete
-    const worldFixed = v3(module, worldAttach.x - sx * CHAIN_OUTWARD_OFFSET_M, spec.beamHeightM, worldAttach.z);
+    const worldFixed = v3(module, worldAttach.x - sx * inwardOffset, spec.beamHeightM, worldAttach.z);
     st.addChainAnchor(localAttach, worldFixed); // C++ copies both by value
     chainLocals.push(localAttach); // kept alive → deleted in delete()
     // Drawn beam-end splays OUTWARD of the rest attach (shallow trapezoid), NOT

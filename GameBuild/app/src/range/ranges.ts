@@ -12,7 +12,7 @@
 // (it is not a fixed-station bay).
 
 /** Which scene builder renders a range. */
-export type RangeSceneType = 'steel-racks' | 'test-range' | 'wooded-zero' | 'elr-probe';
+export type RangeSceneType = 'steel-racks' | 'test-range' | 'wooded-zero' | 'elr-range';
 
 /**
  * How far the camera has to see on this range (m).
@@ -110,9 +110,12 @@ export interface RangeDefinition {
    * This has to live on the RANGE, not be a default buried in `commitTarget`.
    * Sandbox and diagnostic ranges want an effectively unlimited budget, and they
    * want it on EVERY commit — not just the one the scene builder makes at mount.
-   * Setting it once at scene build left the ELR probe on 999 until the player
-   * pressed COMMIT, at which point the store default silently replaced it with 3
-   * and the FIRE button died three shots later, permanently and regardless of gear.
+   * Setting it once at scene build left the (now-deleted) ELR probe on 999 until the
+   * player pressed COMMIT, at which point the store default silently replaced it with
+   * 3 and the FIRE button died three shots later, permanently and regardless of gear.
+   *
+   * No shipped range sets it today; it stays because the next sandbox will want it
+   * and the failure above is the reason it must be registry state, not scene state.
    */
   shotBudget?: number;
 }
@@ -170,37 +173,17 @@ const WOODED_ZERO: RangeDefinition = {
   ],
 };
 
-// ELR Probe (2026-07-27): a THROWAWAY 3 km range that exists to be looked at, not
-// shipped. Six 1 MIL gongs at 500 m steps on a dead-flat plane, reached by id only.
-// Its job is to answer what no table can — whether an 18-second shot is tense or
-// tedious, whether 3 km reads as distance, and whether the frame time holds — before
-// `Design/elr-dope-range-plan.md` (capped at 2000) is built for real. Full spec and
-// the observation checklist: `Design/elr-probe-plan.md`.
-//
-// Expect to delete this row. It is deliberately not in `RANGES`.
-const ELR_PROBE: RangeDefinition = {
-  id: 'elr-probe',
-  name: 'ELR Probe',
-  shortLabel: 'ELR Probe — 500 to 3000 m flat',
-  unitCharacter: 'meters', // metric only; the probe is not testing the dual-unit path
-  sceneType: 'elr-probe',
+const ELR_RANGE: RangeDefinition = {
+  id: 'elr-range',
+  name: 'ELR Range',
+  shortLabel: 'ELR Range — 50 m to 2000 m wooded',
+  unitCharacter: 'both',
+  sceneType: 'elr-range',
   targetKind: 'steel',
   zeroable: false,
-  // Wind is checked by dialling a known crosswind and diffing drift against the
-  // predicted table — a sharper test than reading flags, and it keeps the probe small.
-  windMarkers: false,
+  windMarkers: true,
   camera: { nearM: 10, farM: 12000 },
-  // Effectively unlimited, but FINITE so the shots-left readout still counts down
-  // — a moving counter is the cheapest signal that a shot actually happened.
-  shotBudget: 999,
-  stations: [
-    { nominalDistance: 500, side: -1, azimuthDeg: -1.5 },
-    { nominalDistance: 1000, side: -1, azimuthDeg: -0.9 },
-    { nominalDistance: 1500, side: -1, azimuthDeg: -0.3 },
-    { nominalDistance: 2000, side: 1, azimuthDeg: 0.3 },
-    { nominalDistance: 2500, side: 1, azimuthDeg: 0.9 },
-    { nominalDistance: 3000, side: 1, azimuthDeg: 1.5 },
-  ],
+  stations: [],
 };
 
 /** Every range shown on the landing screen, in order.
@@ -212,27 +195,16 @@ const ELR_PROBE: RangeDefinition = {
  *  otherwise selecting its card falls through ScopeView's scene branch to the
  *  steel `RangeScene`, and the player gets Range A's world under a Wooded Zero
  *  label. */
-const RANGES: readonly RangeDefinition[] = [RANGE_A, TEST_RANGE, WOODED_ZERO];
+const RANGES: readonly RangeDefinition[] = [RANGE_A, TEST_RANGE, WOODED_ZERO, ELR_RANGE];
 
 /** Ranges that exist but are not yet on the landing screen. Merged into the id
  *  lookup so config/tests resolve them normally.
  *
- *  `ELR_PROBE` is here for a different reason than `WOODED_ZERO` was: not because
- *  its scene is unfinished, but because it is a **throwaway diagnostic** that should
- *  never appear on a player-facing card at all. */
-const UNLISTED: readonly RangeDefinition[] = [ELR_PROBE];
-
-/**
- * Diagnostic ranges — reachable, but never player-facing content.
- *
- * `listRanges()` deliberately excludes these (D8: no grayed-out or throwaway cards
- * among the real ones). Exposed separately so the range-select screen can offer
- * them in a clearly-separated strip during development, which beats hand-editing a
- * URL on an iPad. **Delete this and the strip together with the probes.**
- */
-export function listUnlistedRanges(): readonly RangeDefinition[] {
-  return UNLISTED;
-}
+ *  Empty today — the two throwaway ELR probe variants that lived here were deleted
+ *  on 2026-07-29 once the real ELR Range shipped. Kept as a seam because the reason
+ *  it existed recurs: a range whose config and tests need to resolve by id before
+ *  (or without ever) earning a player-facing card. */
+const UNLISTED: readonly RangeDefinition[] = [];
 
 /** Camera near/far for a range, falling back to what every range shipped with. */
 export function cameraReachFor(range: RangeDefinition): CameraReach {

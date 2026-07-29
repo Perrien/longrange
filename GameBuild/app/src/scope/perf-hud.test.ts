@@ -126,16 +126,16 @@ describe('depthVerdict / depthReport', () => {
     expect(depthVerdict(0.05, 0.02)).toBe('z-fighting'); // 0.4 buckets
   });
 
-  it('passes the probe configuration and fails the shipped one, at 3000 m', () => {
+  it('passes the ELR camera reach and fails the shipped one, at 3000 m', () => {
     expect(depthReport(24, 10, 12000, 3000).verdict).toBe('ok');
     expect(depthReport(24, 0.5, 12000, 3000).verdict).toBe('z-fighting');
   });
 
   // The standoff is a SCENE REQUIREMENT the P1 tests discovered, not a free
-  // parameter: at the probe's reach a 0.1 m gap is only 1.85 depth buckets and
+  // parameter: at the ELR camera reach a 0.1 m gap is only 1.85 depth buckets and
   // grades marginal, which is the honest verdict for that geometry. P2 must set the
   // plate at least MIN_PLATE_STANDOFF_M off its panel.
-  it('the standoff is what makes the probe comfortable rather than marginal', () => {
+  it('the standoff is what makes the ELR reach comfortable rather than marginal', () => {
     expect(depthReport(24, 10, 12000, 3000, 0.1).verdict).toBe('marginal');
     expect(depthReport(24, 10, 12000, 3000, MIN_PLATE_STANDOFF_M).verdict).toBe('ok');
     expect(MIN_PLATE_STANDOFF_M).toBeGreaterThanOrEqual(
@@ -148,7 +148,7 @@ describe('depthVerdict / depthReport', () => {
     expect(depthVerdict(0.05, -1)).toBe('z-fighting');
   });
 
-  it('fails a 16-bit device on the probe configuration', () => {
+  it('fails a 16-bit device on the ELR camera reach', () => {
     expect(depthReport(16, 10, 12000, 3000).verdict).toBe('z-fighting');
   });
 

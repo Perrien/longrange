@@ -93,3 +93,26 @@ describes a 25 yd station as something that "may be a new range feature". It sin
 became one — the Wooded Zero Range (`mil-zero-range-plan.md`) has 25/50/100/200,
 and its backer boards are mark surfaces precisely so a 35 MOA first shot still
 leaves a visible hole.
+
+## ELR range plan + build spec (archived 2026-07-29)
+
+`elr-dope-range-plan.md` (from `Design/`) and `elr-range-build-spec.md` (from
+`Design/execution/`) moved here once the ELR range shipped. **Unlike most of this
+folder these are not superseded — they were EXECUTED**, and the range they describe
+is live content. They are archived because the work is done, not because it was
+abandoned.
+
+Both carry a status banner explaining what shipped and what did not. In short:
+tasks 1–10 built and owner-signed on device; **task 11 (wind markers) deferred** by
+the owner pending more wind design; **task 12 (catalog entries) blocked** on missing
+bullet geometry — Prompt D in `../bullet-catalog/catalog-data-research-prompts.md`
+is written and ready to run. The §5.4 scope elevation-travel model was never started
+and is still a prerequisite for the holdover lesson the range was built around.
+
+⚠ **The build spec contains two statements that the built code contradicts** — Task
+10's Done-when names the wrong station for a 6.5 CM transonic reading, and Task 7's
+frames-and-panels turned out to apply to the high line only. Both are called out in
+its banner. Trust `../feature-catalog.md` and the code over this spec.
+
+Cross-links *between these two files* were rewritten (both ends moved together);
+every other relative link in them follows the folder convention above and is stale.

@@ -27,6 +27,7 @@ import {
   newId,
   type AcquireOptions,
 } from '../game/acquire';
+import type { FiringPoint } from '../range/elr-range-config';
 
 export type UnitsPrimary = 'MIL' | 'MOA';
 
@@ -96,6 +97,17 @@ export interface SessionState {
    *  in Realistic mode; validated against the live preset list at use-site
    *  (a bad/stale value must never crash the field build). */
   windPreset: string;
+  /** Which ELR firing line the player is standing on (build spec task 9).
+   *
+   *  Session-only, and deliberately NOT persisted: it is a per-visit stance,
+   *  not a durable preference, and it means nothing on any other range.
+   *  Defaults to `'high'` — the centrefire ladder is what the range is for, and
+   *  it is the point the scene was wired to before switching existed.
+   *
+   *  A sight line is defined by the eye it starts from, so changing this
+   *  re-solves the whole layout (`solveLayout`) and the scene must be rebuilt.
+   *  The forest is seed-deterministic, so only the stations and eye height move. */
+  firingPoint: FiringPoint;
 }
 
 /** Session-scoped scoring counters (D2). Session-only for Increment 1 — not
@@ -163,7 +175,22 @@ export const COARSE_CLICKS = 20;
 export const ZOOM_MIN = 1.0;
 export const ZOOM_MAX = 35;
 export const DEFAULT_MAGNIFICATION = 10;
-export const DEFAULT_SHOT_BUDGET = 3;
+/**
+ * Shots granted per engagement. **Unlimited** (owner, 2026-07-29).
+ *
+ * COMMIT is kept — engaging a target is what scores a first-round hit and what
+ * `resolveTargetPlate` keys off — but the three-shot cap is gone: the player
+ * takes as many as they want at a station. The cap was pacing, and pacing is
+ * the wrong tool on a DOPE range whose whole purpose is shoot-observe-adjust.
+ *
+ * `Infinity` rather than a big finite number, so nothing has to be tuned later
+ * and `decrementBudget` stays a no-op by construction. A range may still set a
+ * FINITE `shotBudget` in the registry and the spend gate will honour it — the
+ * mechanism is intact, only the default changed. The HUD hides the counter
+ * whenever the budget is not finite (see ScopeView): "shots left: Infinity"
+ * reads as a bug.
+ */
+export const DEFAULT_SHOT_BUDGET = Infinity;
 /** Default raw BTK preset for Realistic mode (task 1.7a, D3) — "a moderate
  *  preset name" per the plan; 'Moderate' is literally one of the 10 real
  *  `WindPresets.listPresets()` names (owner-confirmed 2026-07-15). */
@@ -187,6 +214,7 @@ export const defaultSession = (): SessionState => ({
   currentTarget: null,
   shotsAtCurrentTarget: 0,
   windPreset: DEFAULT_WIND_PRESET,
+  firingPoint: 'high',
 });
 
 export const defaultSettings = (): SettingsState => ({
@@ -281,6 +309,9 @@ export interface GameStore {
   setWindPreset(preset: string): void;
   /** Set the active range id (range select, task 1.8). */
   setRangeId(id: string): void;
+  /** Move between the ELR range's low and high firing lines (build spec task 9).
+   *  The scene must be rebuilt on change — the layout is solved per eye. */
+  setFiringPoint(point: FiringPoint): void;
 
   // Budget / target
   /** Decrement the shot budget by one, floored at zero. */
@@ -466,6 +497,26 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     set((s) => ({ session: { ...s.session, windPreset: preset } })),
 
   setRangeId: (id) => set((s) => ({ session: { ...s.session, rangeId: id } })),
+
+  // Switching lines is a MOVE, not a setting: the player is physically
+  // somewhere else, looking at a different ladder. So the committed target and
+  // the shots against it are cleared — the plate you engaged from the high line
+  // may not even exist on the low one, and keeping the commitment would leave a
+  // stale instanceId pointing into a rebuilt scene's plate array.
+  setFiringPoint: (point) =>
+    set((s) =>
+      s.session.firingPoint === point
+        ? s
+        : {
+            session: {
+              ...s.session,
+              firingPoint: point,
+              currentTarget: null,
+              shotsAtCurrentTarget: 0,
+              lastShots: [],
+            },
+          },
+    ),
 
   decrementBudget: () =>
     set((s) => ({

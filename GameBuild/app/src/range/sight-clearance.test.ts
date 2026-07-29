@@ -9,6 +9,8 @@ import {
   offsetCandidates,
   boundsOf,
   DEFAULT_MARGIN_M,
+  marginForPlate,
+  MIN_MARGIN_M,
   type Point3,
 } from './sight-clearance';
 import { treeUnitBounds } from './environment/trees';
@@ -226,5 +228,23 @@ describe('offsetCandidates', () => {
   it('spans the lane symmetrically and includes the centre', () => {
     const c = offsetCandidates(10, 5);
     expect(c).toEqual([-10, -5, 0, 5, 10]);
+  });
+});
+
+describe('marginForPlate', () => {
+  it('scales with the plate above the floor', () => {
+    expect(marginForPlate(1.0)).toBeCloseTo(2.0, 9);   // 2000 m gong
+    expect(marginForPlate(0.5)).toBeCloseTo(1.0, 9);   // 1000 m gong
+  });
+
+  it('applies the floor to small near plates', () => {
+    expect(marginForPlate(0.025)).toBeCloseTo(0.5, 9); // 50 m gong, 5 cm across
+    expect(marginForPlate(0)).toBeCloseTo(0.5, 9);
+  });
+
+  it('never returns less than the floor, for any radius', () => {
+    for (const r of [0, 0.001, 0.1, 1, 5]) {
+      expect(marginForPlate(r)).toBeGreaterThanOrEqual(MIN_MARGIN_M);
+    }
   });
 });

@@ -1,4 +1,5 @@
-// Where a low miss kicks up dirt — step P3 of `Design/elr-probe-plan.md`.
+// Where a low miss kicks up dirt — originally step P3 of
+// `Design/archive/elr-probe-plan.md`, now what the ELR Range depends on.
 //
 // Pure: no THREE, no DOM.
 //
@@ -7,11 +8,11 @@
 // always projected such a miss back down the sight ray onto the ground in front,
 // where the round actually strikes.
 //
-// That projection assumed **flat ground at y = 0**, which is true of every range
-// shipped so far and false for ELR Probe B, whose hillside climbs to 200 m. On a
+// That projection assumed **flat ground at y = 0**, which is true of every other
+// range and false for the ELR Range, whose hillside climbs to 200 m. On a
 // rising slope a flat-plane solve puts the puff far past the real strike point and
-// well underground — which would have quietly broken the one question Probe B is
-// built to answer ("is the impact splash more legible on a slope facing you?").
+// well underground — which would quietly break the impact splash on the one range
+// where a slope facing you is meant to make the splash legible.
 //
 // So the ground is a FUNCTION of downrange distance rather than a constant, and the
 // intersection is found by marching rather than solved in closed form. A convex
@@ -75,5 +76,5 @@ export function projectMissToGround(
   return null;
 }
 
-/** The flat-ground profile every range but ELR Probe B uses. */
+/** The flat-ground profile every range but the ELR Range uses. */
 export const FLAT_GROUND: GroundProfile = () => 0;

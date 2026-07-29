@@ -147,7 +147,10 @@ describe('scope dialing', () => {
 });
 
 describe('shot budget', () => {
-  it('decrements and floors at zero', () => {
+  // The DEFAULT is unlimited (owner 2026-07-29), but the mechanism still works
+  // for any range that sets a finite budget in its registry row — so this is
+  // driven with an explicit finite budget rather than the default.
+  it('decrements and floors at zero when a range sets a finite budget', () => {
     const st = useGameStore.getState();
     st.selectTarget(yardsToMeters(300), 3);
     st.decrementBudget();
@@ -156,6 +159,14 @@ describe('shot budget', () => {
     st.decrementBudget();
     st.decrementBudget();
     expect(useGameStore.getState().session.shotBudget).toBe(0);
+  });
+
+  it('is unlimited by default, so a shot can never be refused for budget', () => {
+    expect(DEFAULT_SHOT_BUDGET).toBe(Infinity);
+    const st = useGameStore.getState();
+    st.commitTarget(1, 500);
+    for (let i = 0; i < 50; i++) st.decrementBudget();
+    expect(useGameStore.getState().session.shotBudget).toBe(Infinity);
   });
 });
 
@@ -168,7 +179,7 @@ describe('target select / reset', () => {
     st.selectTarget(yardsToMeters(500), 3);
     const s = useGameStore.getState().session;
     expect(s.targetDistanceM).toBeCloseTo(yardsToMeters(500), 9);
-    expect(s.shotBudget).toBe(3);
+    expect(s.shotBudget).toBe(3);   // explicit budget passed above
     expect(s.scope.elevationRad).toBe(0);
     expect(s.scope.windageRad).toBe(0);
   });
@@ -194,7 +205,7 @@ describe('scoring & engagement (task 1.6b, D2)', () => {
     const s = useGameStore.getState().session;
     expect(s.currentTarget).toEqual({ plateInstanceId: 7, distanceM: yardsToMeters(300) });
     expect(s.shotsAtCurrentTarget).toBe(0);
-    expect(s.shotBudget).toBe(3);
+    expect(s.shotBudget).toBe(DEFAULT_SHOT_BUDGET);
     expect(s.lastShots).toEqual([]);
     expect(useGameStore.getState().score.targetsEngaged).toBe(1);
   });
@@ -1039,5 +1050,55 @@ describe('replenishLot (P4)', () => {
 
   it('returns null for an unknown source lot', () => {
     expect(useGameStore.getState().replenishLot('nope', true)).toBeNull();
+  });
+});
+
+describe('firing point (ELR build spec task 9)', () => {
+  it('defaults to the high line — the centrefire ladder the range is for', () => {
+    expect(defaultSession().firingPoint).toBe('high');
+    expect(useGameStore.getState().session.firingPoint).toBe('high');
+  });
+
+  it('moves to the low line and back', () => {
+    const st = useGameStore.getState();
+    st.setFiringPoint('low');
+    expect(useGameStore.getState().session.firingPoint).toBe('low');
+    st.setFiringPoint('high');
+    expect(useGameStore.getState().session.firingPoint).toBe('high');
+  });
+
+  // Switching lines is a MOVE. The plate committed from one line may not exist
+  // on the other, and its instanceId would dangle into a rebuilt plate array.
+  it('drops the committed target and its shot history on a change', () => {
+    const st = useGameStore.getState();
+    st.commitTarget(7, 1000);
+    expect(useGameStore.getState().session.currentTarget).not.toBeNull();
+    st.setFiringPoint('low');
+    const s = useGameStore.getState().session;
+    expect(s.currentTarget).toBeNull();
+    expect(s.shotsAtCurrentTarget).toBe(0);
+    expect(s.lastShots).toEqual([]);
+  });
+
+  // Re-selecting the line you are already on must not tear the scene down —
+  // the effect keys off this value, so an identity change rebuilds the world.
+  it('is a no-op when the point is unchanged, keeping the commitment', () => {
+    const st = useGameStore.getState();
+    st.commitTarget(7, 1000);
+    const before = useGameStore.getState().session;
+    st.setFiringPoint('high');
+    const after = useGameStore.getState().session;
+    expect(after).toBe(before);
+    expect(after.currentTarget).not.toBeNull();
+  });
+
+  it('leaves the rest of the session alone', () => {
+    const st = useGameStore.getState();
+    st.setWind({ speedMps: 4.5, directionDeg: 90 });
+    st.setRangeId('elr-range');
+    st.setFiringPoint('low');
+    const s = useGameStore.getState().session;
+    expect(s.rangeId).toBe('elr-range');
+    expect(s.wind).toEqual({ speedMps: 4.5, directionDeg: 90 });
   });
 });

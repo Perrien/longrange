@@ -1,9 +1,10 @@
-// Bullseye plate face — step P2 of `Design/elr-probe-plan.md`.
+// Bullseye plate face — originally step P2 of `Design/archive/elr-probe-plan.md`,
+// now the plate face the ELR Range uses.
 //
 // Pure: builds the RGBA bytes for one plate-atlas layer, no THREE and no DOM, so
-// the ring geometry is unit-testable. `ELRProbeScene` hands the result to the
+// the ring geometry is unit-testable. `ELRRangeScene` hands the result to the
 // EXISTING `PlateSurface.writeLayer()` — the plate paint/chip system is reused
-// unmodified, which is what keeps the probe honest about what it is testing.
+// unmodified.
 //
 // UV CONVENTION (pinned by the TS-A native tests, see `plate-geometry.ts`): a
 // plate layer is a 2:1 tile holding BOTH caps. The front cap occupies u ∈ [0, 0.5]
@@ -18,7 +19,7 @@ import {
   PLATE_LAYER_BYTES,
   hexToRgb,
 } from './plate-surface';
-import { RING_FRACTIONS, PLATE_HEX, RING_HEX } from './elr-probe-config';
+import { RING_FRACTIONS, PLATE_HEX, RING_HEX } from './elr-range-config';
 
 /**
  * Ring boundaries as fractions of the plate RADIUS.
@@ -34,9 +35,10 @@ export const MIDDLE_EDGE = RING_FRACTIONS.middle;
 /**
  * Colour at a normalised radius `r` (0 at the aim point, 1 at the plate edge).
  *
- * WHITE / BLUE / WHITE — see `elr-probe-config.ts` for why a red centre was
- * specced and rejected. The short version: red and the ring blue are both ~0.3
- * luminance, so they differ only in hue, and hue is the first thing distance takes.
+ * WHITE / BLUE / WHITE. A red centre was specced and rejected: red and the ring
+ * blue are both ~0.3 luminance, so they differ only in hue, and hue is the first
+ * thing distance takes. (Recorded here because the config file that used to carry
+ * this note was the deleted probe's.)
  */
 export function ringColorAt(r: number): number {
   if (r <= CENTRE_EDGE) return PLATE_HEX;

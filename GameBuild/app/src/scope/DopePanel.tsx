@@ -249,6 +249,25 @@ export function DopePanel({ onOpenBook }: { onOpenBook?: () => void } = {}) {
               </tbody>
             </table>
           )}
+          {/* Transonic honesty note (owner, 2026-07-29). No station is gated —
+              shoot anything at any distance — so the caveat lives here instead.
+              The rows are already coloured by band; this says what the colour
+              MEANS, which is the part that was missing.
+
+              Wording is deliberate: it claims the numbers are less trustworthy,
+              NOT that groups open up. Real groups do, but this engine's scatter
+              comes only from MV SD, BC SD and rifle precision, none of which
+              know the bullet's Mach number — so promising wider groups would be
+              a second falsehood on top of the first. See `Wiki/_gaps.md` N4 and
+              `Design/feature-catalog.md` §A. */}
+          {!error && module && rows.some((r) => r.transonic && r.transonic !== 'supersonic') && (
+            <div style={{ marginTop: 4, color: '#e8c95a', fontSize: 9, lineHeight: 1.35 }}>
+              ⚠ <span style={{ color: '#e8c95a' }}>amber</span> = transonic ·{' '}
+              <span style={{ color: '#e88' }}>red</span> = subsonic. Drop still solves, but
+              past ~Mach 1.2 these numbers are the least trustworthy on the card — treat
+              them as indicative and true them by shooting.
+            </div>
+          )}
           <div style={{ marginTop: 4, color: '#9aa5b1', fontSize: 10 }}>
             {(() => {
               const z = formatDistanceForDisplay(zeroRangeM, unitsPrimary);

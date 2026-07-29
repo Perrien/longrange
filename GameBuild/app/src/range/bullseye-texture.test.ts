@@ -7,7 +7,7 @@ import {
   MIDDLE_EDGE,
 } from './bullseye-texture';
 import { PLATE_TILE_WIDTH, PLATE_TILE_HEIGHT, PLATE_LAYER_BYTES, hexToRgb } from './plate-surface';
-import { PLATE_HEX, RING_HEX } from './elr-probe-config';
+import { PLATE_HEX, RING_HEX } from './elr-range-config';
 
 const texelAt = (data: Uint8Array, x: number, y: number) => {
   const i = (y * PLATE_TILE_WIDTH + x) * 4;

@@ -4,7 +4,8 @@
 the hidden-truth model. Three separate research runs — **Prompt A (ammunition)**, **Prompt B
 (rifles)**, and **Prompt C (sighting system / scope mechanical error)** — because they draw on
 different source domains and each maps to a different part of the model. *A and B have been run
-and extracted (2026-07-16) — see `catalog-seed.json`; C is new.*
+and extracted (2026-07-16) — see `catalog-seed.json`; C is new. **D was added 2026-07-29 and is
+BLOCKING** — see below.*
 
 > **Lesson learned (applies to every run):** deliver results as **plain text with numbers
 > inline**, not an equation-editor doc. A and B first came as Google-Docs exports whose numbers
@@ -180,6 +181,77 @@ parallel or after.
 
 ---
 
+## Prompt D — Bullet geometry for the three magnum/ELR cartridges  ⛔ BLOCKING
+
+> **Why this run exists.** Build-spec task 12 (`../archive/elr-range-build-spec.md`, archived 2026-07-29) adds
+> `.300 WM`, `.338 LM` and `.50 BMG` to `GameBuild/app/src/game/catalog.data.json`. Every
+> *ballistic* number for those six loads already exists in
+> [`catalog-starting-values.md`](./catalog-starting-values.md) — what is missing is
+> **geometry**. The catalog's `RawCartridge` shape is inferred from the shipped `65cm` entry,
+> so `caliberDiameterM`, `referenceLengthM` and each load's `lengthM` are all REQUIRED, and
+> the task's own rule is *"do not invent numbers — if a value is missing, STOP and report."*
+> It was missing, and this is the report. **Task 12 cannot be completed until this run lands.**
+>
+> Partial recovery from the golden-vector fixture (`GameBuild/validation/loads.json`), which
+> is where the four shipped cartridges took their geometry: it carries `338lm-300-match`
+> (0.338″, 1.68″ long, 300 gr) and `50bmg-661-m33` (0.510″, 2.31″ long, 661 gr). The first
+> matches our .338 LM **match** weight and transfers cleanly; the second matches our .50 BMG
+> **bulk** row, not its 750 gr match row. **.300 WM is absent from the oracle entirely.**
+> So the run below only has to close what is genuinely open — but confirm all of it anyway,
+> since a fixture value agreeing with an independent source is worth more than either alone.
+
+> **Role & goal.** You are a ballistics research assistant. I need **bullet dimensional
+> data** — not ballistic performance, which I already have — for six specific factory loads,
+> to populate a simulation's projectile geometry.
+>
+> **Sourcing rules.** Prefer manufacturer technical drawings, reloading-manual bullet
+> dimension tables (Sierra, Hornady, Berger, Lapua), or independently measured values from
+> reloading forums where a caliper reading is quoted. **Cite every source. Flag any value
+> that is an estimate rather than measured**, and say what it was estimated from.
+>
+> **The six loads.**
+>
+> | cartridge | match load | bulk load |
+> |---|---|---|
+> | .300 Win Mag | Federal Premium Gold Medal **215 gr Berger** | Sellier & Bellot **180 gr SPCE** |
+> | .338 Lapua Mag | Lapua **300 gr Scenar** | Sellier & Bellot **250 gr FMJ-BT** |
+> | .50 BMG | Hornady Match **750 gr A-MAX** | PMC Bronze **660/661 gr FMJ (M33)** |
+>
+> **For each of the six, report:**
+> 1. **Bullet overall length** (inches and mm) — the projectile alone, NOT cartridge overall
+>    length. This is the number I actually need; be explicit that it is the bullet.
+> 2. **Bullet diameter** (inches and mm) as actually measured, not the nominal cartridge
+>    name — e.g. confirm whether the .338 LM bullet miking is 0.338″ exactly.
+> 3. Bullet **construction and profile** (secant/tangent ogive, boat-tail vs flat-base,
+>    polymer tip) — one line, as a sanity check that the length figure belongs to the right
+>    bullet.
+> 4. If the exact product is undocumented, give the **closest documented bullet of the same
+>    weight, caliber and construction**, name it explicitly, and flag the substitution.
+>
+> **Also report, once per cartridge:** the standard **bullet diameter** for .300 Win Mag,
+> .338 Lapua Mag and .50 BMG (I expect 0.308″ / 0.338″ / 0.510″ — confirm or correct).
+>
+> **Output format.** One row per load: product · bullet OAL (in / mm) · diameter (in / mm) ·
+> construction · source · confidence (measured / manufacturer-published / estimated).
+> Plain text with numbers inline — see the lesson-learned note at the top of this file.
+
+### Still an OWNER DECISION, not a research item: `effectiveRangeYd`
+
+The three new entries also need `effectiveRangeYd`, and **no research run can settle it.**
+It is a game-design number: the ELR plan's §13.6 (`../archive/elr-dope-range-plan.md`) records that the shipped values are already
+*"provisional and physically inconsistent"* (.223's 600 yd is short of its 865 yd supersonic
+limit; .308's 1000 is 4 % past its 961), and that the obvious physical rule — last supersonic
+station — is **wrong**, because it would cut .308 to 750 yd and delete the sport's canonical
+1000-yard proof shot.
+
+It drives the DOPE ladder's extent and the "beyond effective" divider, so it needs *a* value.
+Useful input a research run **could** supply, clearly labelled as convention rather than
+physics: what practitioners consider the practical effective range of each cartridge, and at
+what distance each is commonly competed. Treat that as evidence for the owner's call, not as
+the answer.
+
+---
+
 ## After the runs
 
 1. Save each report into `Documentation/` with a `⚠ SECONDARY` header noting provenance
@@ -190,3 +262,8 @@ parallel or after.
 3. Populate the 2.2 catalog: each field as **nominal + SD** per decision D3
    ([`../archive/increment-2.1-plan.md`](../archive/increment-2.1-plan.md)); close/annotate
    gaps **G5** and **G6** in [`../Wiki/_gaps.md`](../Wiki/_gaps.md).
+4. **After Prompt D specifically:** add the six bullet lengths + three caliber diameters to
+   [`catalog-starting-values.md`](./catalog-starting-values.md) (it currently carries no
+   geometry at all for any cartridge — that is the root gap, and the four shipped entries
+   only avoided it by borrowing from the oracle fixture). Then settle `effectiveRangeYd`
+   with the owner and complete **build-spec task 12**.

@@ -8,7 +8,13 @@
 // side-by-side is the OWNER CHECK.
 import { describe, it, expect, beforeAll } from 'vitest';
 import { loadBtkModule } from './wasm-module';
-import { createSteelReaction, type SteelReactionSpec } from './steel-target';
+import {
+  createSteelReaction,
+  chainOutwardOffsetFor,
+  CHAIN_OUTWARD_OFFSET_M,
+  CHAIN_ANCHOR_ANGLE_RAD,
+  type SteelReactionSpec,
+} from './steel-target';
 import type { BtkModule, Quat } from './types';
 
 // 6" round plate at 100 yd, hung ~0.55 m up from a 1.1 m beam (Range A-ish).
@@ -139,3 +145,39 @@ function reactAtOffset(offXFrac: number): { twist: number; signedY: number } {
     r.delete();
   }
 }
+
+describe('chainOutwardOffsetFor — small plates must not get crossed chains', () => {
+  const ax = (d: number) => (d / 2) * Math.sin(CHAIN_ANCHOR_ANGLE_RAD);
+
+  // THE BUG THIS FIXES (owner, on device 2026-07-29): the ELR 50 m gong swung
+  // side to side and never settled. Its chain attach sits 1.4 cm off centre, and
+  // the shared 5 cm inward nudge put the fixed anchor 3.6 cm out the OTHER side.
+  it('never lets the fixed anchor cross the plate centreline', () => {
+    for (const d of [0.05, 0.1, 0.15, 0.2, 0.25, 0.5, 1.0, 2.0]) {
+      const fixedX = ax(d) - chainOutwardOffsetFor(d);
+      expect(fixedX).toBeGreaterThan(0);
+    }
+  });
+
+  it('reproduces the crossing with the OLD shared constant, so a revert fails loudly', () => {
+    expect(ax(0.05) - CHAIN_OUTWARD_OFFSET_M).toBeLessThan(0);
+    expect(ax(0.15) - CHAIN_OUTWARD_OFFSET_M).toBeLessThan(0);
+  });
+
+  // Every plate that was already hanging is bigger than this, so no existing
+  // range changes behaviour.
+  it('is a no-op for plates big enough that the shared constant already worked', () => {
+    for (const d of [0.4, 0.5, 1.0, 2.0]) {
+      expect(chainOutwardOffsetFor(d)).toBeCloseTo(CHAIN_OUTWARD_OFFSET_M, 9);
+    }
+  });
+
+  it('scales with the plate below that, and is always positive', () => {
+    for (const d of [0.05, 0.1, 0.2]) {
+      const off = chainOutwardOffsetFor(d);
+      expect(off).toBeGreaterThan(0);
+      expect(off).toBeLessThan(CHAIN_OUTWARD_OFFSET_M);
+      expect(off).toBeCloseTo(ax(d) * 0.5, 9);
+    }
+  });
+});

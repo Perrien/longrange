@@ -1,13 +1,14 @@
-// Frame-time + depth-precision readout — step P1 of `Design/elr-probe-plan.md`.
+// Frame-time + depth-precision readout — originally step P1 of
+// `Design/archive/elr-probe-plan.md`, now the ELR Range's perf instrumentation.
 //
 // Pure model, no DOM/THREE, so the smoothing and the verdicts are unit-testable.
 // `PerfHud` in ScopeView renders whatever `sample()` returns.
 //
-// WHY THIS EXISTS. Two of the probe's questions are unanswerable without an
-// on-screen number:
+// WHY THIS EXISTS. Two questions about a multi-kilometre range are unanswerable
+// without an on-screen number:
 //
-//   1. **Frame time at 3 km.** The <16 ms gate has been checked with external
-//      tooling before now; the probe needs it visible while flying the scope
+//   1. **Frame time at long range.** The <16 ms gate has been checked with external
+//      tooling before now; this needs it visible while flying the scope
 //      around, because the interesting case is "does it dip when the far station
 //      is in view", which a spot measurement misses.
 //   2. **Depth bits.** The whole per-range `near = 10` decision assumes a 24-bit
@@ -103,14 +104,14 @@ export function depthResolutionM(z: number, nearM: number, farM: number, bits: n
 }
 
 /**
- * The tightest depth pair the probe scene contains (m) — a gong standing proud of
+ * The tightest depth pair a long-range scene contains (m) — a gong standing proud of
  * its backer panel. Everything else in the scene is far more separated.
  *
- * **This is a SCENE CONSTRUCTION REQUIREMENT, not just a diagnostic.** At the probe's
- * camera reach the depth buffer resolves ~0.054 m at 3000 m, so a gong set only
- * ~0.1 m off its panel is 1.85 buckets apart — inside the band where quantisation
- * can drop both surfaces into the same bucket and flicker. 0.15 m puts it at 2.8
- * buckets, comfortably clear.
+ * **This is a SCENE CONSTRUCTION REQUIREMENT, not just a diagnostic.** At the ELR
+ * Range's camera reach the depth buffer resolves ~0.054 m at 3000 m, so a gong set
+ * only ~0.1 m off its panel is 1.85 buckets apart — inside the band where
+ * quantisation can drop both surfaces into the same bucket and flicker. 0.15 m puts
+ * it at 2.8 buckets, comfortably clear.
  *
  * Found by the P1 tests rather than assumed: the first draft used 0.1 m and graded
  * `marginal`, which is the correct verdict for that geometry. The answer was to
@@ -182,7 +183,7 @@ export function readDepthBits(gl: WebGLRenderingContext | WebGL2RenderingContext
 //
 // THE PROBLEM WITH THE NUMBER ABOVE. `FrameTimer` measures wall time between
 // frames, and on a vsync-locked device that is pinned at ~16.7 ms no matter how
-// little work the frame did. The probe's empty 3 km scene reads 17 ms on the
+// little work the frame did. An empty 3 km scene read 17 ms on the
 // iPad — which is equally consistent with 8 ms of work and half a frame spare,
 // or 16.9 ms with none. Those imply completely different tree budgets for a 2 km
 // wooded range, and no amount of staring at a capped frame time separates them.
