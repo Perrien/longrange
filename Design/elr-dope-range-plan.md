@@ -1,444 +1,408 @@
-# ELR DOPE Range — 250-step ladder to 2000, shot from a bluff
+# ELR DOPE Range — a wooded hillside, 50 m to 2000 m, two firing points
 
-Status: **UNVALIDATED — do not build from this yet.**
-Date: 2026-07-27 · banner added 2026-07-27 · **cap revised 3000 → 2000 on 2026-07-27**
+Status: **READY TO BUILD.** Every load-bearing assumption in this document has been
+measured on device or computed against the engine. Where something is still a guess, it
+says so.
 
-> ### Revision — a wooded hillside, with target offsets CHOSEN BY THE FOREST (owner, 2026-07-28)
+Date: 2026-07-28. Supersedes the 2026-07-27 draft, archived at
+[`archive/elr-dope-range-plan-2026-07-27.md`](./archive/elr-dope-range-plan-2026-07-27.md).
+
+---
+
+## 0. Why this is a rewrite rather than another revision
+
+The 2026-07-27 draft was written before anything had been on a device. It proposed a
+**12 m firing bluff**, a **±1.5° fan of lanes** across flat ground, and a **two-pass
+depth split** to make 3 km renderable. A throwaway probe was then built to test those
+ideas (archived at [`archive/elr-probe-plan.md`](./archive/elr-probe-plan.md)), and it
+retired all three.
+
+By the end, everything true about the range lived in five stacked revision banners
+sitting on top of a body that contradicted them. That is a document that misleads
+whoever builds from it. This rewrite folds the banners into the body and throws the
+contradictions away.
+
+**What survived from the old draft:** the effective-range arithmetic (§11), the come-up
+and wind tables (§5, §6), the gong-sizing rule (§4.1), the target-colour analysis
+(§4.2), the bullseye rings (§4.3), and the scope-travel lesson (§5) — all of which were
+arithmetic that a device could not overturn, and did not.
+
+**What the probe killed:** the bluff, the fan, the depth split, the "3000 m" cap, and
+the assumption that a cleared lane was necessary.
+
+---
+
+## 1. What this range is
+
+A **wooded hillside** rising away from the shooter, carrying two ladders of steel gongs
+shot from two firing points. It is the game's DOPE range: you come here to build a
+come-up table you will use everywhere else, so the distances are known, marked, and
+stable.
+
+### 1.1 The two ladders
+
+| | firing point | steps | stations | cartridges |
+|---|---|---|---|---|
+| **Rimfire ladder** | low line, ground level | **50 m** to 500 | 10 | .22 LR, .22 WMR |
+| **Centrefire ladder** | high line, elevated | **250 m** to 2000 | 8 | .223 through .50 BMG |
+
+**250 m is a shared station** — the far end of the rimfire ladder and the near end of
+the centrefire one. Shoot it with both and §1.3's scaling stops being a table.
+
+### 1.2 Why the cap is 2000 m — trust, not reach
+
+The .50 BMG stays supersonic to **2267 m / 2479 yd** (§11), so reach is not the limit.
+Two other limits bind first, and they nearly coincide:
+
+- the golden-vector oracle sampled the engine only to **1800 m**;
+- the .50 goes **transonic at 1875 m**, past which a single G7 BC describes drag poorly
+  (`Wiki/ballistic-coefficient.md`: below ~1500 fps even banded BCs struggle).
+
+Building past both would put the least trustworthy numbers in the game at the range's
+headline station.
+
+> **The oracle limit has since been removed.** Coverage now runs to **2000 m** for the
+> 6.5 CM, .223, .308, .338 LM and .50 BMG, and to **500 m** for the .22 LR. 660 rows,
+> 36 cases, engine matches pristine BTK at **0.000e+0**. See
+> `GameBuild/validation/ORACLE_VERSION`. **Every station on this range is now inside
+> validated coverage** — which is the whole reason the cap is where it is.
+
+2000 m is 2187 yd — comfortably ELR, a mile being 1760 yd — and it works in both unit
+systems with no special case: **250→2000 is 8 stations in either unit**, and 2000 yd =
+1828.8 m sits inside metric corridor #8. That preserves the invariant inherited from the
+Wooded Zero Range: the world is built from the metric station set and the imperial
+stations sit short on the same shared azimuths.
+
+### 1.3 The .22 is a 4:1 scale model, not a beginner mode
+
+Computed from the engine (ISA, 10 mph full-value crosswind; .22 zeroed 50 m, 6.5 CM
+zeroed 100 m):
+
+| | come-up | wind hold |
+|---|---|---|
+| **.22 LR @ 250 m** | **11.89 MIL** | **2.32 MIL** |
+| 6.5 CM @ 1000 m | 10.17 MIL | 2.15 MIL |
+| **.22 LR @ 300 m** | **15.75 MIL** | **2.87 MIL** |
+| 6.5 CM @ 1250 m | 15.27 MIL | 3.05 MIL |
+
+The firing solution is *the same angular problem* at a quarter of the distance. This is
+why rimfire trainers exist in reality, and it is now quantified from our own engine
+rather than asserted.
+
+**Consequence for the teaching ladder: the rimfire line comes BEFORE the centrefire
+one**, not beside it as an easy option. It teaches the identical skill in 500 m of
+ground, with no recoil, no barrel life, and — once an effort model exists — no cost.
+
+---
+
+## 2. Terrain
+
+### 2.1 A convex rising slope, and why linear does not work
+
+Ground height rises with downrange distance on a **convex** profile (`slopeGroundY` in
+`GameBuild/app/src/range/elr-probe-config.ts` is the reference implementation).
+
+Convexity is load-bearing, not aesthetic. A **linear** slope gives roughly **0.041° of
+angular separation between stations no matter how high the hill goes**, because every
+target on a straight line through space subtends nearly the same elevation angle from a
+fixed eye. Measured: raising a linear hill from 50 m to 300 m of rise leaves the
+separation unchanged — it is a ratio, not a height. A convex profile breaks that
+degeneracy and delivers **+0.532°** of clearance margin on a single straight lane.
+
+That one property is what retired the ±1.5° fan of the old draft. The fan existed
+solely to buy angular separation; the slope buys it for free, on one lane, and looks
+like terrain instead of a survey.
+
+### 2.2 The forest
+
+Trees everywhere — no cleared lane, no cut swaths. Owner's call after seeing 4000 trees
+on device: *"there's still plenty of open ground left for targets without carving out
+swaths."*
+
+Renderer is the Wooded Zero Range's existing `range/environment/trees.ts` — per-species
+shape variants, independent height/breadth scaling, per-tree lean, baked canopy shading,
+wind sway, ~8 draw calls. **Reused wholesale**; no new tree technology.
+
+The only exclusion is a **30 m radius around each firing point**. A canopy through the
+camera dominates fill rate and tells you nothing.
+
+> **The convex slope is what makes a wooded range possible at all.** Solving both probe
+> variants against the same 4000-tree field:
 >
-> The range is no longer a cleared lane. Owner's observation from the tree probe: at
-> 4000 trees "there's still plenty of open ground left for targets without carving out
-> swaths." Targets sit in natural ground, and the far stations are fired **over** a
-> treeline. That answers the earlier lateral-offset question in a better way than any
-> of the three options on the table: **don't author the offsets — search for them.**
->
-> A DOPE range's *distances* are fixed, so the only free parameter is how far left or
-> right a station sits. `GameBuild/app/src/range/sight-clearance.ts` (built 2026-07-28,
-> 23 tests) picks, for each station, the offset at which the existing forest most nearly
-> leaves the target in the clear. The result is irregular, tucked-into-the-terrain
-> placement that produces natural left-right traverse for free, and it costs almost no
-> trees. The test is a **cone**, not a ray — the plate's whole shadow volume must be
-> clear, or a trunk covering all but the centre pixel counts as "visible" — and it
-> checks **height as well as plan position**, because on a rising slope a tree 800 m out
-> on low ground sits under the sight line and blocks nothing.
->
-> **Measured** (4000 trees over 1200 × 2100 m, no cleared lane, 8 forest seeds, offsets
-> capped in ANGLE — the same constant-angular rule the 1 MIL gongs already follow):
->
-> | cap | metres at 250 m / 2000 m | mean trees to cut (all 8 stations) | traverse at 20× |
-> |---|---|---|---|
-> | ±10 mrad | 2.5 / 20 m | 9.5 | 1.0 fields |
-> | **±20 mrad** | **5 / 40 m** | **6.5** | **1.9 fields** |
-> | ±30 mrad | 7.5 / 60 m | 5.5 | 2.9 fields |
-> | ±45 mrad | 11 / 90 m | 4.4 | 4.3 fields |
->
-> **±20–30 mrad is the knee.** Past it, extra freedom buys about one tree and costs a
-> field of view of traverse — targets become tiring to find rather than interesting.
->
-> **The honest number is 4–10 trees, not zero.** A first single-seed run reported zero
-> culls at every station and was simply lucky; across multiple seeds the search gets
-> most of the way and a handful of individual trees still need removing. That is still
-> the owner's ask exactly — **individual trees, never a corridor**.
->
-> Offsets must be solved as `z = -√(d² - offset²)`, not applied along a fixed z, or a
-> station slides off the distance that is the entire point of it.
->
-> **The convex slope is what makes a WOODED range possible at all — a second, stronger
-> argument for it than "it looks better".** Solving both probe variants against the same
-> 4000-tree field, with trees everywhere and no cleared lane:
->
-> | station | Probe A (flat) occluders | Probe B (convex slope) occluders |
+> | station | flat ground | convex slope |
 > |---|---|---|
-> | 500 m | 1 | 1 |
-> | 1000 m | 4 | **0** |
+> | 1000 m | 4 trees in the way | **0** |
 > | 1500 m | 5 | **0** |
 > | 2000 m | 10 | **0** |
 > | 2500 m | 12 | **0** |
 > | 3000 m | 15 | **0** |
 >
-> On flat ground the sight line is level, so *every* tree between shooter and target
-> reaches it and the far stations need a dozen trees cut each. On the rising convex
-> hillside the sight line climbs away from the intervening canopy, and the searched
-> offsets come out **completely clear at every station and every tree density** — one
-> occluder in the whole range, at 500 m. The terrain is doing the clearing that a
-> corridor would otherwise have to do.
->
-> Solved offsets on Probe B, for reference: −7.9, +10.0, −1.3, −48.3, −6.2, +39.9 m.
-> Irregular, modest, and nobody authored them.
+> A level sight line meets every tree between shooter and target; a rising one climbs
+> away from the canopy. Owner on device: *"completely unusable on flat but looks great
+> on convex."* The terrain does the clearing a corridor would otherwise have to do.
 
-> ### Revision — the bluff and the fan are retired; the range sits on a convex slope (owner, 2026-07-28)
->
-> **The probe answered this on device.** Probe B's rising convex hillside beat the flat
-> deck decisively (owner: *"opens up so many options"*), so the terrain form below —
-> a **12 m bluff** firing across flat ground on a **±1.5° fan** — is superseded. Both of
-> those existed to solve one problem: getting enough *angular* separation between stations
-> that the near targets do not occlude the far ones. A convex slope solves it on its own,
-> on a **single straight lane**, which is more natural to look at and better to shoot.
-> Rebuild §3's geometry on `elr-probe-config.ts`'s `slopeGroundY` profile rather than on
-> the bluff-plus-fan arithmetic. Occlusion margins must be re-derived for 250 m steps to
-> 2000 (the probe's +0.532° margin is for 500 m steps to 3000).
->
-> Also settled by the probe, and relevant here: **time of flight is fine** as-is (no
-> compression mechanic), the iPad renders 3 km at **60 fps** with `near = 10 m` and a
-> **24-bit** depth buffer (so **§6.1's two-pass depth split is unnecessary** — delete it),
-> and trace/impact/ping all read at 2000 m. See [`archive/elr-probe-plan.md`](./archive/elr-probe-plan.md) §5.0.
+### 2.3 Two firing points
 
-> ### Revision — the ladder now stops at 2000 (owner, 2026-07-27)
->
-> Two independent limits nearly coincide, and neither was noticed when this doc was
-> written: the golden-vector oracle **stops at 1800 m**, and the .50 BMG goes transonic
-> at **1875 m**. Past roughly 1800 m the engine is both unvalidated *and* outside the
-> regime a single G7 BC describes well (`Wiki/ballistic-coefficient.md`: below ~1500 fps
-> even banded BCs struggle; below ~1100 fps drag can spike). At 3000 m the .50 was at
-> **Mach 0.86** — the least trustworthy numbers in the game sitting at the range's
-> headline station.
->
-> **2000 m / 2000 yd**: 8 stations, .50 at Mach 1.13, 2187 yd = 1.24 miles — comfortably
-> ELR (a mile is 1760 yd). Longest shot drops from 18.3 s to **9.4 s**, which materially
-> de-risks the "is this tedious" question. The world shortens from 3100 m to ~2100 m.
->
-> **The 1800 m oracle limit is not a property of the engine** — it is only what the
-> validation matrix happens to sample. `GameBuild/validation/loads.json` carries a
-> per-load `ranges: {maxRangeM, stepM}` and pristine BTK is present locally, so extending
-> coverage to 2000 m is a data edit plus `node run.mjs --generate`. Done that way the cap
-> is **fully validated**, not "200 m past coverage". Formally an owner-decision-logged
-> operation (harness header), but adding new loads/ranges does not disturb existing rows.
->
-> > **✅ DONE 2026-07-28.** Coverage now runs to **2000 m** for the 6.5 CM, .223, .308,
-> > .338 LM and .50 BMG (all five reach it in all three atmospheres). 402 pre-existing
-> > rows came back **bit-identical**, 234 rows added, 636 total across 36 cases, and the
-> > owned engine matches pristine at **worst rel diff 0.000e+0**. The .22 LR stays at
-> > 300 m — it cannot reach 2000 and, worse, fails *raggedly*: the harness walls flight
-> > at 15 s and silently drops unreachable rows, so its coverage would have varied by
-> > atmosphere without erroring. Logged in `GameBuild/validation/ORACLE_VERSION`.
-> > **The 2000 m headline station is now inside validated coverage.**
->
-> **The travel wall softens, and improves.** 2000 m needs 23.02 MIL; a flat base gives 20.
-> So you **hold the remaining 3 MIL** — no canted base needed (owner, 2026-07-27). Since
-> the reticle is FFP, holdover capacity scales with zoom: ~6 MIL below centre at 35×, ~10
-> at 20×, ~21 at 10×, so 3 MIL is available at any usable magnification. Holdover is a
-> *technique*; a canted base is a *purchase*. The lesson survives in the better form.
->
-> Sections below still carrying 3000-based figures (§4.1 come-up, §4.3 wind) remain
-> correct **as reference** — they simply extend past the cap, which §5.5's beyond-effective
-> marking already handles. §1.3, §3.1, §3.2 and §8 are updated.
+| line | eye height | serves |
+|---|---|---|
+| **low** | ~1.7 m, ground level | rimfire ladder, 50–500 m |
+| **high** | elevated on the slope's shoulder | centrefire ladder, 250–2000 m |
 
-> ## ⚠ Read this first
->
-> **The probe has been built and has reported (2026-07-28). This document is next —
-> but it needs a rewrite, not a read.**
->
-> This document was written before anything had been on a device. Roughly half of it is
-> settled and half is educated guesswork, and the two are not visually distinguishable in
-> the prose below. Owner call, 2026-07-27: build a throwaway 3 km probe first, learn what
-> actually works, then rewrite this. That probe is now **done and archived** at
-> [`archive/elr-probe-plan.md`](./archive/elr-probe-plan.md) — its findings are in **§5.0**
-> of that doc, and the two banners above carry the consequences.
->
-> **What the probe changed in the lists below:** §2.1's 12 m bluff and §3.1–3.2's fan are
-> **retired** (convex slope replaces both); §6.1's depth-precision derivation is **moot**
-> (24-bit on device, `near = 10 m` suffices); §5 gong/frame sizing and §6.3 fog density are
-> **confirmed as built** (1 MIL gongs, white-on-dark, `FogExp2` at 1.7e−4). What remains
-> guesswork is genuinely still guesswork.
->
-> **Settled — arithmetic, a device cannot overturn it:**
-> §1 effective ranges · §2.2 inclination error · §3.1–3.2 fan geometry and occlusion ·
-> §4.1 come-up and scope-travel tables · §4.3 wind drift · §6.1 depth-precision derivation ·
-> §11 ballistic figures. Reuse these freely; they are why this document still exists.
->
-> **Guesswork — every one of these needs the probe:**
-> §2.1 the 12 m bluff and its grade · §5 gong and frame sizing · §6.2 terrain mesh split ·
-> §6.3 fog density · §6.4 wind marker placement · §7 the desert biome · §9 the entire
-> build-stage order.
->
-> **Missing entirely — the largest risk, found after this was written:** the shot loop at
-> ELR timescales. A 3000 m shot is ~18 s from trigger to ping (9.4 s flight + 8.8 s sound).
-> `BulletTrace.ts` draws a 0.15 s trail behind an 8 cm sprite; `audio-model.ts` is tuned to
-> 500 yd by its own comment. The tracer will likely be invisible and the ping inaudible, and
-> whether an 18-second shot is tense or tedious is unknowable without firing one. See
-> [`archive/elr-probe-plan.md`](./archive/elr-probe-plan.md) §1. Nothing in the build stages below accounts for this.
+The conflict this resolves would have been invisible until it was built: from the
+elevated eye, a **50 m target sits about 12° below you**. That is a strange rimfire
+stance, and it drags a real cosine error onto exactly the stations meant to teach a
+clean drop. Two firing points cost one extra spawn position and no extra terrain.
 
-Owner decisions this doc records (2026-07-27): total distance **2000 m / 2000 yd**
-(revised down from 3000 — see the banner); stations **every 250**, not every 500;
-**the scope's elevation-travel ceiling is designed in as the lesson**, met by holdover
-rather than by a gear gate.
-
-Supersedes `Design/feature-catalog.md` §E "Range C — ELR (500/1000/1500/2000/2500)".
-Sits alongside `Design/archive/mil-zero-range-plan.md` (the Wooded Zero Range), whose
-**corridor / knoll / dual-unit-superset model this range reuses and scales by 15×**, and
-alongside the planned DOPE range of `Design/archive/increment-2.4-plan.md` §2.4c, which
-this range is the *sibling* of rather than a replacement for (§1.4).
+**The clearance solver (§3) runs per firing point** — a sight line is defined by the eye
+it starts from, so the two ladders solve independently even though they share a forest.
 
 ---
 
-## 1. What this range is, and why it is this long
+## 3. Station placement — solved, not authored
 
-### 1.1 The question that sized it
+Implemented in `GameBuild/app/src/range/sight-clearance.ts` (built and tested
+2026-07-28; wired into the probe and confirmed on device).
 
-*"What is the most powerful round we'll likely have, and what is its effective range?"*
+### 3.1 The clearance test
 
-The cartridge ladder is not in the Wiki — the Wiki is topic articles. It lives in
-`Design/bullet-catalog/` (7 cartridges, 4 shipped). The top of it is the **.50 BMG**,
-Hornady Match 750 gr A-MAX: true G7 **0.581**, measured MV **2720 fps @ 30″**.
+**A cone, not a ray.** Sighting a ray from eye to plate centre would happily accept a
+tree covering all but the middle pixel. What must stay clear is the plate's whole shadow
+volume: the cone from the eye out to the plate disc, widening linearly with distance.
 
-Flown through the standard G7 drag function at ICAO sea level, from a 100 m zero:
+**Height as well as plan position.** On a rising slope a tree 800 m out standing on low
+ground sits *under* the sight line and blocks nothing. Testing plan distance alone would
+cull it for free. A tree occludes only if all three hold: it stands between eye and
+target, its canopy overlaps the cone in plan, **and** its crown reaches up into the cone
+at that point.
 
-| threshold | metres | yards |
-|---|---|---|
-| transonic onset (**Mach 1.2** — where `C_D` starts climbing and dispersion opens) | 1875 | 2050 |
-| supersonic limit (**Mach 1.0**) | **2267** | **2479** |
-| fully subsonic (Mach 0.9) | 2708 | 2965 |
+**Margin.** `DEFAULT_MARGIN_M = 2.0` beyond the plate edge. A plate whose edge grazes a
+canopy is technically visible and practically unshootable — you cannot call a miss you
+cannot see, and splash outside the plate is most of the feedback at long range.
 
-So the honest ceiling of the most powerful round in the game is **≈2500 yd / 2270 m**.
-The archived `Range C` spec (500/1000/1500/2000/**2500** yd) landed on the same number
-independently, which is a good sign that both are right.
+> ⚠️ **Fix before the rimfire ladder is built.** 2.0 m is a long-range number. At 50 m a
+> 1 MIL gong is **5 cm**, so a flat 2 m margin demands a corridor forty times the plate.
+> It still solves, but the rule means something different down there. Make the margin
+> scale with the plate (≈2× plate radius) with a floor.
 
-**The range is built to 2000**, which sits below that ceiling on purpose: it is where the
-engine is validated and where the .50 is still above Mach 1. The original plan ran to 3000
-to put a station past the wall; the banner explains why that was traded away.
+### 3.2 The offset search — the trees keep their ground, the targets move
 
-**Model validation.** The same integrator was checked at 1000 yd against published
-factory data before any of these numbers were used: .50 BMG 750 A-MAX @2820 → **2069 fps**
-(published ≈2050–2100); 6.5 CM 140 ELD-M @2700 → **1424 fps** (published ≈1400–1450);
-.308 175 SMK @2600 → **1088 fps** (published ≈1130, ~4 % conservative). Every figure in
-this document is an output of that run, not an estimate.
+The obvious approach is to place targets and cut whatever is in the way. That makes a
+range look surveyed and costs a corridor. Invert it: **distances are fixed** (they are
+the entire point of a DOPE range), so the only free parameter is lateral position.
+`chooseOffset` picks, per station, the offset at which the existing forest most nearly
+leaves the target clear.
 
-### 1.2 The whole ladder
+What comes out is irregular, tucked-into-the-terrain placement, and the left-right
+traverse arrives as a side effect rather than as a pattern anyone authored.
 
-Supersonic (Mach 1.0) limit per catalog load, from its measured MV and true BC:
+Two implementation details that are easy to get wrong:
 
-| load | M1.2 (m / yd) | **M1.0 (m / yd)** | last 250-step ≥ M1.0 (m / yd) | shipped `effectiveRangeYd` |
-|---|---|---|---|---|
-| .22 LR Center-X | *subsonic at the muzzle* | — | — | 200 |
-| .223 77 gr TMK | 652 / 713 | 791 / 865 | 750 / 750 | 600 |
-| .308 175 gr SMK | 716 / 783 | 879 / 961 | 750 / 750 | 1000 |
-| 6.5 CM 140 gr ELD-M | 994 / 1087 | 1203 / 1316 | 1000 / 1250 | 1200 |
-| .300 WM 215 gr Berger | 1173 / 1282 | 1411 / 1543 | 1250 / 1500 | — |
-| .338 LM 300 gr Scenar | 1233 / 1348 | 1496 / 1636 | 1250 / 1500 | — |
-| **.50 BMG 750 gr A-MAX** | 1875 / 2050 | **2267 / 2479** | 2250 / 2250 | — |
+- Offsets solve `z = -√(d² - offset²)`, **not** applied along a fixed z — otherwise a
+  station slides off the distance it exists to teach.
+- Ranking is **fewest occluders first, then widest clearance**. Those disagree: a
+  position with one distant trunk clipping the cone edge can score a better margin than
+  a genuinely open one. Occluder count is what the player experiences.
 
-Two things fall out of this table, and they are §12 open items, not decisions taken here:
+**The cap is angular — `OFFSET_CAP_MRAD = 25`** — for the same reason the gongs are
+1 MIL. A fixed metric offset is a huge swing up close and an imperceptible nudge far
+out, which is backwards: the far stations are where the shooting is interesting. 25 mrad
+is 6 m at 250 m and 50 m at 2000 m.
 
-1. The shipped `effectiveRangeYd` values (D7, provisional design-set) have **no consistent
-   physical rule behind them** — .223's 600 is well short of its 865 yd supersonic limit
-   while .308's 1000 is 4 % *past* its 961. They were set by feel and labelled provisional,
-   which was the right call at the time; this table is the first evidence available to
-   replace them.
-2. Applying a clean rule (*last 250-step station still supersonic*) would **cut .308 from
-   1000 yd to 750 yd** — deleting the single most iconic shot in the sport. That the .308
-   is transonic at 1000 yd is precisely *why* 1000 yd with a .308 is the classic proof
-   shot. A rule that erases it is a wrong rule.
+25 sits on a measured knee (4000 trees, 8 forest seeds, trees everywhere):
 
-**This range does not need that question answered.** It shows every station out to 2000 and
-marks the ones past the active cartridge's effective range — see §1.4 and §5.5.
-
-### 1.3 Why the ladder is 2000 m / 2000 yd, and why both units match
-
-The cap is set by **trust**, not by reach — see the banner. What matters structurally is
-that 2000 works in both unit systems with no special case.
-
-The invariant inherited from the Wooded Zero Range (`mil-zero-range-plan.md` §8): **the
-world — terrain, corridors, vegetation — is always built from the METRIC station set, and
-the imperial stations sit short on the same shared lane azimuths**, because a yard is
-shorter than a metre at every nominal distance. That requires equal station counts.
-
-At a 250 step, **250→2000 is 8 stations in either unit**, and 2000 yd = **1828.8 m**, which
-sits comfortably inside metric corridor #8. Shared azimuths, one world, no special case.
-(The earlier 3000 plan needed the metric ladder pulled from 2750 to 3000 precisely to get
-this property; at 2000 it falls out for free.)
-
-| imperial station | sits at | metric corridor reach | inside |
+| cap | m at 250 / 2000 | mean trees to cut, all stations | traverse at 20× |
 |---|---|---|---|
-| 250 yd | 228.2 m | 274.7 m | yes |
-| 1000 yd | 914.2 m | 1024.9 m | yes |
-| 1750 yd | 1600.1 m | 1775.0 m | yes |
-| 2000 yd | 1828.8 m | 2025.0 m | yes |
+| ±10 mrad | 2.5 / 20 | 9.5 | 1.0 fields |
+| **±25 mrad** | **6 / 50** | **~6** | **~2.4 fields** |
+| ±45 mrad | 11 / 90 | 4.4 | 4.3 fields |
 
-### 1.4 Relationship to the planned DOPE range (2.4c)
+Past the knee, each extra field of view of traverse buys about one tree, and targets
+stop being interesting to find and start being tiring.
 
-They are siblings with different jobs, and both should exist:
+### 3.3 Two things the 18-station layout forced, that 6 stations hid
 
-| | DOPE range (2.4c) | **ELR range (this doc)** |
-|---|---|---|
-| purpose | *training* — build the card | *proving* — find where the card, the gun and the optic run out |
-| ladder | centuries, **capped** at effective range | **250 steps to 2000, uncapped by cartridge**; past-effective stations flagged |
-| cartridges | all, incl. rimfire's fine 25–200 ladder | **centrefire only** (a .22 has no business at 250 m) |
-| gating | none | none — but most stations are unreachable without gear |
-| terrain | flat bay, full environment dressing | **elevated bluff over a 3 km deck** |
+Verified 2026-07-28 by computing the full 10-low + 8-high ladder against 8 forest seeds
+on this range's constants — **before** any of it was built. Both problems were invisible
+on the probe's 6 stations at 500 m spacing.
 
-The `beyondEffective` flag already exists on `ComeUpStation` in `game/dope-book.ts`, which
-is exactly the mechanism this range needs — see §5.5. Nothing about this range requires
-changing `ladderStationsM`, which stays 2.4c's.
+**Frames occlude frames.** The solver tests trees; it does not test other targets. At
+50 m spacing from a low eye, near frames blocked far gongs on **every seed tested**.
+Fix: solve **near to far**, adding each placed frame to the occluder set for the
+stations behind it. This is the same occlusion problem the retired fan existed to
+solve — it comes back when the ladder gets dense.
 
----
+**Zero culling is not achievable, and the reason is the terrain.** The convex profile
+only buys clearance at *long* range: `groundY(500)` is **7.9 m**, so the first 500 m of
+the hill is nearly flat, and the low line inherits exactly the flat-ground problem the
+high line escapes. At a 25 mrad cap the low line left a mean of 7.2 stations blocked.
 
-## 2. The firing bluff and the deck
+**Resolution — search, then cull.** Raise the cap to **35 mrad**, solve near-to-far with
+frames as occluders, then remove the few trees still standing in a cone. Measured across
+8 seeds: **mean 2.6 trees culled, worst 5, out of 4000** (0.07 %). That is the design
+intent stated exactly — individual trees, never a swath.
 
-### 2.1 Why elevation stops being optional at 3 km
+> This corrects an over-claim. §3.4 and an earlier draft of the build spec asserted
+> *zero* occluders at every station, generalising from the probe's six long-range
+> stations on a steeper slope. It does not hold for a dense near ladder from a low eye.
 
-The Wooded Zero Range gets away with a 1.5 m knoll because its longest sight line is 200 m.
-At 3000 m the arithmetic inverts. With the eye 0.70 m above the target centre (that range's
-geometry), the sight line to the 3000 m gong is **1.35 m above the ground at mid-range** —
-so the entire 3 km would have to be within about a metre of dead flat or the far half of the
-range is invisible. That is both unbuildable-looking and unshootable.
+### 3.4 Measured outcome (probe, 6 stations)
 
-Raise the firing point instead. **A 12 m bluff** with a **12 % forward face** that reaches
-the deck at r = 100 m:
+On the probe's convex slope at 4000 trees, with 6 stations at 500 m spacing from the
+elevated eye, the searched offsets came out **clear at every station and every tree
+density** — one occluder in the whole range, at the nearest station. §3.3 explains why
+this does not generalise to the real 18-station ladder. Solved offsets from the probe, for reference: −7.9, +10.0, −1.3, −48.3, −6.2,
++39.9 m. Irregular, modest, and nobody authored them.
 
-| parameter | value | why |
-|---|---|---|
-| bluff crest above the deck | **12.0 m** | enough that every sight line clears the deck by metres, low enough that near-station incline stays negligible |
-| prone eye above the ground it lies on | 0.20 m | → eye at **y = 13.70 m** |
-| gong centre above the deck | 1.00 m | matches `TARGET_CENTER_Y_M` on every other range |
-| Δy (eye − gong centre) | **12.70 m** | |
-| forward face grade | **12 %** (6.84°) | must exceed the steepest sight line, 2.91° to the 250 m station |
-| face meets the deck at | r = 100 m | |
-| deck | **dead level** from r = 100 m to r = 3025 m | |
+The rimfire ladder likewise solves to **zero occluders at every station 25–250 m** — the
+near sight cone is short and narrow, so few trees fall inside it. **No cut strip is
+needed for rimfire.**
 
-The binding constraint is the same one the Wooded Zero Range documents: **the ground must
-fall away faster than the steepest sight line, from the muzzle onward.** It does, with a
-margin that grows monotonically — and the margin here is enormous compared to the zero
-range's 20 cm:
+> **Honesty note.** A first single-seed run reported zero culls everywhere and was
+> reported internally as such. Across 8–20 seeds the real figure is 4–10 trees across
+> the whole range. Still individual trees rather than a corridor — but single-seed
+> results on randomised geometry are anecdotes, not measurements.
 
-| r (m) | 0 | 10 | 25 | 50 | 75 | 100 | 150 |
-|---|---|---|---|---|---|---|---|
-| corridor floor (m) | 12.00 | 10.80 | 9.00 | 6.00 | 3.00 | 0.00 | 0.00 |
-| 250 m sight line (m) | 13.70 | 13.19 | 12.43 | 11.16 | 9.89 | 8.61 | 6.07 |
-| **clearance (m)** | **1.70** | 2.39 | 3.43 | 5.16 | 6.89 | 8.61 | 6.07 |
+### 3.5 The layout is deterministic, and the seed is the save file
 
-Once past the face, a level deck makes clearance **automatic for every station**: the sight
-line to any target ends at +1.00 m and descends monotonically to it, so it is above the deck
-everywhere along the way. No per-station proof is needed — the geometry does it. Clearance
-for the 3000 m station never drops below 9.47 m until the last kilometre.
+The forest is generated from a **hard-coded seed** through `mulberry32`, and
+`withSolvedOffsets` is a pure function of the resulting field. Same trees and same
+station offsets on every entry, every device, every reinstall, with nothing persisted.
 
-> **Gotcha this avoids, inherited verbatim.** A *gentle* bluff (a wide Gaussian, or a flat
-> crest with a long smoothstep shoulder) grazes the near sight line a few metres in front of
-> the muzzle. `mil-zero-range-plan.md` §2.2 paid for this lesson once. The fix is a **short,
-> steep forward face**, not a taller hill. 12 % over 100 m is that face.
+> **Reproducible is not the same as pinned.** Any change to the generator — scale range,
+> conifer fraction, ground extent, or even the *order* of `rand()` calls — reshuffles
+> the forest and moves the solved offsets with it. Low stakes for DOPE, since a row is
+> keyed to distance and lateral offset does not affect it, but a range the player has
+> learned would quietly rearrange. **If the range should be permanent, bake the solved
+> offsets into a data file rather than recomputing them.** Decide this before ship.
 
-### 2.2 Is the elevation ballistically free? Yes, again — but check it, don't assume it
-
-The zero-range closed form is `error ≈ g·H²/(4·v₀²)`, *independent of target distance*. At
-H = 12 m and v₀ = 829 m/s (.50 BMG): **0.5 mm**. Over 3000 m that is 0.0002 mrad — six
-orders of magnitude below one turret click.
-
-The other term is the cosine factor on the incline itself. Depression angles:
-
-| station (m) | 250 | 500 | 1000 | 1500 | 2000 | 2500 | 3000 |
-|---|---|---|---|---|---|---|---|
-| depression | −2.91° | −1.46° | −0.73° | −0.49° | −0.36° | −0.29° | −0.24° |
-| `1 − cos θ` | 1.3e−3 | 3.2e−4 | 8.1e−5 | 3.6e−5 | 2.0e−5 | 1.3e−5 | 8.8e−6 |
-
-Worst case is the **250 m** station, where the incline is steepest — and where the drop is
-smallest. 0.13 % of a 0.86 MIL come-up is **0.001 MIL**. Free.
-
-So `firing-solution.ts` stays flat-fire and needs no change, exactly as
-`mil-zero-range-plan.md` §6.4 concluded for its own geometry. **Log this second instance in
-`Wiki/_gaps.md` against the existing entry** — two ranges now depend on the simplification,
-which raises the cost of the future range that finally breaks it (real relief, targets tens
-of metres up- or downhill).
-
-### 2.3 What the elevation buys visually
-
-From 13.7 m the deck at 3000 m is depressed 0.24° — you see the *surface* of the deck
-receding, not an edge-on line. That is the difference between "a 3 km range" and "a grey
-band". It is also, per §3.2, what makes the near stations separate from the far ones without
-a wide fan.
+**Cost:** generating 4000 trees plus solving 6 stations is ~107 ms desktop, ~320 ms
+iPad, paid once at range entry. (It was 470 ms / 1.4 s until `prepareOccluders` hoisted
+the bounds derivation out of the candidate loops.) The full 8-station centrefire ladder
+plus a 10-station rimfire ladder will run roughly ~140 ms desktop / ~420 ms iPad. If
+that ever matters, a broad-phase corridor cull takes it further.
 
 ---
 
-## 3. Station layout — 12 lanes in a 3° fan
+## 4. Targets
 
-### 3.1 The fan
+### 4.1 Gongs — 1 MIL / 3 MOA
 
-Azimuth from downrange (−z), positive right. Eight stations spread evenly across
-**±1.5°**, in a monotonic left-to-right staircase receding into the distance (the Wooded
-Zero Range's read, at 10× the depth). Station distance is **line-of-sight range**, and the
-ground run is solved from it: `groundRun = √(los² − Δy²)`, Δy = 12.70 m.
+One round gong per station, **1 MIL in the metric world, 3 MOA in the imperial one**.
 
-| LOS (m) | azimuth | ground run (m) | world x | world z | depression | gong ⌀ (1 MIL) |
-|---|---|---|---|---|---|---|
-| 250 | −1.50° | 249.68 | −6.54 | −249.6 | −2.912° | 0.25 m |
-| 500 | −1.07° | 499.84 | −9.35 | −499.8 | −1.455° | 0.50 m |
-| 750 | −0.64° | 749.89 | −8.41 | −749.8 | −0.970° | 0.75 m |
-| 1000 | −0.21° | 999.92 | −3.74 | −999.9 | −0.728° | 1.00 m |
-| 1250 | +0.21° | 1249.94 | +4.67 | −1249.9 | −0.582° | 1.25 m |
-| 1500 | +0.64° | 1499.95 | +16.83 | −1499.9 | −0.485° | 1.50 m |
-| 1750 | +1.07° | 1749.95 | +32.72 | −1749.6 | −0.416° | 1.75 m |
-| 2000 | +1.50° | 1999.96 | +52.35 | −1999.3 | −0.364° | 2.00 m |
+The metric case is delightful: a mil is *defined* as 1 m at 1000 m, so the plate
+diameter in metres is the station number with the decimal moved. 250 m → 0.25 m;
+1500 m → 1.50 m; 2000 m → **2.00 m**. No table, no conversion, and the player can derive
+it in their head — which is itself teaching material for what a mil is.
 
-Bounding box: **3.0° horizontal × 2.55° vertical**. All eight are in view at or below
-**≈6×** on the 24° base FOV. Maximum lateral spread is 52 m at the 2000 m station, so the
-deck is far narrower than the 3000 plan's 105 m.
-
-### Gong size — 1 MIL / 3 MOA (owner, 2026-07-27)
-
-**One gong per station, 1 MIL in the metric world and 3 MOA in the imperial one.** This
-supersedes the ~2 MOA of the 2.4 plan's D4, and it is 72 % larger in angle.
-
-The metric case is delightful: a mil is *defined* as 1 m at 1000 m, so the plate diameter in
-metres is the station number with the decimal moved. 250 m → 0.25 m; 1500 m → 1.50 m;
-2000 m → **2.00 m**. No table, no conversion, and a player can derive it in their head — which
-is itself teaching material for what a mil actually is.
-
-What the bigger plate buys is the stated purpose of the range: **a miss should read as a bad
-solution, not a bad hold.** 2 MOA at ELR was tight enough that marksmanship noise competed
-with DOPE error. 1 MIL is not.
+What the large plate buys is the range's stated purpose: **a miss should read as a bad
+solution, not a bad hold.** At 2 MOA, marksmanship noise competed with DOPE error. At
+1 MIL it does not.
 
 > **The two unit systems are not equivalent, by 12.7 %.** 1 MIL = 3.4377 MOA, so a 3 MOA
-> plate is 0.873 MIL. The MOA player therefore gets a target that is both angularly smaller
-> *and* — because yards are shorter than metres — physically smaller: **2.00 m at 2000 m vs
-> 1.60 m at 2000 yd**, a 20 % difference in steel. Owner accepted this as "roughly the same"
-> (2026-07-27), and the alternatives are worse (1 MIL = 3.44 MOA is an unusable number for a
-> MOA shooter; 0.87 MIL is unusable for a MIL one). **Flagged rather than hidden** because
-> this is the same class of thing as the 22-inch MOA face that read wrong on device — see
-> `mil-zero-range-plan.md` §5.1. Re-judge it on the probe.
+> plate is 0.873 MIL. The MOA player gets a target both angularly smaller *and* —
+> because yards are shorter than metres — physically smaller: **2.00 m at 2000 m vs
+> 1.60 m at 2000 yd**. Owner accepted this as "roughly the same" (2026-07-27); the
+> alternatives are worse (3.44 MOA is unusable for a MOA shooter, 0.87 MIL for a MIL
+> one). Flagged rather than hidden — same class of thing as the 22-inch MOA face that
+> read wrong on device (`archive/mil-zero-range-plan.md` §5.1).
 
-> **Plausibility, now comfortable.** At the 2000 m cap the largest plate is **2.00 m** — a
-> 234 kg disc in 3/8″ AR500, squarely inside what real ELR ranges hang. The 3000 plan
-> needed a 3 m / 527 kg plate, which stretched it. Shortening the range fixed this for free.
+At the 2000 m cap the largest plate is 2.00 m — a 234 kg disc in ⅜″ AR500, squarely
+inside what real ELR ranges hang. (The retired 3000 m plan needed 3 m / 527 kg.)
 
-### 3.2 Occlusion — elevation does the near field, azimuth does the far field
+**No berms**, consistent with the Wooded Zero Range and the Test Range. A miss should
+throw a visible plume and tell the player *where* it went; that splash is the primary
+feedback at ELR and matters more than a catch berm.
 
-Silhouette per station: frame **1.5 × gong wide, 2.0 × gong tall**, centred on the aim
-point → a half-diagonal of **0.072°**, *the same at every station*. Any two stations
-therefore need **> 0.143°** of combined angular separation.
+### 4.2 Colour — white plate on a dark panel
 
-Full separation combines azimuth and depression (`hypot(Δaz, Δdep)`), at the ±1.5° fan:
+Targets are **white** (`0xf2efe6`). Grey does not read at distance, and white is
+authentic: real ELR steel is painted white, and the plate model already chips paint
+through to bare metal on a hit.
 
-| pair | separation | needed | **margin** |
-|---|---|---|---|
-| 250 / 500 | 1.500° | 0.143° | **+1.357°** |
-| 500 / 750 | 0.517° | 0.143° | **+0.374°** |
-| 750 / 1000 | 0.457° | 0.143° | **+0.314°** |
-| 1000 / 1250 | 0.432° | 0.143° | **+0.288°** |
-| 1250 / 1500 | 0.437° | 0.143° | **+0.294°** |
-| 1500 / 1750 | 0.434° | 0.143° | **+0.291°** |
-| 1750 / 2000 | 0.433° | 0.143° | **+0.290°** |
+**But the backdrop decides this, not the plate.** Fog blends everything toward the pale
+horizon and costs *bright* objects far more contrast than dark ones:
 
-All 28 pairs clear. Worst margin anywhere is **+0.288°** — 3.0× the requirement.
+| station | fog | white on pale ground | white on a **dark panel** | dark on pale ground |
+|---|---|---|---|---|
+| 1000 m | 3 % | 0.214 | **0.690** | 0.476 |
+| 2000 m | 11 % | 0.196 | **0.632** | 0.437 |
+| 3000 m | 23 % | 0.170 | **0.547** | 0.378 |
 
-> **Fan width vs margin at 8 stations**, if the frame proportions change on the probe and
-> the requirement grows: ±1.0° → 2.0× · ±1.25° → 2.5× · **±1.5° → 3.0×** · ±2.0° → 4.0×.
-> ±1.5° is chosen for 3× headroom at 52 m of lateral spread; widening is cheap if needed.
+White steel on pale ground is the *worst* combination available — worse than a dark
+plate. A white plate only wins with something dark immediately behind it. So: **white
+gong on a dark charcoal backer panel** (`0x2a2a28`). Contrast then holds regardless of
+biome, and the target palette stops being coupled to the ground palette.
 
-### 3.3 Why the fan is 3° and not 10.5°
+> **The gotcha this closes.** Ship white-on-pale and the symptom is "the far targets are
+> hard to see" — inviting bigger plates or thinner fog, neither of which addresses the
+> cause. The Test Range config comments record three rounds of exactly this failure mode.
 
-The Wooded Zero Range needed 10.5° because its boards are **constant physical size**, so the
-near board subtends a huge angle. Here the targets are **constant angular size**, so the
-requirement is a fixed 0.143° regardless of distance and the fan only has to beat it. A much
-wider fan would cost real terrain: ±1.5° at 2000 m is ±52 m of lateral spread, while ±5°
-would be ±175 m — more than tripling the deck width for no occlusion benefit.
+In a wooded range the trees help rather than hurt, which is the same finding the Wooded
+Zero Range reached from the other direction (*"white against dark conifers is the
+strongest read available"*). Keep the panel anyway — it makes the read independent of
+what happens to be behind the plate.
+
+### 4.3 Bullseye rings
+
+Three concentric rings, so the plate is generous to *hit* but still rewards a tight
+group.
+
+| ring | metric | imperial | angular | fill |
+|---|---|---|---|---|
+| centre | ⅓ MIL | 1 MOA | 0.333 mrad | **white** `0xf2efe6` |
+| middle | ⅔ MIL | 2 MOA | 0.667 mrad | **mid blue** `0x2f6fd0` |
+| outer | 1 MIL | 3 MOA | 1.000 mrad | **white** `0xf2efe6` — the plate edge |
+
+White/blue/white was an owner revision (2026-07-27) from an initial red centre, and it
+fixed a real defect: red sits at 0.30 luminance against the blue ring's — too close to
+separate under fog at distance. Alternating white and blue maximises the luminance step
+at every boundary, which is what survives aerial perspective.
+
+Rings are constant-angular, so **one texture serves every station** — the pattern is
+identical at 250 m and 2000 m by construction.
+
+### 4.4 Frames and signage
+
+- Frame **1.5 × gong wide, 2.0 × gong tall**, carrying the dark panel and the rings.
+  Unlike the Wooded Zero Range's constant-size boards these **scale with the gong**,
+  because the gong is constant-angular — a fixed frame would be invisible at 250 m and a
+  postage stamp at 2000 m.
+- Frame height must clear the ground: `targetCenterYFor` raises the centre so the bottom
+  edge stands clear. Pinning every centre at 1.0 m buried the far frames 2 m underground
+  on the probe.
+- **Distance plate** on the top edge, orange on black, sized as a fraction of the frame
+  so it too stays constant-angular. Text from the active unit: `"1500 M"` / `"1500 YD"`.
+- **Lane stake** beside each frame, as on the Wooded Zero Range.
+
+### 4.5 Mach-state marking, not a binary effective-range flag
+
+Every station is built and shootable. Stations past the active cartridge's effective
+range are **marked, not removed**:
+
+| state | condition | reads |
+|---|---|---|
+| supersonic | Mach ≥ 1.2 at the target | (nothing — normal) |
+| **transonic** | 1.0 ≤ Mach < 1.2 | "TRANSONIC — dispersion opens" |
+| **subsonic** | Mach < 1.0 | "SUBSONIC — past effective range" |
+
+Mach at the target already comes out of the solver, so this is a display rule rather
+than new physics. It is strictly more informative than the binary `beyondEffective`
+flag, and it sidesteps the unresolved `effectiveRangeYd` question (§13) entirely: the
+range tells the truth about *this* shot regardless of what the catalog number becomes.
+
+> ⚠️ **The transonic label currently overstates what the engine does.** The drag rise is
+> modelled, so trajectories bend correctly, but **dispersion does not open** — scatter
+> comes only from MV SD, BC SD and rifle precision, none of which know about Mach. See
+> `Wiki/_gaps.md` N4. Either build N4 or word the label as a warning about the model's
+> limits rather than a claim about the shot.
 
 ---
 
-## 4. The scope-travel ceiling — the lesson this range is built around
+## 5. The scope-travel ceiling — the lesson this range is built around
 
-Owner decision: **make it the lesson.** The range is sized so that the bullet is not what
-stops you first. The optic is.
+### 5.1 The numbers
 
-### 4.1 The numbers
-
-Come-up from a 100 m zero, .50 BMG (the only cartridge that reaches the far half at all):
+Come-up from a 100 m zero, .50 BMG (the only cartridge that reaches the far half):
 
 | station (m) | 250 | 500 | 750 | 1000 | 1250 | 1500 | 1750 | **2000** |
 |---|---|---|---|---|---|---|---|---|
@@ -448,8 +412,8 @@ Come-up from a 100 m zero, .50 BMG (the only cartridge that reaches the far half
 | TOF (s) | 0.31 | 0.66 | 1.03 | 1.44 | 1.88 | 2.38 | 2.93 | **3.54** |
 | trigger → ping (s) | 1.05 | 2.13 | 3.23 | 4.37 | 5.56 | 6.79 | 8.07 | **9.42** |
 
-Available up-elevation, taking the catalog scope tiers at half their total travel from a
-mechanically-centred zero, plus a canted base, plus reticle holdover:
+Available up-elevation, taking catalog scope tiers at half total travel from a
+mechanically-centred zero:
 
 | configuration | up-elevation | reaches 2000 m (23.02 MIL)? |
 |---|---|---|
@@ -459,374 +423,52 @@ mechanically-centred zero, plus a canted base, plus reticle holdover:
 | mid optic (29 MRAD), flat base, +3 MIL hold | 17.50 + hold | yes |
 | budget optic (16.4 MRAD), flat base, +hold | 8.20 + hold | yes, at ~15 MIL of hold |
 
-**Holdover is the answer, and that is the better lesson** (owner, 2026-07-27). 2000 m sits
-3.02 MIL past what a flat-based top optic can dial, so you hold the remainder. Because the
-reticle is **FFP**, holdover capacity scales with magnification — roughly **6 MIL below
-centre at 35×, 10 at 20×, 21 at 10×** — so 3 MIL is available at any magnification you would
-actually shoot from. A canted base becomes an *optional convenience* rather than a gate.
+**Holdover is the answer, and that is the better lesson.** 2000 m sits 3.02 MIL past
+what a flat-based top optic can dial, so you hold the remainder. Because the reticle is
+FFP, holdover capacity scales with magnification — roughly **6 MIL below centre at 35×,
+10 at 20×, 21 at 10×** — so 3 MIL is available at any magnification you would shoot
+from. A canted base becomes an optional convenience rather than a gate.
 
-### 4.2 Why the ceiling still teaches, now that it is climbable
+### 5.2 Why the ceiling still teaches, now that it is climbable
 
-The 3000 plan ended on a station **no** optic could reach — a hard wall. At 2000 the wall is
-climbable, and that is an improvement rather than a loss:
-
-- **The lesson is a technique, not a purchase.** "Dial what you have, hold the rest" is the
-  actual field skill. A gear gate teaches shopping.
-- **It still bites, visibly.** A flat-based optic runs out at 1843 m — *before* the last
-  station — so the player meets the limit inside the range rather than as trivia.
+- **The lesson is a technique, not a purchase.** "Dial what you have, hold the rest" is
+  the field skill. A gear gate teaches shopping.
+- **It still bites, visibly.** A flat-based optic runs out at **1843 m** — *before* the
+  last station — so the player meets the limit inside the range, not as trivia.
 - **It scales with the player's gear.** A budget optic hits the wall at 1030 m and needs
-  ~15 MIL of hold; a top optic with a 20 MOA base dials the whole ladder. Same range, three
-  different difficulty curves, no content duplication.
-- **Holdover exercises the reticle**, which is otherwise only used for ranging (2.6) — and
-  it makes FFP subtension correctness matter, which is the property §C3 is built on.
+  ~15 MIL of hold; a top optic with a 20 MOA base dials the whole ladder. Same range,
+  three difficulty curves, no content duplication.
+- **It exercises the reticle**, otherwise used only for ranging — which makes FFP
+  subtension correctness matter.
 
-> **Gotcha to design against, unchanged.** The turret must *visibly* stop, and the HUD must
-> say why and what closes the gap. A turret that silently refuses to keep turning reads as a
-> bug. §5.6 specs the readout.
+> **Design against this gotcha:** the turret must *visibly* stop, and the HUD must say
+> why and what would close the gap. A turret that silently refuses to keep turning reads
+> as a bug.
 
-### 4.3 Wind is the other ceiling, and it arrives first
+### 5.3 The travel readout
 
-At these times of flight the elevation problem is arithmetic; the wind problem is not. .50
-BMG, 10 mph (4.47 m/s) full-value crosswind:
-
-| station (m) | 500 | 750 | 1000 | 1250 | 1500 | 1750 | **2000** |
-|---|---|---|---|---|---|---|---|
-| drift (m) | 0.24 | 0.55 | 1.03 | 1.68 | 2.54 | 3.65 | **5.05** |
-| drift (MIL) | 0.47 | 0.74 | 1.03 | 1.34 | 1.70 | 2.09 | **2.52** |
-| **gong widths** (1 MIL plate) | 0.5 | 0.7 | 1.0 | 1.3 | 1.7 | 2.1 | **2.5** |
-
-With a 1 MIL gong the drift in MIL *is* the drift in target widths — another small
-convenience of the sizing rule. At 2000 m a 10 mph error puts the round two and a half
-plate-widths off; even at 1000 m it is a full width, i.e. a clean miss. **Wind, not
-elevation, is what actually decides hits past ~1000 m** — so `windMarkers: true` is
-mandatory here, and
-the marker set has to run the length of the deck rather than sitting at the firing line
-(§6.4). This is the range that finally makes the curl-noise wind field and the flag/sock
-reading mechanic earn their keep.
-
----
-
-## 5. Targets, signage and the past-effective marking
-
-### 5.1 Gongs
-
-One **1 MIL / 3 MOA round gong** per station (owner 2026-07-27, superseding 2.4 plan D4's
-~2 MOA), physical diameter from the table in §3.1 — 0.25 m at 250 → **2.00 m** at 2000.
-Reuses `RangeScene` / steel-reaction / `plate-surface` hit-mark systems wholesale — no new
-target tech.
-
-**No berms** (consistent with the Wooded Zero Range and the Test Range). A miss at 2500 m
-should throw a visible dust plume on the deck and tell the player *where* it went; that
-splash is the primary feedback at ELR and matters more than a catch berm. Impact FX already
-exist (`scope/impact-fx.ts`); the deck's ground material needs to support a dirt plume.
-
-### 5.2 Target colour — white plate, dark panel behind it
-
-Owner direction (2026-07-27): **targets must be white.** Grey will not read at 3 km. Right,
-and doubly so because it is authentic — real ELR steel is painted white, and this game's
-plate model already chips paint through to bare metal on a hit, so a white plate accumulating
-dark chips is both true to life and the clearest hit feedback available at distance.
-
-**The backdrop decides this, though, not the plate.** Fog blends everything toward the pale
-horizon colour, and it costs *bright* objects far more contrast than dark ones. Apparent
-contrast at the §6.3 fog density of 1.7e−4:
-
-| station | fog | white on the **pale deck** | white on a **dark panel** | dark on the pale deck |
-|---|---|---|---|---|
-| 1000 m | 3 % | 0.214 | **0.690** | 0.476 |
-| 2000 m | 11 % | 0.196 | **0.632** | 0.437 |
-| 3000 m | 23 % | 0.170 | **0.547** | 0.378 |
-
-White steel on the pale desert deck of §7 is the **worst** combination available — worse than
-a dark plate would be. A white plate only wins with something dark immediately behind it,
-which is precisely what the Wooded Zero Range found in the opposite direction (*"White against
-dark conifers is the strongest read available"*, `mil-zero-range-plan.md` §5.2 — white worked
-there **because** of the conifers).
-
-**So: white gong (`0xf2efe6`) on a dark charcoal backer panel.** Contrast then holds at 3 km
-regardless of biome, and the target palette stops being coupled to the ground palette — two
-decisions that should be independent, and were not.
-
-> **Gotcha this closes.** Had the range shipped a white plate against §7's pale deck, the
-> symptom would have been "the far targets are hard to see", and the instinct would have been
-> to make the plates bigger or the fog thinner — neither of which addresses the cause. The
-> Test Range's config comments record three rounds of exactly this failure mode with trees and
-> mountains, where palettes kept getting retuned to fix what was really a lighting and fog
-> problem.
-
-### 5.3 Bullseye scoring rings (owner, 2026-07-27)
-
-Three concentric rings, so the plate is generous to *hit* but still rewards a tight group —
-"large target to hit but can still dial in to tighter groups if they want."
-
-| ring | metric | imperial | angular | fill |
-|---|---|---|---|---|
-| centre | ⅓ MIL | 1 MOA | 0.333 mrad | **white** `0xf2efe6` |
-| middle | ⅔ MIL | 2 MOA | 0.667 mrad | **mid blue** `0x2f6fd0` |
-| outer | 1 MIL | 3 MOA | 1.000 mrad | **white** `0xf2efe6` — the plate edge |
-
-> **Revised 2026-07-27, owner: white / blue / white — and it fixes a real defect.** The first
-> spec here was a red centre. Red `0xd81f26` sits at **0.30** luminance and the blue ring at
-> **0.32** — a contrast of **0.02**. They differ *only in hue*, and hue is the first thing to
-> go at long range: fog desaturates, and at 10× the whole plate is 21 px so there is barely
-> any area for colour to register in. The red centre would have **merged into the blue ring**
-> at exactly the distances the pattern exists to serve. White against blue is **0.62** of
-> luminance contrast — a real edge that survives desaturation, fog and a handful of pixels.
->
-> It is also brighter, which was the owner's stated reason: average plate luminance rises
-> from **0.662** to **0.733**, and contrast against the dark panel at 3000 m from 0.393 to
-> **0.451**.
-
-**The rings are constant-angular, like the plate.** A 1 MOA centre subtends 0.333 mrad at
-250 m and at 3000 m alike, so the pattern's on-screen appearance is **identical at every
-station**. Distance drops out entirely; only magnification matters. Tune it once.
-
-On-screen size, assuming a 900 px scope circle (scales linearly with viewport):
-
-| magnification | 5× | 10× | 15× | 20× | 35× |
-|---|---|---|---|---|---|
-| plate | 11 px | 21 px | 32 px | 43 px | 75 px |
-| red centre | 4 px | 7 px | 11 px | 14 px | 25 px |
-| ring band width | 2 px | 4 px | 5 px | 7 px | 13 px |
-
-So the rings **resolve from ~15× up, blur together by 10×, and are gone at 5×** — which is
-the desired behaviour, not a defect. Finding the plate is a low-magnification job; scoring
-against the rings is a high-magnification one.
-
-**What the pattern costs in brightness.** The blue ring covers 33 % of the plate's *area*, so
-a bullseye plate averages **0.733** luminance against a plain white plate's 0.94 — and average
-luminance is what you find the plate by at low magnification, where the rings blur into one
-disc. The dark backer panel of §5.2 absorbs that, and is **load-bearing rather than
-decorative**: on a pale deck a bullseye plate's contrast at 3000 m collapses to under 0.05.
-
-> **Trap worth recording, since it is counter-intuitive.** Making the blue *brighter* improves
-> contrast against a dark panel but makes it **catastrophically worse** against a pale deck —
-> at a plate average of ~0.72 the disc's luminance crosses the deck's and the target becomes
-> camouflage (contrast 0.008). `0x2f6fd0` is chosen for the margin it keeps on both sides.
-> This is the argument for never letting the target palette depend on the ground palette.
-
-**What white / blue / white gives up.** There is no longer a *filled* aiming mark — the centre
-is defined by the inner edge of the blue annulus rather than by a coloured dot. That is
-probably fine: the eye centres a ring very precisely, and the reticle supplies the actual aim
-point. But it is a genuine change in character and the probe should judge it.
-
-> **Variant for the probe to try: a small dark centre dot**, ~⅓ MOA (⅑ MIL). It restores a
-> positive aim mark, costs **0.01** of average luminance (1.2 % of the plate's area), and is
-> ~7 px at 35× and invisible below ~20× — i.e. it appears exactly when aiming precision
-> matters and stays out of the way when finding the plate does. Not specced; offered as an
-> A/B on device.
-
-**Colour vision.** Blue-on-white is a sound choice: it relies on a luminance difference rather
-than a hue one, so it works for every form of colour vision deficiency and in greyscale. This
-is strictly better than the red/blue version it replaces, which relied on hue alone.
-
-> **Open — paint erosion.** The plate model chips paint through to bare metal on every hit
-> (`plate-surface.ts`). Over a long session the rings will erode, which is authentic but
-> eventually destroys the scoring pattern. Paper bays already have "Clean target" / "Clean
-> all" (`mil-zero-range-plan.md` §7.1); steel needs an equivalent **repaint** action, or the
-> rings become single-use. Not specced here — flagged for the probe to judge how fast it
-> actually bites.
-
-> **Open — do the rings score?** Owner framed them as self-assessment ("dial in to tighter
-> groups if they want"), not scoring. The impact position is already known to the engine, so
-> feeding ring hits into the §F scoring model is available cheaply later. Deliberately not
-> decided now.
-
-### 5.4 Frames and signage
-
-- Frame **1.5 × gong wide, 2.0 × gong tall** (the silhouette the §3.2 proof uses), carrying
-  the dark panel of §5.2 and the rings of §5.3. Unlike the Wooded Zero Range's constant-size boards, these **scale
-  with the gong**, because the gong itself is constant-angular — a fixed-size frame would be
-  invisible at 250 m and a postage stamp at 3000 m.
-- **Distance plate** on the frame's top edge, orange on black, sized as a fraction of the
-  frame so it too stays constant-angular. Text from the active unit: `"1500 M"` / `"1500 YD"`.
-- **Lane stake** beside each frame, as on the Wooded Zero Range.
-
-### 5.5 Marking the stations past effective range
-
-Every station is built and shootable. Stations past the active cartridge's
-`effectiveRangeYd` are **marked, not removed** — the plate carries a secondary band and the
-HUD names the state when that station is engaged:
-
-| state | condition | reads |
-|---|---|---|
-| supersonic | Mach ≥ 1.2 at the target | (nothing — normal) |
-| **transonic** | 1.0 ≤ Mach < 1.2 | "TRANSONIC — dispersion opens" |
-| **subsonic** | Mach < 1.0 | "SUBSONIC — past effective range" |
-
-Mach at the target is already available from the solver, so this is a display rule rather
-than new physics. It is also strictly better than the binary `beyondEffective` flag for this
-range's purpose, and it sidesteps the unresolved `effectiveRangeYd` question in §1.2
-entirely: the range tells the truth about *this* shot regardless of what the catalog number
-eventually becomes.
-
-### 5.6 The travel readout (what makes §4 a lesson instead of a bug)
-
-When a station is engaged, the HUD shows three numbers and one verdict:
+When a station is engaged:
 
 ```
-  2750 M     required  42.5 MIL
-             dial       31.6 MIL   (20.0 turret + 11.6 base)
-             hold       10.0 MIL   (reticle)
+  2000 M     required  23.0 MIL
+             dial      20.0 MIL   (20.0 turret + 0.0 base)
+             hold       3.0 MIL   (reticle)
              ──────────────────────
-             SHORT      0.8 MIL    ▸ needs more base or a deeper reticle
+             HOLD REQUIRED  3.0 MIL
 ```
 
-The verdict line is the feature. `DIALABLE` / `HOLD REQUIRED` / `SHORT BY x.x MIL` — and in
-the last case, a one-line statement of what would close the gap. That sentence is the range's
-teaching payload.
+The verdict line is the feature: `DIALABLE` / `HOLD REQUIRED` / `SHORT BY x.x MIL` —
+and in the last case, one line saying what would close the gap. That sentence is the
+range's teaching payload.
 
----
+### 5.4 The travel model is a prerequisite, and it does not exist
 
-## 6. Engine / code changes
+Nothing in `GameBuild/app/src/` models turret travel, canted bases or holdover limits
+today. `catalog-starting-values.md` specs the tier values and `feature-catalog.md` §C3
+lists the canted-base toggle; neither is built.
 
-### 6.1 Renderer reach — three constants, no new technology
-
-**The current renderer cannot draw this range**, but nothing about that is fundamental. Both
-blockers are values chosen when the longest range in the game was 200 m:
-
-| | today | required | cost |
-|---|---|---|---|
-| camera **far** plane (`ScopeView.tsx:367`) | **3000 m** | **12000 m** | none |
-| sky dome radius (`test-range-config.ts:90`, `wooded-zero-environment.ts:92`) | **1500 m** | **9000 m** | none — a 32×15 sphere |
-| camera **near** plane (`ScopeView.tsx:367`) | 0.5 m | **10 m** | none — see below |
-
-A 3000 m far plane clips the 3000 m gong exactly. A 1500 m sky dome puts the *sky* halfway
-down the range. Both are one-line config values.
-
-**Make all three per-range, not global.** `ScopeView` already takes eye height from the range
-(`sightIn?.eyeHeightM ?? EYE_HEIGHT_M`, line 366) precisely because it is a property of the
-bay rather than of the game. Camera near/far and dome radius are the same kind of value, and
-routing them through the range config avoids changing the four existing ranges at all.
-
-#### Depth precision — `near` is the lever, and `far` is nearly irrelevant
-
-Depth resolution at distance `z` is `z²(f−n) / ((2^bits−1)·f·n)` — it scales with **1/near**
-and is almost independent of `far`. Measured over the relevant configurations, 24-bit buffer:
-
-| near | far | @250 m | @1000 m | @2000 m | **@3000 m** |
-|---|---|---|---|---|---|
-| 0.5 | 3000 *(today)* | 0.007 | 0.119 | 0.477 | **1.073 m** |
-| 0.5 | 12000 | 0.007 | 0.119 | 0.477 | **1.073 m** |
-| 2 | 12000 | 0.002 | 0.030 | 0.119 | 0.268 m |
-| 5 | 12000 | 0.001 | 0.012 | 0.048 | 0.107 m |
-| **10** | **12000** | 0.000 | 0.006 | 0.024 | **0.054 m** |
-| 20 | 12000 | 0.000 | 0.003 | 0.012 | 0.027 m |
-
-Quadrupling `far` costs **nothing** — rows 1 and 2 are identical. Raising `near` from 0.5 m to
-10 m buys a **20×** improvement, taking 3000 m depth resolution from 1.07 m (the gong and its
-own frame land in the same depth bucket and flicker) to 5 cm (a gong standing proud of its
-frame resolves cleanly).
-
-**Raising `near` to 10 m is free, because nothing renders within 10 m of the eye:**
-
-- the reticle is a **2D canvas overlay**, not scene geometry (`scope/reticle.ts` header) — it
-  is not clipped by `near` at all;
-- both environment ranges set **`shooterClearM: 18`** (`test-range-config.ts:142`,
-  `wooded-zero-environment.ts:126`), so no grass tuft, bush or rock is closer than 18 m;
-- nothing else in the codebase reads `camera.near` or `camera.far` — `scope-projection.ts`
-  works from FOV and viewport only.
-
-> **Correction to an earlier draft of this plan.** This section previously called
-> `logarithmicDepthBuffer: true` effectively mandatory. It is not, and on the shipping target
-> it is the *worst* of the available options: it writes `gl_FragDepth` in the fragment shader,
-> which disables early-Z and, on the iPad's tile-based deferred GPU, the hidden-surface
-> removal that hardware depends on. Raising `near` achieves the same result at zero cost.
-> Reach for it only if the fallback below is also insufficient.
-
-> **Gotcha — verify the depth buffer is actually 24-bit before trusting any of this.**
-> At 16 bits the same `near = 10 / far = 12000` configuration resolves only **13.7 m** at
-> 3000 m, which is unusable, and the two-pass split below stops being a fallback and becomes
-> mandatory. Check `gl.getParameter(gl.DEPTH_BITS)` on the actual iPad in Stage 1 rather than
-> assuming the WebGL2 default.
-
-**Fallback if artefacts survive all of the above:** a **two-pass depth split** — render the far
-scene (500 → 12000 m) with its own camera, clear the depth buffer, then render the near scene
-(10 → 500 m) over it. Each pass gets the full depth range over a much shorter span, precision
-stops being a question entirely, and the cost on a tile-based GPU is one extra depth clear.
-It is the standard solution in flight and space sims. More code than a constant, but wholly
-contained in `ScopeView` and it touches no other range.
-
-### 6.2 Terrain — the mesh has to be graded, not just bigger
-
-`terrain.ts:25` builds `PlaneGeometry(widthM, lengthM, 96, 192)`. For the Wooded Zero
-Range's 460 × 520 m world that is ~2.7 m per segment. For a **700 × 3100 m** world the same
-segment count gives **~16 m per segment** — which puts only ~6 segments across the 100 m
-forward face, so the bluff renders as a visible staircase.
-
-Two options; take the first:
-
-1. **Split the mesh.** A near-field plane (0 → 200 m, high segment count, carries the bluff
-   and face) plus a far deck (200 → 3100 m, coarse — it is flat, so it needs almost nothing).
-   Two draw calls instead of one, and the total vertex count *falls*.
-2. Non-uniform segment distribution on one plane. More elegant, more code, and
-   `makeTerrainSampler` would need to stop assuming a uniform grid.
-
-The dirt underplane (`terrain.ts:76`, `widthM × 3` by `lengthM × 3`) becomes 2100 × 9300 m —
-fine, it is two triangles.
-
-### 6.3 Fog — the current density erases the far half of the range
-
-`FogExp2` at the shared `density: 7.45e-4` puts the far stations at essentially pure fog
-colour:
-
-| density | 200 m | 500 m | 1000 m | 1500 m | 2000 m | 3000 m | 4000 m |
-|---|---|---|---|---|---|---|---|
-| 7.45e−4 *(current)* | 2 % | 13 % | 43 % | 71 % | 89 % | **99 %** | 100 % |
-| 4.0e−4 | 1 % | 4 % | 15 % | 30 % | 47 % | 76 % | 92 % |
-| 2.5e−4 | 0 % | 2 % | 6 % | 13 % | 22 % | 43 % | 63 % |
-| **1.7e−4** | **0 %** | **1 %** | **3 %** | **6 %** | **11 %** | **24 %** | **37 %** |
-
-**Use 1.7e−4** — a clear, dry ELR morning. The 3000 m gong sits at 24 % fog: visibly hazed
-and distinctly further away than the 1000 m one, but never washing toward sky colour. That
-is the same requirement §5.2 of the zero-range plan protected for its 200 m board, applied
-15× further out.
-
-This is a **per-range** value, not a change to the shared default. The Wooded Zero Range and
-the Test Range keep 7.45e-4, which is correct for a 200 m wooded bay.
-
-Consequence: **the ridgelines must move.** At 1.7e−4 the current 1100 m / 1430 m ridges would
-sit at 3 %/5 % fog — reading as solid nearby hills *inside* the shooting range. Push them to
-**≈4500 m and ≈6500 m** (44 % / 71 % fog), which restores the intended gradient and keeps
-them behind the 3000 m station where they belong.
-
-### 6.4 Wind markers along the deck
-
-`wind-markers-config.ts` places markers for Range A's 500 yd ladder. This range needs them
-**out to 3000 m**, and their spacing is a design decision rather than a port: a flag at
-2500 m is 1.5 mrad of fabric and reads as a speck. Proposal — full-size flags at
-250/500/750/1000, then progressively **larger physical** flags at 1500/2000/2500 so their
-angular size stays readable, plus mirage as a mid-range indicator once mirage ships. This
-is the range that justifies §4.3's claim that wind reading is the real skill here.
-
-### 6.5 Registry, config and scene
-
-- **`ranges.ts`** — new `RangeSceneType` `'elr-deck'`; new `ELR_RANGE` row:
-  `unitCharacter: 'both'`, `targetKind: 'steel'`, `zeroable: false`, `windMarkers: true`,
-  12 stations at 250…3000 with `azimuthDeg` from §3.1. Add it to `UNLISTED` until its scene
-  exists (the D8 rule against grayed-out cards).
-- **New `elr-range-config.ts`** — pure data, mirroring `wooded-zero-config.ts`: LOS→ground-run
-  solve, bluff floor profile, corridors, gong/frame/plate sizing, `buildCorridors()` that
-  **takes no unit argument** (the superset invariant, §1.3).
-- **New `elr-environment.ts`** — the environment block: fog 1.7e−4, ridges at 4500/6500 m,
-  sky dome 9000 m, split terrain mesh, sparse deck vegetation.
-- **New `ELRDeckScene.ts`** — a steel scene. Should implement the existing
-  `steel-scene-api.ts` contract so the ScopeView fire path, hit marks and confirm-node flow
-  work unmodified, in exactly the way `PaperBayScene` let the Wooded Zero Range inherit the
-  zeroing flow (`mil-zero-range-plan.md` §7). **Check `steel-scene-api.ts` actually carries
-  everything needed before assuming this;** if it gates on `sceneType` anywhere, extract the
-  capability first, as a separate behaviour-preserving stage.
-- **`ScopeView`** — one more case in the scene branch, plus the §5.6 travel readout.
-
-### 6.6 The scope elevation-travel model — a prerequisite, and it does not exist yet
-
-Nothing in `GameBuild/app/src/` models turret travel, canted bases or holdover limits today.
-`catalog-starting-values.md` specs the tier values ("Elevation travel (MOA / MRAD) 60 / 100 /
-120", "elevation travel caps the dial (gates max range at ELR)") and `feature-catalog.md` §C3
-lists the canted-base toggle, but neither is built.
-
-Since §4 is the reason this range exists, **the travel model is a prerequisite stage, not a
-detail of the range**. Minimum shape:
+Since §5 is the reason this range exists, **the travel model is a build stage, not a
+detail.** Minimum shape:
 
 ```ts
 interface OpticSpec {
@@ -835,182 +477,248 @@ interface OpticSpec {
   reticleHoldMil: number;   // usable holdover below centre
 }
 // available up-elevation = totalTravelMil / 2 + baseCantMil
-//   (a 100 m zero consumes ~0 of it, so the halving is the honest model)
 ```
 
-The turret must **clamp** at the limit rather than winding past it, and the clamp must be
-visible. It is worth building this on its own and confirming it on Range A first — a bug in
-the clamp is much easier to find at 500 yd than at 3000 m.
+The turret must **clamp** at the limit rather than winding past it, and the clamp must
+be visible. **Build and confirm it on Range A first** — a clamp bug is far easier to
+find at 500 yd than at 2000 m.
 
 ---
 
-## 7. Scenery character — not the wooded bay scaled up
+## 6. Wind is the other ceiling, and it arrives first
 
-The Wooded Zero Range's conifer wall does not scale. A forest at 3000 m is an opaque green
-band, and corridor clearance through 3 km of trees would consume most of the deck.
+At these times of flight the elevation problem is arithmetic; the wind problem is not.
+.50 BMG, 10 mph (4.47 m/s) full-value crosswind:
 
-Proposed character: **a high desert / dry-lake flat.** Sparse low scrub and rock scatter
-thinning with distance, bare ground, distant ridgelines. The reasons are structural, not
-aesthetic:
+| station (m) | 500 | 750 | 1000 | 1250 | 1500 | 1750 | **2000** |
+|---|---|---|---|---|---|---|---|
+| drift (m) | 0.24 | 0.55 | 1.03 | 1.68 | 2.54 | 3.65 | **5.05** |
+| drift (MIL) | 0.47 | 0.74 | 1.03 | 1.34 | 1.70 | 2.09 | **2.52** |
+| **gong widths** | 0.5 | 0.7 | 1.0 | 1.3 | 1.7 | 2.1 | **2.5** |
 
-1. **Sight lines are free.** A flat pale deck under a 12 m bluff needs no corridor clearing
-   past the face — the §2.1 geometry already guarantees it.
-2. **Contrast.** Dark steel on pale ground is the strongest read available at 3000 m, and it
-   inverts the zero range's white-board-on-dark-conifers solution rather than fighting it.
-3. **It is where ELR actually happens** — and it makes mirage (`scope/Mirage.ts`, currently
-   shipped OFF by default) meaningful for the first time, since heat shimmer over a hot flat
-   is both a real visibility problem and a real wind indicator.
-4. **It reuses the environment module.** Terrain, ground cover, ridges, sky, fog, wind sway
-   are all config-driven already; this is a new palette and a new scatter density, behind the
-   same flags — a fifth range, not a second environment system.
+With a 1 MIL gong, drift in MIL *is* drift in target widths — another convenience of the
+sizing rule. At 2000 m a 10 mph error puts the round two and a half plate-widths off;
+even at 1000 m it is a full width, i.e. a clean miss.
 
-The low morning sun (§9.1 of the zero-range plan, 14° elevation at −125° azimuth) carries
-over unchanged and is if anything more valuable here: raking light across 3 km of flat deck
-is the only thing that will give it any depth cue at all.
+**Wind, not elevation, decides hits past ~1000 m.** So `windMarkers: true` is mandatory,
+and the markers must run the length of the range rather than sitting at the firing line.
+This is the range that makes the curl-noise wind field and the flag/sock reading
+mechanic earn their keep.
+
+> **Standing issue.** The wind model has needed a circle-back for several sessions
+> (`Wiki/_gaps.md`: `computeZero` bakes the live session wind into the mechanical zero,
+> producing a DOPE windage column that flips sign at the zero range). This range is
+> where that becomes visible rather than academic. Resolve it before or during the build.
 
 ---
 
-## 8. Decisions taken (2026-07-27)
+## 7. Performance — measured, not estimated
 
-| question | decision |
+All on the owner's iPad, via the probe.
+
+| what | measured | note |
+|---|---|---|
+| empty 3 km scene | **60 fps, 16–17 ms** | at the vsync cap |
+| `DEPTH_BITS` | **24** | so `near = 10 m` alone carries 3 km — **the two-pass depth split is dead** |
+| shot cost, 500 m | 19 ms total | |
+| shot cost, 2000 m | **62 ms** total (55 scatter, 6 solve) | first shot at a station only |
+| shot cost, 3000 m | 86 ms (80 scatter) | |
+| repeat shot, same station | **1–2 ms** | `simAt` caches per station |
+| device vs native | **≈3.1×** | native measurement is a usable proxy — no deploy cycle needed to estimate |
+
+**Renderer reach:** per-range `near = 10 m`, `far = 12000 m`. Depth precision scales
+with `1/near` and is nearly independent of `far` — raising `near` from 0.5 to 10 buys
+20× and costs nothing, because nothing renders inside 18 m and the reticle is a 2D
+overlay. No `logarithmicDepthBuffer`, no split pass.
+
+**Fog:** `FogExp2` at **1.7e−4**, not the 7.45e−4 the other ranges use, which would put
+the 2000 m gong at 98 % fog, i.e. invisible.
+
+**The one number still missing: the tree budget.** The probe's ramp (0 / 250 / 500 /
+1000 / 2000 / 4000, with a `render X ms · verdict · N calls · Nk tris` readout) exists
+to find where the device falls over, and had not been swept at the time of writing.
+Until it is, treat 4000 trees over 1200 × 2100 m as *demonstrated to look right*, not as
+*demonstrated to be affordable*.
+
+> **Why the frame-time number alone could not answer this.** 17 ms at a 60 fps cap is
+> equally consistent with 8 ms of work and half a frame spare, or 16.9 ms with none.
+> `RenderCostMeter` brackets the render call, which is the only cost distinguishable
+> from waiting for the display. Caveat written into the source: WebGL is asynchronous,
+> so it measures the CPU side and **understates a GPU-bound scene** — the right bias,
+> since trees are a draw-call and vertex story first.
+
+---
+
+## 8. What already exists, and what has to be built
+
+**Already built and proven** (mostly by the probe, which is why it existed):
+
+| | where |
 |---|---|
-| Total distance | **2000** — metric 2000 m, imperial 2000 yd, 8 stations each (§1.3). Revised down from 3000 for oracle coverage + Mach trust; see banner |
-| Station spacing | **Every 250** (owner: "every 500 is a bit sparse") |
-| Scope-travel ceiling | **Designed in as the lesson**, §4 — met by **holdover** (3.02 MIL at the far station), not a gear gate |
-| Cartridges | **Centrefire only** — rimfire keeps 2.4c's fine ladder on the DOPE range |
-| Ladder cap | **2000 for the range**; no per-cartridge cap — every station is built, past-effective ones are *marked*, §5.5 |
-| Firing point | **12 m bluff**, 12 % forward face meeting a level deck at r = 100 m (§2.1) |
-| Fan width | **±1.5°** — constant-angular targets need 0.143° of separation; margin 3.0× (§3.2) |
-| Targets | **One 1 MIL / 3 MOA gong per station**, white on a dark panel, no berms (§5.1–5.2) |
-| Target face | **Bullseye rings 1/2/3 MOA (⅓/⅔/1 MIL)** — **white / mid-blue / white**; a red centre was specced and rejected, it matches blue in luminance (§5.3) |
-| Units | `unitCharacter: 'both'`; world always built from the **metric** set (§1.3) |
-| Wind markers | **On**, and extended down the deck — wind is the real ceiling (§4.3, §6.4) |
-| Biome | **High desert / dry flat**, not the wooded bay scaled up (§7) |
-| Additive or replacement | **Additive** — a fifth range; supersedes the *planned* Range C, replaces nothing built |
-| Environment module | **Shared.** New palette + config, behind the existing flags |
+| convex terrain profile + station geometry | `range/elr-probe-config.ts` |
+| sight-line clearance + offset solver | `range/sight-clearance.ts` |
+| tree field generation, deterministic | `range/elr-probe-trees.ts` |
+| tree rendering, variants, sway | `range/environment/trees.ts` |
+| constant-angular gongs, bullseye texture | `range/bullseye-texture.ts` |
+| per-range camera reach, perf + depth readouts | `range/ranges.ts`, `scope/perf-hud.ts` |
+| steel reaction, hit marks, paint chipping | `RangeScene`, `plate-surface.ts` |
+| commit-preferred target resolution | `scope/aim-pick.ts` |
+| coarse ±2 MIL / ±5 MOA elevation buttons | `state/store.ts` |
+| engine: long zeros, flight-time walls | `GameBuild/engine` (2026-07-28 fixes) |
+| oracle coverage to 2000 m / 500 m rimfire | `validation/loads.json` |
+
+**Must be built:**
+
+1. **Scope elevation-travel model** (§5.4) — prerequisite, build on Range A first.
+2. **Range registry entry + scene** for the real range, with two firing points.
+3. **Firing-point switching** — UI and camera, plus per-point clearance solving.
+4. **Plate-scaled clearance margin** (§3.1).
+5. **Rimfire ladder** — 50 m steps to 500, low line.
+6. **Tree LOD / impostors for the far half**, if the ramp says it is needed. The Wooded
+   Zero Range has never rendered 2 km of depth.
+7. **Wind markers along the range** (§6).
+8. **Mach-state marking + travel readout** (§4.5, §5.3).
+9. **Catalog entries**: .50 BMG, .338 LM, .300 WM (pure data — verified, no code); plus
+   high-velocity .22 LR and .22 WMR for the rimfire ladder.
 
 ---
 
 ## 9. Build stages
 
-Protocol-sized, in dependency order, **STOP after each** (`execution-protocol.md` §2.8).
+> **There is a step-by-step build spec.** For execution, use
+> [`execution/elr-range-build-spec.md`](./execution/elr-range-build-spec.md) — twelve
+> numbered tasks with exact file paths, exact code, exact test assertions and a runnable
+> "done when" gate each, written to be followed without needing this document. The
+> stages below are the same work at a coarser grain.
 
-| Stage | Scope | Touches |
+
+Each stage ends with something on device and a stop.
+
+| stage | what | done when |
 |---|---|---|
-| **0** | **Optic travel model** (§6.6): `OpticSpec`, available-elevation math, turret clamp, HUD remaining-travel readout. Verified on Range A. No new range. | new `game/optic.ts`, `game/active-gear.ts`, `ScopeView.tsx`, tests |
-| **1** | **Renderer reach** (§6.1): make near/far/dome-radius **per-range**; set 10 / 12000 / 9000 for this range, leave the other four untouched. **Read `gl.getParameter(gl.DEPTH_BITS)` on the iPad and record it** — if it is 16, escalate to the two-pass split before going further. | `ScopeView.tsx`, `environment/sky.ts`, range env configs |
-| **2** | Registry row + `elr-range-config.ts` + corridor/geometry + invariant tests. No THREE, no scene. | `ranges.ts`, new config, tests |
-| **3** | **Steel-scene capability extraction** if `steel-scene-api.ts` gates on `sceneType` — behaviour-preserving refactor only, no new scene. Skip if it is already clean. | `steel-scene-api.ts`, `RangeScene.ts`, `ScopeView.tsx` |
-| **4** | Split terrain mesh (§6.2) + `elr-environment.ts` (fog, ridges, sky, desert palette). Shared module, config-flagged. | `environment/terrain.ts`, `environment-config.ts`, new env config |
-| **5** | `ELRDeckScene` + scene branch. Range renders and is shootable; hit marks and confirm-node inherited. Joins the landing screen. | new `ELRDeckScene.ts`, `ScopeView.tsx`, `ranges.ts` |
-| **6** | Mach-state marking (§5.5) + the travel verdict readout (§5.6). The teaching payload. | `ScopeView.tsx`, `game/dope-row.ts` |
-| **7** | Wind markers down the deck (§6.4) + mirage on the flat. | `wind-markers-config.ts`, `Mirage.ts` |
+| **1** | Scope travel model on Range A | turret clamps visibly; `DIALABLE`/`HOLD REQUIRED`/`SHORT BY` verdict correct at three optic tiers |
+| **2** | Tree-budget sweep on the probe | the ramp is walked on iPad; a tree count is chosen from data |
+| **3** | Range scene: terrain + forest + centrefire ladder, high line only | 8 stations, all visible, all shootable, frame time inside budget |
+| **4** | Targets: rings, panels, signage, Mach marking | a 2000 m plate reads correctly at 10× and 35× |
+| **5** | Low firing line + rimfire ladder | 10 stations to 500 m; 250 m shared station shootable from both lines |
+| **6** | Wind markers + wind-model circle-back | drift matches §6 within the wind model's own tolerance |
+| **7** | Catalog additions + DOPE integration | a come-up table can be built end to end on this range |
 
-Stage 0 and Stage 1 are both worth doing even if this range is later shelved — the first is a
-specced-but-unbuilt feature, the second is a latent limit every future long range would hit.
+Stage 2 gates stage 3's vegetation density. Stage 1 gates nothing structurally but is
+the reason the range exists, so it goes first.
 
 ---
 
 ## 10. Verification the plan asks for
 
-Beyond the standard gates (`execution-protocol.md` §5):
-
-1. **Superset invariant test** — `groundRun(imperial_i) ≤ corridorReach(metric_i)` for all 12
-   stations, so a future tweak to the fan or the corridor profile cannot silently break it.
-   This is the one the Wooded Zero Range already carries; copy its shape.
-2. **Occlusion test** over all 66 station pairs, asserting margin > 0 with the §3.2
-   silhouette model.
-3. **Sight-line-clears-floor test** at 1 m steps along every lane — cheap, and it is the
-   proof §2.1 rests on.
-4. **Travel-clamp test** — required > available produces a clamped turret and a `SHORT BY`
-   verdict, never a silently wrong solution.
-5. **Ballistic cross-check** — the come-up table in §4.1 regenerated from the shipped engine
-   and diffed against this document's values. **If they disagree, the engine is the thing
-   under test**, per the CLAUDE.md working agreement, and the discrepancy gets logged.
-6. **iPad frame time** at Stage 1 (before/after the renderer change) and Stage 5, on this
-   range *and* the existing four.
+- **Oracle stays green** after every engine touch: `node GameBuild/validation/run.mjs`
+  must report `0.000e+0`.
+- **Come-up table (§5.1) reproduced in-game** at three stations against the engine.
+- **Wind drift (§6) reproduced** at 1000 m and 2000 m.
+- **Clearance holds**: every station visible from its own firing point, at every tree
+  density, on device — not just in the solver.
+- **Frame time** inside 16 ms mean on iPad with the chosen tree count, both lines.
+- **The 250 m shared station** gives the same DOPE row from both firing points, allowing
+  for the different eye heights.
+- **Unit parity**: 8 stations in both MIL and MOA worlds, imperial stations sitting
+  short on shared azimuths.
 
 ---
 
-## 11. Ballistic figures this plan depends on
+## 11. Ballistic reference
 
-All from the validated integrator described in §1.1, ICAO sea level, 100 m zero, G7 drag,
-catalog measured MV and true (hidden) BC — **not** box BC.
+From the validated integrator, ICAO sea level, 100 m zero, G7 drag, catalog measured MV
+and true (hidden) BC — not box BC.
 
-| load | G7 BC | MV (fps) | M1.0 (m) | come-up @1000 m (MIL) |
+| load | G7 BC | MV (fps) | M1.2 (m) | **M1.0 (m)** | come-up @1000 m |
+|---|---|---|---|---|---|
+| .22 LR 40 gr std | *(G1 0.138)* | 1070 | *subsonic at muzzle* | — | — |
+| .223 77 gr TMK | 0.207 | 2683 | 652 | 791 | — |
+| .308 175 gr SMK | 0.243 | 2580 | 716 | 879 | — |
+| 6.5 CM 140 gr ELD-M | 0.310 | 2712 | 994 | 1203 | 10.0 MIL |
+| .300 WM 215 gr Berger | 0.354 | 2765 | 1173 | 1411 | 8.9 MIL |
+| .338 LM 300 gr Scenar | 0.392 | 2680 | 1233 | 1496 | 9.1 MIL |
+| **.50 BMG 750 gr A-MAX** | 0.581 | 2720 | **1875** | **2267** | 7.86 MIL |
+
+**Rimfire**, 50 m zero, 10 mph full-value crosswind:
+
+| range | 40 gr standard (1070 fps) | 40 gr high-vel (1255 fps) | .22 WMR (1875 fps) |
+|---|---|---|---|
+| 200 m / 219 yd | 8.35 MIL · 1.77 wind | 6.69 · 2.10 | 2.48 · 1.48 |
+| 300 m / 328 yd | 15.75 · 2.87 | 13.02 · 3.27 | 6.24 · 2.88 |
+| 400 m / 437 yd | 24.45 · 4.00 | 20.55 · 4.41 | 11.11 · 4.11 |
+| **500 m / 547 yd** | **34.56 · 5.16** | 29.39 · 5.55 | 17.04 · 5.23 |
+
+**Bullet apex above the line of sight** — the basis of the shoot-over-a-treeline idea
+(§13):
+
+| station | 6.5 CM | .338 LM | .50 BMG | apex at |
 |---|---|---|---|---|
-| .223 77 gr TMK | 0.207 | 2683 | 791 | — |
-| .308 175 gr SMK | 0.243 | 2580 | 879 | — |
-| 6.5 CM 140 gr ELD-M | 0.310 | 2712 | 1203 | 10.0 |
-| .300 WM 215 gr Berger | 0.354 | 2765 | 1411 | 8.9 |
-| .338 LM 300 gr Scenar | 0.392 | 2680 | 1496 | 9.1 |
-| .50 BMG 750 gr A-MAX | 0.581 | 2720 | 2267 | 7.86 |
+| 500 m | 0.6 m | 0.6 m | 0.5 m | ~52 % downrange |
+| 1000 m | 3.5 m | 3.1 m | 2.9 m | ~55 % |
+| 1500 m | 12.3 m | 9.9 m | 9.6 m | ~58 % |
+| 2000 m | **32.1 m** | 25.8 m | 26.0 m | ~60 % |
 
 ---
 
-## 12. Still open
+## 12. Decisions log
 
-1. **The `effectiveRangeYd` rule (§1.2).** The shipped values are provisional and
-   inconsistent with the physics. A clean "last supersonic 250-step station" rule would cut
-   .308 from 1000 yd to 750 yd, which deletes the sport's canonical proof shot. **This range
-   does not need it resolved** — §5.5's Mach-state marking is strictly more informative — but
-   the 2.4c DOPE range does, and the three unshipped cartridges (.300 WM, .338 LM, .50 BMG)
-   have no value at all yet. Needs an owner call.
-2. ~~**`logarithmicDepthBuffer` blast radius.**~~ **Resolved 2026-07-27 by measuring instead
-   of assuming (§6.1).** `far` turns out to have almost no effect on depth precision and `near`
-   has all of it; raising `near` to 10 m is free (nothing renders inside 18 m, and the reticle
-   is a 2D overlay) and buys 20×. Making near/far per-range removes the blast radius entirely —
-   the other four ranges are not touched. One thing left to *check*, not decide: the actual
-   `DEPTH_BITS` on device, since 16-bit would force the two-pass split. Stage 1 does it.
-3. **Does `steel-scene-api.ts` need the `PaperBayScene` treatment?** Unread at plan time.
-   Stage 3 exists to answer it and may turn out to be a no-op.
-4. **60 MOA base, or a deeper reticle?** §4.1 shows 3000 m is unreachable either way, but
-   which unlock closes the 2750 m gap is a progression-design question, not a geometry one.
-   The reticle route is arguably better teaching (holdover is a skill; a base is a purchase).
-5. **Deck vegetation density vs the 16 ms gate.** A 700 × 3100 m deck is ~15× the area of the
-   Wooded Zero Range. Scatter counts cannot simply scale; distance-thinned density needs
-   tuning on device.
-6. **Extend the oracle matrix to 2000 m, and add the .50 BMG to it.** Both are cheap and
-   together they remove the last trust caveat. `GameBuild/validation/loads.json` holds six
-   loads, each with its own `ranges: {maxRangeM, stepM}` (currently topping out at 1800 m);
-   pristine BTK is present locally, so `node run.mjs --generate` regenerates. Adding new
-   loads and ranges does not disturb existing rows, but the harness header is emphatic that
-   regeneration is an **owner-decision-logged** operation — so this needs an explicit call,
-   not an agent's initiative. Doing it makes the 2000 m cap fully validated instead of
-   "200 m past coverage."
+| # | decision | date | note |
+|---|---|---|---|
+| D1 | Cap at **2000 m / 2000 yd**, 250 m steps, 8 stations | 07-27 | trust, not reach (§1.2) |
+| D2 | Scope elevation-travel ceiling is the lesson, met by **holdover** not a gear gate | 07-27 | §5 |
+| D3 | Gongs **1 MIL / 3 MOA**, constant-angular | 07-27 | §4.1 |
+| D4 | **White** plate on a **dark charcoal** panel | 07-27 | §4.2 |
+| D5 | Bullseye rings **white / blue / white** at ⅓ / ⅔ / 1 MIL | 07-27 | §4.3 |
+| D6 | **Convex rising slope**; bluff and fan retired | 07-28 | §2.1, measured |
+| D7 | **Wooded throughout**, no cleared lane or cut swaths | 07-28 | §2.2 |
+| D8 | Target offsets **searched against the forest**, angular cap 25 mrad | 07-28 | §3 |
+| D9 | **One terrain, two firing points** — low rimfire, high centrefire | 07-28 | §2.3 |
+| D10 | **Rimfire ladder 50 m steps to 500 m**; 250 m shared | 07-28 | §1.1 |
+| D11 | Trees are **scenery**; trajectory clearance deferred | 07-28 | §13 |
+| D12 | Range stays **known-distance and marked** | 07-28 | §1 |
 
-7. **Adding the .50 BMG to the catalog is pure data** — verified 2026-07-27. One entry in
-   `game/catalog.data.json` keyed `50bmg` with the same shape as `65cm`; there are no
-   hardcoded cartridge lists anywhere (only `DEFAULT_GAME_LOAD_CARTRIDGE_ID`), `RawCartridge`
-   is typed off the `'65cm'` entry so a same-shaped entry typechecks for free, and
-   `isRimfireCartridge` reads a string field. Every value already exists in
-   `bullet-catalog/catalog-starting-values.md`. **Extending the DOPE table needs no code at
-   all**: `comeUpStationsM(isRimfire, units, effectiveRangeYd, hardMaxYd)` is already
-   parameterised, callers pass `effRangeYd × 2`, and `assembleComeUp` trims at the first
-   subsonic row.
+---
 
-8. **Does the 250 m station belong on this range at all?** It exists to anchor the near end of
-   the DOPE curve, but it is also the only station where the bluff's incline is non-trivial.
-   Worth a look on device before it is treated as settled.
+## 13. Still open
+
+1. **Tree budget.** The ramp exists; the sweep has not been run. Gates stage 3.
+2. **Bake the solved offsets, or keep recomputing?** (§3.4) Decide before ship.
+3. **Plate-scaled clearance margin** (§3.1) — needed before the rimfire ladder.
+4. **Transonic dispersion (`_gaps.md` N4).** Not modelled, so high-velocity rimfire is
+   strictly better in-game and strictly worse in life, and §4.5's "dispersion opens"
+   label overstates the model. Affects the centrefire Mach 1.2 threshold too.
+5. **Wind model circle-back** (§6) — `computeZero` bakes session wind into the zero.
+6. **The `effectiveRangeYd` rule.** Shipped values are provisional and physically
+   inconsistent (.223's 600 yd is short of its 865 yd limit; .308's 1000 is 4 % past its
+   961). A clean "last supersonic station" rule would cut .308 to 750 yd, deleting the
+   sport's canonical proof shot — so it is a wrong rule. This range does not need it
+   resolved (§4.5 is strictly better), but the 2.4c DOPE range does.
+7. **Trajectory clearance as a mechanic** (`feature-catalog.md`). The apex table in §11
+   says a 2000 m shot passes 32 m above the sight line at the 1200 m mark — fire through
+   a slot in a treeline and the round leaves it climbing and comes down through the
+   canopy beyond. Deferred: needs path-obstacle collision (nothing does this today) and
+   feedback for a strike 1200 m away and 30 m up, which makes **spotter cam a
+   prerequisite**.
+8. **Does the 250 m station belong on the centrefire line?** It anchors the near end of
+   the DOPE curve but is the station most affected by the high line's downward angle.
+   Now that it is also the rimfire ladder's far end, it may want to belong to the low
+   line only. Look at it on device.
+9. **Metric vs imperial for the rimfire ladder.** The centrefire ladder is 250 m / 250 yd
+   with matched station counts. The rimfire ladder was specified as "every 50 yards out
+   to 500" but is computed here in metres. Same shared-azimuth invariant applies; check
+   it holds at 50 m steps.
 
 ---
 
 ## Sources
 
-- Cartridge values (true BC, measured MV): `Design/bullet-catalog/catalog-starting-values.md`
-  and `catalog-seed.json` — *secondary* source, flagged as such there.
-- Scope tier travel figures: `catalog-starting-values.md` § "Scope / sighting system".
-- Trajectories, Mach thresholds, come-ups, wind drift: point-mass integration against the
-  standard **G7** drag function, ICAO sea level (ρ = 1.225 kg/m³, a = 340.29 m/s), `dt = 0.5 ms`,
-  100 m zero, 5 cm sight height. Validated at 1000 yd against published factory data for three
-  loads (§1.1). Every ballistic number in this document is an output of that run.
-- Fan, occlusion, bluff clearance, dual-unit superset, fog tables: computed directly from the
-  parameters in §2–§3; all figures are outputs, not estimates.
-- Inclination-error closed form `g·H²/(4v₀²)` and the corridor/knoll/superset model:
-  `Design/archive/mil-zero-range-plan.md` §2.2, §3.3, §8.
-- DOPE range decisions D1–D10 (gong sizing, ladder, node venue, environment module):
-  `Design/archive/increment-2.4-plan.md` §3.
-- Existing code read for conventions and limits: `range/ranges.ts`, `range/wooded-zero-config.ts`,
-  `range/wooded-zero-environment.ts`, `range/test-range-config.ts`, `range/range-a-config.ts`,
-  `range/environment/environment-config.ts`, `range/environment/terrain.ts`,
-  `game/dope-book.ts`, `game/catalog.data.json`, `scope/ScopeView.tsx`.
+- `archive/elr-dope-range-plan-2026-07-27.md` — the superseded draft; retains the full
+  derivations for the fan geometry, depth-precision analysis and biome notes.
+- `archive/elr-probe-plan.md` §5.0 — the probe's on-device findings.
+- `archive/mil-zero-range-plan.md` — the Wooded Zero Range, whose corridor/knoll model,
+  tree renderer and dual-unit superset this range reuses and scales.
+- `Design/execution/PROGRESS.md` P0–P17 — the build and measurement log behind every
+  number in §7.
+- `Wiki/ballistic-coefficient.md`, `Wiki/range-estimation.md`, `Wiki/mil-dots-subtensions.md`
+- `GameBuild/validation/ORACLE_VERSION` — coverage and oracle identity.

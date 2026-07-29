@@ -1,6 +1,6 @@
 {
  "$comment": "GOLDEN VECTORS from pristine BTK. Do not edit; do not regenerate without an owner decision (see ORACLE_VERSION).",
- "generatedAt": "2026-07-28T19:46:42.911Z",
+ "generatedAt": "2026-07-28T22:32:15.158Z",
  "cases": [
   {
    "loadId": "65cm-140-match",
@@ -930,6 +930,34 @@
      "windageM": 0.06402411311864853,
      "velocityMps": 222.10760498046875,
      "timeOfFlightS": 1.1447257995605469
+    },
+    {
+     "rangeM": 350,
+     "dropM": -6.313302516937256,
+     "windageM": 0.09521988779306412,
+     "velocityMps": 211.06504821777344,
+     "timeOfFlightS": 1.3759312629699707
+    },
+    {
+     "rangeM": 400,
+     "dropM": -9.028294563293457,
+     "windageM": 0.13337647914886475,
+     "velocityMps": 200.7941436767578,
+     "timeOfFlightS": 1.6192231178283691
+    },
+    {
+     "rangeM": 450,
+     "dropM": -12.354066848754883,
+     "windageM": 0.1790241152048111,
+     "velocityMps": 191.1265411376953,
+     "timeOfFlightS": 1.8750678300857544
+    },
+    {
+     "rangeM": 500,
+     "dropM": -16.35512351989746,
+     "windageM": 0.23274990916252136,
+     "velocityMps": 181.9893798828125,
+     "timeOfFlightS": 2.1440494060516357
     }
    ]
   },
@@ -979,6 +1007,34 @@
      "windageM": 0.6953150629997253,
      "velocityMps": 222.09092712402344,
      "timeOfFlightS": 1.1448005437850952
+    },
+    {
+     "rangeM": 350,
+     "dropM": -6.314172744750977,
+     "windageM": 1.0124056339263916,
+     "velocityMps": 211.04953002929688,
+     "timeOfFlightS": 1.376028299331665
+    },
+    {
+     "rangeM": 400,
+     "dropM": -9.029606819152832,
+     "windageM": 1.3904966115951538,
+     "velocityMps": 200.7800750732422,
+     "timeOfFlightS": 1.61934494972229
+    },
+    {
+     "rangeM": 450,
+     "dropM": -12.355936050415039,
+     "windageM": 1.8322023153305054,
+     "velocityMps": 191.11427307128906,
+     "timeOfFlightS": 1.8752162456512451
+    },
+    {
+     "rangeM": 500,
+     "dropM": -16.35770606994629,
+     "windageM": 2.3408029079437256,
+     "velocityMps": 181.97906494140625,
+     "timeOfFlightS": 2.1442277431488037
     }
    ]
   },
@@ -1028,6 +1084,34 @@
      "windageM": 0.06760667264461517,
      "velocityMps": 241.91123962402344,
      "timeOfFlightS": 1.0863358974456787
+    },
+    {
+     "rangeM": 350,
+     "dropM": -5.664209365844727,
+     "windageM": 0.09973618388175964,
+     "velocityMps": 232.27334594726562,
+     "timeOfFlightS": 1.297459602355957
+    },
+    {
+     "rangeM": 400,
+     "dropM": -8.025903701782227,
+     "windageM": 0.1385761946439743,
+     "velocityMps": 223.190673828125,
+     "timeOfFlightS": 1.5173444747924805
+    },
+    {
+     "rangeM": 450,
+     "dropM": -10.881315231323242,
+     "windageM": 0.18449904024600983,
+     "velocityMps": 214.62393188476562,
+     "timeOfFlightS": 1.7462087869644165
+    },
+    {
+     "rangeM": 500,
+     "dropM": -14.27125072479248,
+     "windageM": 0.2379092574119568,
+     "velocityMps": 206.51837158203125,
+     "timeOfFlightS": 1.984283447265625
     }
    ]
   },
@@ -1077,6 +1161,34 @@
      "windageM": 0.5417703986167908,
      "velocityMps": 241.8965301513672,
      "timeOfFlightS": 1.0863873958587646
+    },
+    {
+     "rangeM": 350,
+     "dropM": -5.664770126342773,
+     "windageM": 0.7873262763023376,
+     "velocityMps": 232.25912475585938,
+     "timeOfFlightS": 1.2975260019302368
+    },
+    {
+     "rangeM": 400,
+     "dropM": -8.026748657226562,
+     "windageM": 1.0787638425827026,
+     "velocityMps": 223.17713928222656,
+     "timeOfFlightS": 1.5174280405044556
+    },
+    {
+     "rangeM": 450,
+     "dropM": -10.882519721984863,
+     "windageM": 1.4174315929412842,
+     "velocityMps": 214.61129760742188,
+     "timeOfFlightS": 1.7463105916976929
+    },
+    {
+     "rangeM": 500,
+     "dropM": -14.272911071777344,
+     "windageM": 1.8047680854797363,
+     "velocityMps": 206.5068817138672,
+     "timeOfFlightS": 1.9844058752059937
     }
    ]
   },
@@ -1126,6 +1238,34 @@
      "windageM": 0.06519636511802673,
      "velocityMps": 210.20236206054688,
      "timeOfFlightS": 1.1885972023010254
+    },
+    {
+     "rangeM": 350,
+     "dropM": -6.82947301864624,
+     "windageM": 0.09739434719085693,
+     "velocityMps": 198.8185577392578,
+     "timeOfFlightS": 1.433524489402771
+    },
+    {
+     "rangeM": 400,
+     "dropM": -9.814288139343262,
+     "windageM": 0.1370103806257248,
+     "velocityMps": 188.2749786376953,
+     "timeOfFlightS": 1.692478060722351
+    },
+    {
+     "rangeM": 450,
+     "dropM": -13.494470596313477,
+     "windageM": 0.18468187749385834,
+     "velocityMps": 178.3855438232422,
+     "timeOfFlightS": 1.9661083221435547
+    },
+    {
+     "rangeM": 500,
+     "dropM": -17.95094871520996,
+     "windageM": 0.2411198914051056,
+     "velocityMps": 169.06658935546875,
+     "timeOfFlightS": 2.2551887035369873
     }
    ]
   },
@@ -1175,6 +1315,34 @@
      "windageM": 0.8042168617248535,
      "velocityMps": 210.18479919433594,
      "timeOfFlightS": 1.1886883974075317
+    },
+    {
+     "rangeM": 350,
+     "dropM": -6.83056640625,
+     "windageM": 1.1689274311065674,
+     "velocityMps": 198.80267333984375,
+     "timeOfFlightS": 1.4336422681808472
+    },
+    {
+     "rangeM": 400,
+     "dropM": -9.815934181213379,
+     "windageM": 1.6037672758102417,
+     "velocityMps": 188.26104736328125,
+     "timeOfFlightS": 1.6926246881484985
+    },
+    {
+     "rangeM": 450,
+     "dropM": -13.496838569641113,
+     "windageM": 2.112288475036621,
+     "velocityMps": 178.37384033203125,
+     "timeOfFlightS": 1.9662883281707764
+    },
+    {
+     "rangeM": 500,
+     "dropM": -17.95425796508789,
+     "windageM": 2.6987977027893066,
+     "velocityMps": 169.05751037597656,
+     "timeOfFlightS": 2.255406618118286
     }
    ]
   },

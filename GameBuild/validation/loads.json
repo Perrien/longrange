@@ -15,7 +15,7 @@
     ]
   },
   "validation": {
-    "$comment": "Golden-vector matrix (task 0.7): every load x atmosphere x wind case, sampled per the load's `ranges`. Zero-wind windage is the spin-drift/aero-jump channel. RANGE COVERAGE, extended 2026-07-28 to 2000 m for the ELR range: five loads carry maxRangeM 2000; 22lr-40-standard stays at 300 because it CANNOT reach 2000 and fails RAGGEDLY rather than loudly — solve-driver.mjs walls simulate() at 15 s, and a .22 LR needs ~14.3 s to reach only 1600 m, so it silently returns 15-18 rows instead of 20 and the count VARIES BY ATMOSPHERE (1600 ISA / 1800 hot-and-high / 1500 cold-dense). `solve()` skips unreachable ranges with a bare `continue`, so an over-reaching load quietly shrinks its own coverage instead of erroring. Before raising any maxRangeM, check the row COUNT, not just that generation succeeded.",
+    "$comment": "Golden-vector matrix (task 0.7): every load x atmosphere x wind case, sampled per the load's `ranges`. Zero-wind windage is the spin-drift/aero-jump channel. RANGE COVERAGE, extended 2026-07-28 to 2000 m for the ELR range: five loads carry maxRangeM 2000; 22lr-40-standard is at 500 (extended 2026-07-28 for the rimfire ladder; reaches 500 m in all three atmospheres, TOF 1.98-2.26 s) and must NOT be pushed further, because it fails RAGGEDLY rather than loudly — solve-driver.mjs walls simulate() at 15 s, and a .22 LR needs ~14.3 s to reach only 1600 m, so it silently returns 15-18 rows instead of 20 and the count VARIES BY ATMOSPHERE (1600 ISA / 1800 hot-and-high / 1500 cold-dense). `solve()` skips unreachable ranges with a bare `continue`, so an over-reaching load quietly shrinks its own coverage instead of erroring. Before raising any maxRangeM, check the row COUNT, not just that generation succeeded.",
     "zeroRangeM": 100,
     "atmospheres": [
       { "name": "ISA sea level", "temperatureK": 288.15, "altitudeM": 0, "humidity": 0.5, "pressurePa": 0 },
@@ -74,7 +74,7 @@
         "muzzleVelocityMps": 326.136,
         "twistM": 0.4064
       },
-      "ranges": { "maxRangeM": 300, "stepM": 50 }
+      "ranges": { "maxRangeM": 500, "stepM": 50 }
     },
     {
       "id": "223-77-match",

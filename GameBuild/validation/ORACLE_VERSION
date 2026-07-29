@@ -22,3 +22,12 @@ vectors: vectors/golden.json (regenerate: node GameBuild/validation/run.mjs --ge
 #   22lr-40-standard left at 300 m — see the note in loads.json.
 #   Result: 402 pre-existing rows BIT-IDENTICAL, 234 rows added, 636 total,
 #   36 cases. Check mode worst rel diff 0.000e+0.
+#
+# 2026-07-28 (2) — 22lr-40-standard extended 300 -> 500 m for the rimfire ladder.
+#   Why: the .22 reaches 500 yd with holdover (34.56 MIL at 500 m), so a 500 m
+#   rimfire ladder would otherwise put its last four stations outside coverage.
+#   Reachability verified FIRST: 10/10 rows in all three atmospheres, TOF
+#   1.98-2.26 s against the harness's 15 s wall. Do not push past 500 — this load
+#   truncates silently and by a different amount per atmosphere (see loads.json).
+#   Result: 636 pre-existing rows BIT-IDENTICAL, 24 added, 660 total, 36 cases.
+#   Check mode worst rel diff 0.000e+0.
