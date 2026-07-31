@@ -1,8 +1,10 @@
 // IDPA silhouette target type (Design/archive/target-system-plan.md, task T7).
 //
 // Transcribed from `Documentation/Targets/idpa-target.svg` — the owner's spec of
-// record. The SVG's path/circle attributes are embedded here VERBATIM as string
-// constants and flattened by `svg-outline.ts` at module load, so:
+// record (git-ignored local workspace; a tracked, byte-identical copy the sync test
+// actually reads lives at `./spec/idpa-target.svg`). The SVG's path/circle attributes
+// are embedded here VERBATIM as string constants and flattened by `svg-outline.ts` at
+// module load, so:
 //
 //   • the outline, the four scoring zones and the rasterised face all derive from
 //     ONE source, and cannot drift apart;

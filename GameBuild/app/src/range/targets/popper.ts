@@ -1,9 +1,11 @@
 // Popper target type (Design/archive/target-system-plan.md, task T8).
 //
 // Transcribed from `Documentation/Targets/idpa-popper.svg` — the owner's spec of
-// record — the same way `idpa.ts` handles the silhouette: the path is embedded VERBATIM
-// and flattened by `svg-outline.ts`, so outline, zone and face all derive from one
-// source and the sync test is exact string equality.
+// record (git-ignored local workspace; a tracked, byte-identical copy the sync test
+// actually reads lives at `./spec/idpa-popper.svg`) — the same way `idpa.ts` handles
+// the silhouette: the path is embedded VERBATIM and flattened by `svg-outline.ts`, so
+// outline, zone and face all derive from one source and the sync test is exact string
+// equality.
 //
 // NOT A ROUND HEAD. The plan first described this as an "8″ round popper head"; the
 // spec is a 42″ full-height silhouette — head arc R3″, an R6″ body circle centred

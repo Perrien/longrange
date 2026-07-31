@@ -1,0 +1,28 @@
+<svg viewBox="0 0 423 694" xmlns="http://www.w3.org/2000/svg">
+  <!-- IDPA-TAN target, traced from reference photo. Total height 30.75in. -->
+  <!-- Scoring-zone boundary lines only, no point-value labels. -->
+
+  <!-- Outer silhouette (-3 zone boundary) -->
+  <path
+    d="M145,15 L278.25,15 L278.25,143 L360.75,143.5 L408.25,215.25 L408.25,566.25 L348,678.75 L74,678.75 L15,566.25 L15,214.75 L62.5,143.5 L144.75,143.25 Z"
+    fill="#B4946E"
+    stroke="#1A1A1A"
+    stroke-width="3"
+    stroke-linejoin="round"
+  />
+
+  <!-- Inner scoring zone (-1 zone boundary) -->
+  <path
+    d="M148,148 L275,147.75 L338.25,218 L338.25,431.75 L274.5,537.75 L148.25,537.75 L84.75,432 L84.75,217.75 Z"
+    fill="#C5A88A"
+    stroke="#1A1A1A"
+    stroke-width="2.5"
+    stroke-linejoin="round"
+  />
+
+  <!-- Head center zone (-0) -->
+  <circle cx="211.55" cy="90.55" r="41.2" fill="#DBC6B3" stroke="#1A1A1A" stroke-width="2.5" />
+
+  <!-- Body center zone (-0) -->
+  <circle cx="211.53" cy="300.95" r="84.05" fill="#DBC6B3" stroke="#1A1A1A" stroke-width="2.5" />
+</svg>

@@ -1,9 +1,18 @@
 // Tests for the IDPA silhouette target type (task T7).
 //
 // The load-bearing test is the SYNC one: the constants embedded in `idpa.ts` must be
-// string-equal to the attributes in `Documentation/Targets/idpa-target.svg`, and the
-// `public/` copy the rasteriser fetches must be byte-identical to that same file. Two
-// copies that can diverge silently is the failure mode this design exists to avoid.
+// string-equal to the attributes in `spec/idpa-target.svg` (a tracked copy of the
+// owner's authored art — the original lives in the git-ignored `Documentation/Targets/`
+// workspace, see that file's header), and the `public/` copy the rasteriser fetches must
+// be byte-identical to that same file. Two copies that can diverge silently is the
+// failure mode this design exists to avoid.
+//
+// CI FIX (2026-07-31): this test used to read straight from `Documentation/Targets/`,
+// which is git-ignored (local-only source workspace, .gitignore) — it never existed on
+// GitHub Actions' checkout, so CI failed with ENOENT on every run. `spec/idpa-target.svg`
+// is a tracked, byte-identical copy so CI has something to check the embedded constants
+// and the `public/` copy against; keep it in sync with `Documentation/Targets/idpa-target.svg`
+// by hand if that source ever changes.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -25,10 +34,7 @@ import { zoneAt } from '../../game/target-hit';
 import { planFace } from './face-plan';
 import { toLocal } from './svg-outline';
 
-const SPEC_PATH = new URL(
-  '../../../../../Documentation/Targets/idpa-target.svg',
-  import.meta.url,
-);
+const SPEC_PATH = new URL('./spec/idpa-target.svg', import.meta.url);
 const PUBLIC_PATH = new URL('../../../public/targets/idpa-target.svg', import.meta.url);
 
 const specSvg = readFileSync(SPEC_PATH, 'utf8');

@@ -1,0 +1,27 @@
+<svg viewBox="0 0 140 440" xmlns="http://www.w3.org/2000/svg">
+  <!-- Popper target outline, traced from dimensioned drawing.
+       Overall height 42in; head arc R3in; body circle R6in centered 27.375in
+       up from the base; body pinches to 8in wide before tapering to a 6in base. -->
+
+  <!-- Silhouette outline -->
+  <path
+    d="M70,10
+       A30,30 0 0,1 100,40
+       L100,104.3
+       A60,60 0 0,1 110,201
+       L100,430
+       L40,430
+       L30,201
+       A60,60 0 0,1 40,104.3
+       L40,40
+       A30,30 0 0,1 70,10
+       Z"
+    fill="none"
+    stroke="#1A1A1A"
+    stroke-width="2"
+    stroke-linejoin="round"
+  />
+
+  <!-- Reference circle (R6in), outline only -->
+  <circle cx="70" cy="156.25" r="60" fill="none" stroke="#1A1A1A" stroke-width="1.5" />
+</svg>

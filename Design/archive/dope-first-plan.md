@@ -1,9 +1,9 @@
 # DOPE-first plan — auto-populated, chrono-fed DOPE book to 1000 yd
 
-**Status: COMPLETE 2026-07-31 — all five steps shipped.** Locked as the direction
+**Status: COMPLETE 2026-07-31 — all five steps shipped. Archived.** Locked as the direction
 2026-07-26; supersedes the increment 2.4b–f node-confirmation sequencing *as the path to a
 working DOPE book* — the heavy node/confidence machinery was not a prerequisite. Built on
-D15 ([`D15-two-lever-truing-independent.md`](./D15-two-lever-truing-independent.md)): two
+D15 ([`../Plans/D15-two-lever-truing-independent.md`](../Plans/D15-two-lever-truing-independent.md)): two
 independent levers, chrono→MV, confirm-hold→BC.
 
 **Step 5 — DONE (2026-07-31)** via [`bc-truing-plan.md`](./bc-truing-plan.md) (T1–T4, all
@@ -21,7 +21,7 @@ was fitted against. See `bc-truing-plan.md` for the full build record and scope 
 impact capture, no group tracking, no DopeNode recording — this is deliberately narrower than
 the old 2.4b–f node/confidence system, which remains valid future work per D15).
 
-**Steps 2–4 — DONE (2026-07-27)** via the expanded [`dope-book-ui-plan.md`](../archive/dope-book-ui-plan.md)
+**Steps 2–4 — DONE (2026-07-27)** via the expanded [`dope-book-ui-plan.md`](./dope-book-ui-plan.md)
 (P1–P4): the tabbed rifle-scoped DOPE book (status header, come-up table extended past
 effective range to the transonic/subsonic wall, rifle & ammo overview with calculated
 vertical spread), inventory data model (shot count, round depletion, lot codes,
@@ -73,7 +73,7 @@ As the player progresses, notes clear and the table tightens:
 Three pieces:
 - **Raise the off-the-shelf zero error** from the current ~1 MOA to **D16's raw pointing
   error** (flat 5–35 MOA magnitude, random direction) — see
-  [`D16-raw-zero-error.md`](../archive/D16-raw-zero-error.md). A new rifle is genuinely un-zeroed and must
+  [`D16-raw-zero-error.md`](./D16-raw-zero-error.md). A new rifle is genuinely un-zeroed and must
   be zeroed before it hits where the reticle points. Also retire the leftover
   `SCOPE_ZERO_RANGE_M = 300 yd` test constant in `loads.ts`.
 - **Update the zeroing range to 25/50/100/200 yd** (currently 50/100/200) and treat it as a
@@ -145,6 +145,6 @@ clamping), and the D15 re-true signal (`isBcStaleVsChrono`) when a later chrono 
 ## Resolved: zeroing model
 
 - **Zeroing model — DECIDED (D16, 2026-07-26)**, see
-  [`D16-raw-zero-error.md`](../archive/D16-raw-zero-error.md). Option B: raw off-the-shelf pointing error
+  [`D16-raw-zero-error.md`](./D16-raw-zero-error.md). Option B: raw off-the-shelf pointing error
   (flat 5–35 MOA, random direction); player must zero; DOPE book gated until Confirm Zero;
   25/50/100/200 yd zeroing range.

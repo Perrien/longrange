@@ -4,6 +4,11 @@
 // PROVES arc flattening is necessary — its authored line endpoints span only 8″ while
 // the real silhouette is 12″ — and it is the target whose waist pinch proves the
 // triangulator has to handle a non-convex ring.
+//
+// CI FIX (2026-07-31, mirrors idpa.test.ts): reads `spec/idpa-popper.svg`, a tracked
+// copy of the owner's authored art (the original lives in the git-ignored
+// `Documentation/Targets/` workspace) — the old path reached into `Documentation/`
+// directly, which doesn't exist on GitHub Actions' checkout.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -28,7 +33,7 @@ import { zoneAt } from '../../game/target-hit';
 import { toLocal } from './svg-outline';
 import { artUrl } from './face-raster';
 
-const SPEC_PATH = new URL('../../../../../Documentation/Targets/idpa-popper.svg', import.meta.url);
+const SPEC_PATH = new URL('./spec/idpa-popper.svg', import.meta.url);
 const specSvg = readFileSync(SPEC_PATH, 'utf8');
 
 /** Px per inch in this drawing: the outline spans y 10..430 over a stated 42 in. */

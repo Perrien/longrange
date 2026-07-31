@@ -1,9 +1,10 @@
 # BC truing plan — "Update BC" from an asserted hold (DOPE-first step 5)
 
-**Status:** DRAFT — awaiting owner approval. Written 2026-07-31.
+**Status:** COMPLETE — T1–T4 built + owner-confirmed on device 2026-07-31 (T3 and T4 each
+had their own owner-verification stop). Archived. Written 2026-07-31.
 Closes the last open step of [`dope-first-plan.md`](./dope-first-plan.md) (step 5,
 confirm-hold → BC) and implements **D15 lever 2**
-([`D15-two-lever-truing-independent.md`](./D15-two-lever-truing-independent.md)).
+([`../Plans/D15-two-lever-truing-independent.md`](../Plans/D15-two-lever-truing-independent.md)).
 Plan slug for commit messages: **`bc-truing`**.
 
 ---

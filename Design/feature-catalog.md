@@ -184,7 +184,7 @@ so a BC fit made before chronographing dumps that residual onto BC and stays **p
 until the curve is chrono-anchored (D13). Re-truing after a new chrono is a manual re-fit,
 flagged by a "chrono is newer than your BC" signal rather than auto-recomputed (D15).
 **Both levers built** — lever 1 (chrono → MV) **2026-07-27** via the DOPE-first plan (step 3);
-lever 2 (BC) **2026-07-31** via [`Plans/bc-truing-plan.md`](./Plans/bc-truing-plan.md), as an
+lever 2 (BC) **2026-07-31** via [`archive/bc-truing-plan.md`](./archive/bc-truing-plan.md), as an
 **asserted-hold fit** (`engine-bridge/bc-fit.ts` bracketed bisection + the in-scope DOPE panel's
 "Update BC" dialog + `state/store.ts`'s `setLotEffectiveBc`) — **not** via a confirmed downrange
 node, which still doesn't exist (see the node/confidence system below, still not built). D15
@@ -204,7 +204,7 @@ the actual required holdover differs from the card (card says 5 MOA at some rang
 you're actually holding 5.25) and nudge BC (or MV) until the computed table matches.
 **MV/BC readout: built** (DOPE-first plan step 2/`DopeBookScreen.tsx`'s status chips — value +
 source tag, `(box)`/`(chrono)`/`(trued)`/`(provisional)`). **Standalone manual-nudge field: not
-built, and no longer planned as a stopgap** — resolved 2026-07-31 (`Plans/dope-first-plan.md`
+built, and no longer planned as a stopgap** — resolved 2026-07-31 (`archive/dope-first-plan.md`
 step 5 close-out): the BC-truing "Update BC" dialog's editable, pre-filled come-up field
 already gives the player the equivalent hand-truing control (assert the number you're actually
 holding, the game fits BC to it) without a second, separate raw-BC input. D14's overwrite rule
