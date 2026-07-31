@@ -1,4 +1,4 @@
-// IDPA silhouette target type (Design/Plans/target-system-plan.md, task T7).
+// IDPA silhouette target type (Design/archive/target-system-plan.md, task T7).
 //
 // Transcribed from `Documentation/Targets/idpa-target.svg` — the owner's spec of
 // record. The SVG's path/circle attributes are embedded here VERBATIM as string

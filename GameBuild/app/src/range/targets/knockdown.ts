@@ -1,4 +1,4 @@
-// Knockdown physics (Design/Plans/target-system-plan.md §6, task T6).
+// Knockdown physics (Design/archive/target-system-plan.md §6, task T6).
 //
 // WHY THIS IS TS AND NOT C++. The engine's `SteelTarget::timeStep` has gravity,
 // chain springs, a Y-twist spring and settle detection — but no base hinge, no

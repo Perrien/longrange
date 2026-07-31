@@ -1,4 +1,4 @@
-// Authored target placements (Design/Plans/target-system-plan.md §4, task T3).
+// Authored target placements (Design/archive/target-system-plan.md §4, task T3).
 //
 // Typed loader over `placements.data.json`, mirroring `game/catalog.ts` /
 // `catalog.data.json`: the JSON lives INSIDE `src/` and is imported statically

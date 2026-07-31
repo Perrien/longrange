@@ -116,3 +116,31 @@ its banner. Trust `../feature-catalog.md` and the code over this spec.
 
 Cross-links *between these two files* were rewritten (both ends moved together);
 every other relative link in them follows the folder convention above and is stale.
+
+## Completed plan doc (archived 2026-07-31)
+
+`target-system-plan.md` — moved from `Design/Plans/` on completion. **Executed, not
+superseded:** all 16 tasks built and every on-device owner check passed
+(2026-07-30/31). It builds the three-axis target abstraction — **Target × Mount ×
+Group**, producing `PlateInstance[]` — that `../feature-catalog.md` §F needed for the
+steel-target menagerie and the human-silhouette / IDPA zone scoring entries, proved
+out on the Test Range. Live record: `../feature-catalog.md` §F and the "Target
+system" rows in `../execution/PROGRESS.md`.
+
+Worth re-reading it for the boundaries it deliberately drew, which are easy to
+re-litigate wrongly: **Range A and ELR were intentionally not migrated** to authored
+placement data (ELR's layout solves sight clearance against a runtime tree field and
+*cannot* be static; Range A's computed ladder would lose its BTK authored-inputs
+derivation) — the shared abstraction is Target × Mount × `PlateInstance`, **not** the
+placement source, so authored placements are data while computed layouts stay code.
+It also records the characterization guards (T0) that pin plate geometry, `discHit`
+truth and the two-sided paint invariant as the regression baseline.
+
+Note this one is a **link-safe move**: `Design/Plans/` and `Design/archive/` sit at
+the same depth, so its `../feature-catalog.md` / `../execution/*` links still
+resolve — unlike the docs above that came from `Design/execution/`.
+
+⚠ Its **execution rules are stale**: it was run under the retired "stop and confirm
+after every task" (§2.8) and hard ~400-line size limit (§3). Those were replaced
+2026-07-31 by plan-declared pause points — `../execution/execution-protocol.md` §2b.
+A banner at the top of the file says so.

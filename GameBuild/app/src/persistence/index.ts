@@ -10,6 +10,8 @@ export type {
   PlayerZero,
   RifleDraws,
   LotDraws,
+  EffectiveParams,
+  EffectiveSource,
 } from './schema';
 export { serializeSave, parseSave } from './save-store';
 export type { SaveStore } from './save-store';

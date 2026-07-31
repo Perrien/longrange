@@ -1,4 +1,4 @@
-// Face layer plan (Design/Plans/target-system-plan.md §5b, task T6b).
+// Face layer plan (Design/archive/target-system-plan.md §5b, task T6b).
 //
 // Turns a target's declarative face — a palette plus a bottom-first layer stack —
 // into an ordered list of DRAW OPS in plate-atlas pixel coordinates. Pure: no canvas,

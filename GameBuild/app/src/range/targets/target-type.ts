@@ -1,5 +1,5 @@
 // Target types — the "what is being shot at" half of the target system
-// (Design/Plans/target-system-plan.md §1, task T1).
+// (Design/archive/target-system-plan.md §1, task T1).
 //
 // A TargetType describes the TARGET ONLY: its outline, its scoring zones, its
 // face art, its mass model and its default size. It deliberately says nothing

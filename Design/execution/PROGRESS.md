@@ -402,7 +402,7 @@ filtering from a per-scene constant with an `else` fallback to `RANGE_A_GROUND.l
 new scene type lands in that fallback. The probe sets `windMarkers: false` so it does not bite,
 but the full ELR range must supply its own value or every flag past 500 yd is filtered out.
 
-## Target system (owner-approved plan, `Design/Plans/target-system-plan.md`)
+## Target system (owner-approved plan, `Design/archive/target-system-plan.md` — COMPLETE, archived 2026-07-31)
 
 Origin: owner asked (2026-07-30) to build several reactive targets on the Test Range, on the
 assumption that targets — like environmentals — are authored as their own files and imported
@@ -815,6 +815,46 @@ fix this environment-wide for all Node tools without the per-tool `cafile` worka
 - (none — all Increment 0 tooling in place as of 2026-07-13)
 
 ## Owner decisions log
+- 2026-07-31: **Execution protocol amended — plan-declared pause points replace the
+  per-task owner stop; the ~400-line limit becomes planning guidance.** Owner: work is
+  almost always plan-driven, so the agent authoring a plan now decides where the pause
+  points fall — **checkpoints** (regression / new-feature testing that needs no owner
+  input; run them and keep going) and **owner-verification stops** (halt and wait).
+  Hard requirement on the latter: *"even if there's no UI changes, there should be
+  something in a dev panel or logging that I am able to test and confirm."* The
+  ~400 changed lines / ~10 files figure is no longer a mid-task hard stop — it is
+  guidance for splitting a plan into tasks; a task that runs over finishes if it is
+  still one coherent unit of work, with the overrun noted here. Written into
+  `execution-protocol.md` (new §2b; §2.8, §3, §5 amended) and `CLAUDE.md` (Working
+  agreement).
+- 2026-07-31: **Git is owner-run; plans now declare commit points.** Owner: *"I'll
+  need to handle all the git commands myself, [but] I would like the plan to include
+  key points that should be committed and pushed and include the note that should be
+  used at the time. I've been doing comments myself but they have no pattern."* The
+  agent never writes git history (read-only `status`/`diff`/`log` is fine). Plans mark
+  each task `commit` / `commit + push` / `—` and carry the ready-to-paste message
+  verbatim, repeated in-session on arrival. Default placement: every
+  owner-verification stop, before anything hard to unwind (wide refactor, rename
+  sweep, schema migration, engine change), after work that would hurt to redo, and at
+  plan completion. Never offered on a red gate. Message pattern:
+  `<plan-slug> <task>: <imperative summary ≤72 chars>` + 1–3 what-changed bullets.
+  **No gate/test results in commit messages** (owner, same session: *"unless test
+  verification is helpful to you, I'd say ditch it from the git comments"*) — a commit
+  point already requires green gates, so restating that is noise; the real numbers are
+  logged per task here in PROGRESS.md. The old `inc<N>/task<M>:` convention is
+  retired (increments are no longer the unit of work). Also locked: the live session
+  checklist (`TaskCreate`/`TaskUpdate`) mirrors the plan's tasks so the owner can
+  watch progress — explicitly a viewport, **not** a replacement for the PROGRESS.md
+  write. `npx tsc --noEmit` added to the §5 gate list (it was already being run in
+  practice but wasn't written down). Written into `execution-protocol.md` §2c–2d and
+  §2.7/§5, summarised in `CLAUDE.md`.
+- 2026-07-31: **Target system plan CLOSED and archived** (owner: "That plan is
+  actually complete, you can mark it as so and archive it"). All 16 tasks done, every
+  device check passed 2026-07-30/31. `target-system-plan.md` moved
+  `Design/Plans/` → `Design/archive/` with a status banner noting it was executed
+  (not superseded) and that its per-task-stop / ~400-line execution rules were retired
+  the same day. Its relative links still resolve — same folder depth. `Design/Plans/`
+  now holds only `D15-two-lever-truing-independent.md` and `dope-first-plan.md`.
 - 2026-07-26: **Wooded Zero Range CLOSED** — owner confirmed all five stages plus
   the D16 raw-zero work and the true-MOA face fix ("All of that checks out, can
   mark it off the lists"). Every Wooded Zero row moved from `AWAITING OWNER` to

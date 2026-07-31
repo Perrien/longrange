@@ -939,6 +939,63 @@ describe('chronograph (task 2.4e)', () => {
   });
 });
 
+describe('setLotEffectiveBc (bc-truing-plan T2, D15 lever 2)', () => {
+  it('writes bc + source, leaving mvMps/mvSource byte-identical', () => {
+    const st = useGameStore.getState();
+    const rid = st.acquireRifle('65cm-custom', { rng: () => 0.5 });
+    const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
+    st.logChronoReading(rid, lid, 800);
+    st.logChronoReading(rid, lid, 810);
+    st.commitChronoString('2026-07-31T00:00:00.000Z'); // effective.mvMps = 805, mvSource: 'chrono'
+    const before = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!.effective;
+
+    st.setLotEffectiveBc(lid, 0.251, 'trued');
+
+    const lot = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!;
+    expect(lot.effective?.bc).toBeCloseTo(0.251, 9);
+    expect(lot.effective?.bcSource).toBe('trued');
+    expect(lot.effective?.mvMps).toBe(before?.mvMps);
+    expect(lot.effective?.mvSource).toBe(before?.mvSource);
+  });
+
+  it('creates the effective object on a lot that has none, with mvSource: box', () => {
+    const st = useGameStore.getState();
+    const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
+    expect(useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!.effective).toBeUndefined();
+
+    st.setLotEffectiveBc(lid, 0.243, 'provisional');
+
+    const lot = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!;
+    expect(lot.effective?.bc).toBeCloseTo(0.243, 9);
+    expect(lot.effective?.bcSource).toBe('provisional');
+    expect(lot.effective?.mvSource).toBe('box');
+    expect(lot.effective?.mvMps).toBeUndefined();
+  });
+
+  it('is a no-op for an unknown lot id', () => {
+    const before = useGameStore.getState().inventory.ammoLots;
+    useGameStore.getState().setLotEffectiveBc('no-such-lot', 0.3, 'trued');
+    expect(useGameStore.getState().inventory.ammoLots).toEqual(before);
+  });
+
+  it('survives a save/load round trip', async () => {
+    const store = new MemorySaveStore();
+    const unsub = persistSettingsOnChange(useGameStore, store);
+    const st = useGameStore.getState();
+    const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
+    st.setLotEffectiveBc(lid, 0.257, 'provisional'); // inventory change → persist
+    await new Promise((r) => setTimeout(r, 0));
+    unsub();
+
+    // Cold relaunch: fresh inventory, then hydrate.
+    useGameStore.setState({ inventory: defaultInventory() });
+    await loadSettingsInto(useGameStore, store);
+    const lot = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!;
+    expect(lot.effective?.bc).toBeCloseTo(0.257, 9);
+    expect(lot.effective?.bcSource).toBe('provisional');
+  });
+});
+
 describe('saveToInventory P2 backfill (pre-P2 records get the new fields)', () => {
   const preP2Save = (): SaveData => ({
     schemaVersion: 2,

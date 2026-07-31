@@ -1,4 +1,4 @@
-// Popper target type (Design/Plans/target-system-plan.md, task T8).
+// Popper target type (Design/archive/target-system-plan.md, task T8).
 //
 // Transcribed from `Documentation/Targets/idpa-popper.svg` — the owner's spec of
 // record — the same way `idpa.ts` handles the silhouette: the path is embedded VERBATIM

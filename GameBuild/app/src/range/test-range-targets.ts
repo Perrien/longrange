@@ -1,4 +1,4 @@
-// Test Range target construction (Design/Plans/target-system-plan.md, task T9a).
+// Test Range target construction (Design/archive/target-system-plan.md, task T9a).
 //
 // PURE: turns resolved placements into `PlateInstance[]`. Extracted from
 // `TestRangeScene` precisely so it can be unit-tested — the scene itself cannot be

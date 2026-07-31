@@ -1,6 +1,6 @@
 # Execution Protocol — how the coding agent works this plan
 
-`Status: active`  ·  `Date: 2026-07-13`  ·  `Addendum: 2026-07-21 — increment plan retired as ordered roadmap`  ·  `Audience: the executing AI coding agent`
+`Status: active`  ·  `Date: 2026-07-13`  ·  `Addendum: 2026-07-21 — increment plan retired as ordered roadmap`  ·  `Addendum: 2026-07-31 — plan-declared pause points replace the per-task owner stop; size limit is now planning guidance`  ·  `Audience: the executing AI coding agent`
 
 > **Read this first, every session.** This file defines *how* you work. *What* to
 > build is defined by [`../build-plan.md`](../build-plan.md) (architecture &
@@ -18,6 +18,13 @@
 > verification, stop rules, PROGRESS.md discipline) against **whichever feature the
 > owner asks for**, substituting "the feature-catalog entry + its linked archive doc
 > (if any)" everywhere below that says "the increment doc."
+>
+> **2026-07-31 addendum:** work is now almost always driven by a **plan** in
+> `Design/Plans/`. The old blanket rule "stop and confirm with the owner after every
+> task" is **retired**; plans instead declare their own pause points (§2b), and you
+> run continuously between them. The ~400-line / ~10-file size limit is **retired as
+> a mid-task hard stop** and is now guidance used when *splitting a plan into tasks*
+> (§3).
 
 ---
 
@@ -51,25 +58,137 @@ When you find a conflict, **stop and log it** (§6) rather than picking silently
    whatever the outcome — `DONE`, `BLOCKED`, `AWAITING OWNER`, or `IN PROGRESS`. The
    task row's status/date/commit/note must reflect reality before you stop. This is
    not optional and not only for the DONE case.
-7. Commit with message `inc<N>/task<M>: <summary>` (one task = one commit unless the
-   task doc says otherwise).
-8. **STOP after each task and confirm with the owner before starting the next one**
-   (owner rule, 2026-07-13). Never auto-advance from one task to the next — not even
-   when the next task is unblocked and obvious. Report what was done + what's next,
-   and wait for the owner's go-ahead. This applies to every task boundary (0.0 → 0.1
-   → … → 0.10, and across all increments).
+7. **You do not run git commands — the owner does.** If the plan marks a commit
+   point at this task (§2c), surface it now: say so in the session and give the
+   ready-to-paste commit message. Otherwise say nothing about git and carry on.
+8. **Continue to the next task unless the plan declares a pause point here** (owner
+   rule, 2026-07-31, replacing the 2026-07-13 stop-at-every-task rule). At a
+   **checkpoint** you run its checks and keep going; at an **owner-verification
+   stop** you halt and wait. See §2b for both kinds, and for what an
+   owner-verification stop must ship.
 9. If the session must end mid-task, set the task `IN PROGRESS` in `PROGRESS.md`
    with a note describing exactly where you stopped and what remains.
 
+## 2b. Pause points (owner rule, 2026-07-31)
+
+**Pause points are decided when the plan is written, not while coding.** When you
+author a plan (`Design/Plans/*.md`), you choose where they fall and mark each one
+explicitly in the task list. You are trusted to place them sensibly; the owner
+signs off on them with the plan. Between pause points you run continuously — do not
+invent a stop the plan doesn't declare, and do not skip one it does.
+
+Two kinds:
+
+**(a) Checkpoint — self-verified, no owner involvement.** A boundary where
+regression tests, a new-feature test suite, a golden-vector diff, or a build gate
+should run before more code lands on top. Run the checks, record the result in
+`PROGRESS.md`, and **keep going**. A red check is not a pause point — it's a stop
+rule (§6). Place these wherever a later task would be built on unproven ground:
+after a refactor that touches shared code, after a new subsystem's first working
+slice, before a change that would obscure a regression's origin.
+
+**(b) Owner-verification stop — halt and wait.** A boundary where the owner must
+see or exercise the behaviour themselves: anything judged by feel, look, or on-device
+behaviour; a visible change to how the game plays; a decision the plan left open; a
+milestone worth signing off before building further on it. Mark the task
+`AWAITING OWNER` in `PROGRESS.md`, tell the owner exactly what to run and what to
+look for, and stop that thread of work.
+
+**Every owner-verification stop must ship something the owner can actually observe.**
+This is the hard part of the rule. If the task produced no visible UI change, it is
+still your job to make its result inspectable — a dev-panel readout, a debug overlay,
+a logged line the owner can trigger and read, a temporary test screen. "Trust the
+unit tests" is not an owner check. State plainly in the stop message: what to open,
+what action to take, and what the correct output looks like. Anything exposing
+hidden truth stays behind a dev flag (§4.8).
+
+When you write the plan, say for each task which kind of boundary follows it (or
+`continue`), so the owner knows up front how many times they'll be pulled in.
+
+## 2c. Commit points (owner rule, 2026-07-31)
+
+**The owner runs every git command themselves.** You never call `git commit`,
+`git push`, `git checkout`, `git reset`, or anything else that writes to history —
+read-only inspection (`git status`, `git diff`, `git log`) is fine. Your job is to
+tell the owner *when* a commit is worth making and *what to write in it*, because
+they'd rather not invent a message each time.
+
+**Plans declare their commit points.** Like pause points, these are chosen at
+plan-writing time and marked on the task they follow. Mark each task
+`commit` / `commit + push` / `—`. A commit point is only valid where the gates
+(§5) are green — **never offer a commit on a red gate**; that's a stop rule (§6).
+
+Where to put them:
+
+- **At every owner-verification stop.** The owner is already being pulled in, and a
+  signed-off state is exactly what's worth having a restore point for. These are
+  usually `commit + push`.
+- **Before anything hard to unwind** — a wide refactor, a rename sweep, a schema
+  migration, an engine change. A commit *immediately before* is what makes the
+  change revertible.
+- **After a task that would hurt to redo** — a long, fiddly, or hand-tuned piece of
+  work, even if the next task continues straight on.
+- **At plan completion**, always `commit + push`.
+
+Not every task needs one. Three or four tasks of steady, low-risk work can land in a
+single commit; say so in the plan rather than manufacturing a commit point per task.
+
+**Message format.** Low ceremony, but consistent — the point is that six months
+later `git log` reads as a build history:
+
+```
+<plan-slug> <task>: <imperative summary, ≤72 chars>
+
+- <what changed — 1-3 bullets, the "why" where it isn't obvious>
+```
+
+`<plan-slug>` is the plan file's name without `-plan.md` (`target-system`,
+`dope-first`); `<task>` is its label (`T6`, `T9a`). For work outside a plan, use the
+area instead: `wooded-zero: …`, `docs: …`, `protocol: …`. Worked example:
+
+```
+target-system T6: knockdown physics + face rasteriser
+
+- Adds hinge/chain knockdown solve and the face-layer rasteriser behind
+  PlateInstance; no change to Range A or ELR layouts (computed, not authored).
+```
+
+**Gate results stay out of the commit message** (owner, 2026-07-31). Every commit
+point already requires green gates, so writing "tests pass" in the message adds
+noise, not information — and the real numbers are recorded per task in
+`PROGRESS.md`, which is where anyone auditing a run should look. Keep the message
+about *what changed*.
+
+**Write the message into the plan**, verbatim in a fenced block at its commit point,
+then repeat it in the session when you reach that point, since the owner is watching
+the task checklist, not re-reading the plan file. If the work drifted from what the
+plan predicted, the message you give in-session wins; the plan's copy was a forecast.
+
+`git push` may fail offline — that's the owner's problem to hit, not yours to debug
+(§4b.6).
+
+## 2d. The live task checklist (owner rule, 2026-07-31)
+
+Mirror the plan's tasks into the session task list (`TaskCreate`), and update each
+one as you start and finish it (`TaskUpdate`). The owner watches this to see what's
+in flight without opening files — it is a **viewport, not a record**. It disappears
+with the session. `PROGRESS.md` is still the durable state, and §2.6 ("always update
+`PROGRESS.md` at the end of every task, whatever the outcome") is unaffected: a
+checked-off item in the live list is not a substitute for the file write.
+
 ## 3. Task discipline
 
-- **One task at a time, in order — and stop at every task boundary** (see §2.8).
-  Tasks within an increment are ordered by dependency; do not reorder or parallelize
-  unless the doc marks tasks `[parallel-ok]`. Do not begin the next task until the
-  owner confirms.
-- **Size limit:** if a task turns out to need > ~400 changed lines or touches > ~10
-  files, stop — split it into sub-tasks in `PROGRESS.md` (`task 3a, 3b…`), get each
-  verified separately.
+- **One task at a time, in order — pausing where the plan says to** (see §2b).
+  Tasks within a plan are ordered by dependency; do not reorder or parallelize
+  unless the doc marks tasks `[parallel-ok]`. Finish, verify and log each task
+  before opening the next.
+- **Size guidance (planning-time, not a mid-task stop):** when splitting a plan into
+  tasks, aim for roughly ≤ 400 changed lines / ≤ 10 files each — that is about one
+  session's work and keeps a diff reviewable. If a task runs over once you're in it,
+  **that alone is not a reason to stop**: finish it if it's still one coherent unit
+  of work. Split it only when it has genuinely become two things (then record
+  `task 3a, 3b…` in `PROGRESS.md` and verify each separately) — and note the
+  overrun in `PROGRESS.md` so the next plan sizes better.
 - **Scope limit:** implement exactly what the task says. Adjacent improvements you
   notice go into `PROGRESS.md` under *Deferred observations* — not into the diff.
 - **No new dependencies** beyond those the build-plan names (React, Three.js
@@ -147,13 +266,18 @@ Minimum, in this order — the task may add more:
 2. Golden-vector harness: `node GameBuild/validation/run.mjs` → zero/in-tolerance diff (when
    engine touched).
 3. App unit tests: `npx vitest run` green.
-4. Build: `npm run build` succeeds; for PWA-affecting tasks, offline relaunch check.
-5. The task's own *Done when* items, verbatim.
+4. Types: `npx tsc --noEmit` clean.
+5. Build: `npm run build` succeeds; for PWA-affecting tasks, offline relaunch check.
+6. The task's own *Done when* items, verbatim.
+
+Steps 3–5 run from `GameBuild/app/`. Record steps 1–2 as **N/A** in `PROGRESS.md`
+when no engine source was touched — don't skip them silently.
 
 Anything you cannot verify programmatically (e.g. "feels controllable on the
-iPad") is an **OWNER CHECK**: mark the task `AWAITING OWNER` in `PROGRESS.md`,
-tell the owner exactly what to try and what to look for, and stop that thread of
-work until they respond.
+iPad") is an **OWNER CHECK** — an owner-verification stop per §2b: mark the task
+`AWAITING OWNER` in `PROGRESS.md`, ship the observable thing the owner needs (UI,
+dev panel, or triggerable log — see §2b), tell them exactly what to try and what
+correct looks like, and stop that thread of work until they respond.
 
 ## 6. Stop rules — when NOT to push forward
 

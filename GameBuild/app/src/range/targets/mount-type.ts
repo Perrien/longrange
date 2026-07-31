@@ -1,5 +1,5 @@
 // Mount types — the "how is it held up, and what happens when it's hit" half of
-// the target system (Design/Plans/target-system-plan.md §2, task T1b).
+// the target system (Design/archive/target-system-plan.md §2, task T1b).
 //
 // Mount is a SEPARATE axis from the target (`target-type.ts`), and the reaction
 // mode belongs here rather than on the target: a chain-hung plate swings, a bolted

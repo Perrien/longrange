@@ -1,4 +1,4 @@
-// Face rasteriser (Design/Plans/target-system-plan.md §5b, task T6c).
+// Face rasteriser (Design/archive/target-system-plan.md §5b, task T6c).
 //
 // Deliberately dumb: it replays T6b's draw-op list onto a 2D context, reads the bytes
 // back, and hands them to `PlateSurface.setBaseLayer`. Every decision about colour,

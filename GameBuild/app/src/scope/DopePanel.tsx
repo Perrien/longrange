@@ -20,21 +20,35 @@
 // Single-unit display (owner, 2026-07-15): rows collapse to whichever system
 // `settings.unitsPrimary` selects — `formatDopeRow` computes both, this picks a side.
 
-import { useEffect, useState, Fragment } from 'react';
+import { useEffect, useRef, useState, Fragment } from 'react';
 import { solveTrajectory, spinRateFromTwist, speedOfSound, type AtmosphereInput } from '../engine-bridge';
 import { loadBtkModule } from '../engine-bridge/wasm-module';
-import type { BtkModule, TrajectoryTable } from '../engine-bridge/types';
+import type { BtkModule, Load, TrajectoryTable } from '../engine-bridge/types';
 import { solveGear } from '../engine-bridge/gear-solve';
+import { fitBc, type BcFitResult } from '../engine-bridge/bc-fit';
 import { gearSolveContext, type GearSolveContext } from '../game/active-gear';
 import { windToVec } from '../game/firing-solution';
 import { assembleComeUp, nearestRow, type ComeUpDisplayRow } from '../game/dope-row';
 import { comeUpStationsM } from '../game/dope-book';
 import { findChronoSummary } from '../game/chrono';
-import { getRifleModel, isRimfireCartridge, catalogEffectiveRangeYd } from '../game/catalog';
+import { getRifleModel, isRimfireCartridge, catalogEffectiveRangeYd, catalogTwistM, believedLoad } from '../game/catalog';
 import { getGameLoad, DEFAULT_GAME_LOAD_ID, DEFAULT_GAME_LOAD_CARTRIDGE_ID, SIGHT_HEIGHT_M } from '../game/loads';
 import { recommendedZeroM } from '../game/zero-distance';
 import { formatDistanceForDisplay } from '../units';
 import { useGameStore } from '../state/store';
+import {
+  canUpdateBc,
+  UPDATE_BC_DISABLED_REASON,
+  angleRadToDisplay,
+  angleDisplayToRad,
+  plausibleBcBand,
+  formatBcRejection,
+} from './bc-update';
+
+/** Debounce before a typed value triggers a re-fit (T3): keeps the fitter off
+ *  the keystroke path (see bc-fit.ts's perf note — a worst-case fit is ~350 ms
+ *  on device, too slow to run per character). */
+const BC_FIT_DEBOUNCE_MS = 250;
 
 // Same ISA atmosphere ScopeView solves against (validation/loads.json conditions).
 const ISA_ATMOSPHERE: AtmosphereInput = { temperatureK: 288.15, altitudeM: 0, humidity: 0.5, pressurePa: 0 };
@@ -77,6 +91,96 @@ export function DopePanel({ onOpenBook }: { onOpenBook?: () => void } = {}) {
   const notZeroed = hasGear ? !activeRifle!.playerZero : false;
   const chrono = hasGear ? findChronoSummary(chronoSummaries, activeRifle!.id, activeLot!.id) : undefined;
   const notChronoed = hasGear ? !chrono : false;
+
+  // Update BC (bc-truing-plan T3, D15 lever 2): the dialed elevation (pre-fill
+  // source, B1) and the store action the dialog's Update button writes through.
+  const elevationRad = useGameStore((s) => s.session.scope.elevationRad);
+  const setLotEffectiveBc = useGameStore((s) => s.setLotEffectiveBc);
+  const [bcDialogOpen, setBcDialogOpen] = useState(false);
+  const [bcDraftText, setBcDraftText] = useState('');
+  const [bcRequiredRad, setBcRequiredRad] = useState(0);
+  const [bcFitting, setBcFitting] = useState(false);
+  const [bcFitResult, setBcFitResult] = useState<BcFitResult | null>(null);
+  const bcDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const canUpdate = canUpdateBc(hasGear, !!currentTarget);
+
+  const openBcDialog = () => {
+    const prefill = angleRadToDisplay(elevationRad, unitsPrimary);
+    setBcDraftText(prefill.toFixed(2));
+    setBcRequiredRad(elevationRad);
+    setBcFitResult(null);
+    setBcDialogOpen(true);
+  };
+
+  const closeBcDialog = () => {
+    if (bcDebounceRef.current) clearTimeout(bcDebounceRef.current);
+    setBcDialogOpen(false);
+  };
+
+  // Debounced commit (T3): typing updates the draft text immediately (so the
+  // input feels live) but only schedules a re-fit ~250ms after the last
+  // keystroke — see BC_FIT_DEBOUNCE_MS. Blur/Enter commit immediately.
+  const commitBcDraft = (text: string) => {
+    const parsed = Number(text);
+    if (Number.isFinite(parsed)) setBcRequiredRad(angleDisplayToRad(parsed, unitsPrimary));
+  };
+
+  const onBcDraftChange = (text: string) => {
+    setBcDraftText(text);
+    if (bcDebounceRef.current) clearTimeout(bcDebounceRef.current);
+    bcDebounceRef.current = setTimeout(() => commitBcDraft(text), BC_FIT_DEBOUNCE_MS);
+  };
+
+  const onBcDraftCommitNow = () => {
+    if (bcDebounceRef.current) clearTimeout(bcDebounceRef.current);
+    commitBcDraft(bcDraftText);
+  };
+
+  // Run the fit whenever the committed required value changes (dialog open,
+  // gear active, a target committed, engine loaded). A 0ms setTimeout hands a
+  // paint back to the browser between "fitting…" appearing and the (up to
+  // ~350ms on device, per bc-fit.ts's perf note) blocking solve running, so the
+  // UI doesn't look frozen the instant the debounce fires.
+  useEffect(() => {
+    if (!bcDialogOpen || !module || !canUpdate || !activeRifle || !activeLot || !currentTarget) return;
+    setBcFitting(true);
+    setBcFitResult(null);
+    const timer = setTimeout(() => {
+      try {
+        const twistM = catalogTwistM(activeRifle.catalogId);
+        const box = believedLoad(activeLot.catalogId);
+        const fitLoad: Load = { ...box, muzzleVelocityMps: activeLot.effective?.mvMps ?? box.muzzleVelocityMps };
+        const { bcMin, bcMax } = plausibleBcBand(box.bc);
+        const windVec = windToVec(wind.speedMps, wind.directionDeg);
+        const result = fitBc(module, {
+          load: fitLoad,
+          twistM,
+          atmosphere: ISA_ATMOSPHERE,
+          wind: windVec,
+          zeroRangeM,
+          sightHeightM: SIGHT_HEIGHT_M,
+          distanceM: currentTarget.distanceM,
+          requiredElevRad: bcRequiredRad,
+          bcMin,
+          bcMax,
+        });
+        setBcFitResult(result);
+      } catch (e: unknown) {
+        setError(String(e));
+      } finally {
+        setBcFitting(false);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bcDialogOpen, module, bcRequiredRad, activeRifle?.id, activeLot?.id, currentTarget?.distanceM, zeroRangeM]);
+
+  const handleUpdateBc = () => {
+    if (!bcFitResult?.ok || !activeLot) return;
+    setLotEffectiveBc(activeLot.id, bcFitResult.bc, chrono ? 'trued' : 'provisional');
+    closeBcDialog();
+  };
 
   // Load the engine (cached singleton — ScopeView already loads it; this just
   // reuses the same promise, no duplicate WASM instantiation).
@@ -177,7 +281,83 @@ export function DopePanel({ onOpenBook }: { onOpenBook?: () => void } = {}) {
             Open book ⤢
           </button>
         )}
+        {open && (
+          <button
+            onClick={openBcDialog}
+            disabled={!canUpdate}
+            title={canUpdate ? 'Fit BC to the hold you just confirmed' : UPDATE_BC_DISABLED_REASON}
+          >
+            Update BC
+          </button>
+        )}
       </div>
+      {open && bcDialogOpen && activeLot && currentTarget && (
+        <div
+          style={{
+            marginTop: 6,
+            width: 190,
+            border: '1px solid rgba(232,238,244,0.4)',
+            borderRadius: 4,
+            padding: 6,
+            fontSize: 10,
+            background: 'rgba(0,0,0,0.35)',
+          }}
+        >
+          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Update BC?</div>
+          {(() => {
+            const box = believedLoad(activeLot.catalogId);
+            const currentBc = activeLot.effective?.bc ?? box.bc;
+            const dist = formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary);
+            return (
+              <>
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span>Required come-up</span>
+                  <span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={bcDraftText}
+                      onChange={(e) => onBcDraftChange(e.target.value)}
+                      onBlur={onBcDraftCommitNow}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') onBcDraftCommitNow();
+                      }}
+                      style={{ width: 56, textAlign: 'right' }}
+                    />{' '}
+                    {unitsPrimary} @ {dist.value.toFixed(0)} {dist.label}
+                  </span>
+                </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span>BC</span>
+                  <span>
+                    {currentBc.toFixed(3)} →{' '}
+                    {bcFitting ? '…' : bcFitResult?.ok ? bcFitResult.bc.toFixed(3) : '—'} ({box.dragModel})
+                  </span>
+                </div>
+                {notChronoed && (
+                  <div style={{ color: '#e8c95a', marginBottom: 2 }}>⚠ not chronoed — this fit will be provisional</div>
+                )}
+                {notZeroed && (
+                  <div style={{ color: '#e8c95a', marginBottom: 2 }}>
+                    ⚠ not zeroed — a residual zero error goes straight into BC
+                  </div>
+                )}
+                {!bcFitting && bcFitResult && !bcFitResult.ok && (
+                  <div style={{ color: '#e88', marginBottom: 4 }}>
+                    {formatBcRejection(bcFitResult, currentTarget.distanceM, unitsPrimary)}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                  <button onClick={closeBcDialog}>Cancel</button>
+                  <button onClick={handleUpdateBc} disabled={bcFitting || !bcFitResult?.ok}>
+                    Update
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
       {open && (
         <div style={{ marginTop: 6, maxHeight: 220, overflowY: 'auto', width: 190 }}>
           {error && <div style={{ color: '#e88' }}>engine error: {error}</div>}

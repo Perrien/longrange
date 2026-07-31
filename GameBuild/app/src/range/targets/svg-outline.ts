@@ -1,4 +1,4 @@
-// SVG outline parsing + flattening (Design/Plans/target-system-plan.md, task T3b).
+// SVG outline parsing + flattening (Design/archive/target-system-plan.md, task T3b).
 //
 // A deliberately MINIMAL subset — absolute `M`/`L`/`A`/`Z` plus `<circle>`
 // attributes — sized to exactly what the owner's target specs in

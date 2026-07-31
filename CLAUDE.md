@@ -191,6 +191,30 @@ is validated against, and the source material for in-game teaching.
   decisions, Done-when specs) and research data are still correct and still needed;
   individual `feature-catalog.md` entries link directly into them. `PROGRESS.md`
   (history of what was actually built) is unaffected and stays in `Design/execution/`.
+- **Work runs from a plan; the plan declares its own pause points (2026-07-31).**
+  The old rules "stop and confirm with the owner after every task" and "hard-stop at
+  ~400 changed lines" are retired. When authoring a plan in `Design/Plans/`, you decide
+  where the pause points fall and mark them: **checkpoints** (run regression/feature
+  tests, no owner involvement, keep going) and **owner-verification stops** (halt and
+  wait). Between them, run continuously. Every owner-verification stop must ship
+  something the owner can actually exercise — if there's no visible UI change, add a
+  dev-panel readout or triggerable logging so the result can be confirmed by hand.
+  Size (~400 lines / ~10 files) is now guidance for splitting tasks at planning time,
+  not a mid-task stop. Full rule: `Design/execution/execution-protocol.md` §2b.
+- **Gates, git and the live checklist (2026-07-31).** Before marking any task done,
+  run — from `GameBuild/app/` — `npx vitest run` → `npx tsc --noEmit` →
+  `npm run build`, all green; if engine source was touched, `ctest` and
+  `node GameBuild/validation/run.mjs` come *first* (record them N/A otherwise, never
+  skip silently). **Never run git commands that write history** — the owner does all
+  committing and pushing. Instead, plans mark their own **commit points**
+  (`commit` / `commit + push` / `—`) at owner-verification stops, before anything
+  hard to unwind, and at plan completion; at each one, hand the owner a ready-to-paste
+  message: `<plan-slug> <task>: <imperative summary>` plus 1–3 bullets of what
+  changed — **no gate/test results in the message**, those go in `PROGRESS.md`. Never
+  offer a commit on a red gate. Mirror the plan's tasks into the live session checklist
+  (`TaskCreate`/`TaskUpdate`) so the owner can watch progress — it's a viewport, not
+  a record; `PROGRESS.md` is still updated at the end of every task. Full rules:
+  `Design/execution/execution-protocol.md` §2c–2d, §5.
 - **Wiki is demand-driven:** write or upgrade an article when a milestone, a game
   mechanic, or a validation need calls for it (as `range-estimation` was pulled
   forward for the ranging mechanic). Prioritize v1 + teaching topics; let the rest

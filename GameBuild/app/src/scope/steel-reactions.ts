@@ -1,4 +1,4 @@
-// Reactive-steel lifecycle (Design/Plans/target-system-plan.md §9, tasks T5–T6).
+// Reactive-steel lifecycle (Design/archive/target-system-plan.md §9, tasks T5–T6).
 //
 // T5 EXTRACTED this from `ScopeView.tsx`, where it had been split across four
 // separated regions — the two Maps, the create/strike branching inside the

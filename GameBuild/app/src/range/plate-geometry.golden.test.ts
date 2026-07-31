@@ -1,7 +1,7 @@
 // CHARACTERIZATION GUARDS — target-system task T0.
 //
 // These tests assert nothing new about the design. They freeze what the plate
-// system does TODAY so the target-system work (T1–T10, Design/Plans/target-system-plan.md)
+// system does TODAY so the target-system work (T1–T10, Design/archive/target-system-plan.md)
 // can prove it changed nothing: the round disc keeps its exact vertices and UVs,
 // and the chain-instance indexing contract every steel scene relies on stays put.
 //

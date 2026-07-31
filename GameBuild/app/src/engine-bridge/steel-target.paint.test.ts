@@ -6,7 +6,7 @@
 // cannot see stay invisible until that face is presented.
 //
 // Why this is worth its own guard: the design for flipping targets (dueling tree
-// paddles, Design/Plans/target-system-plan.md §8) depends entirely on this split,
+// paddles, Design/archive/target-system-plan.md §8) depends entirely on this split,
 // and on the fact that the engine picks the half from its LIVE surface normal
 // (`is_front_face = vel·normal_ < 0`, steel_target.cpp:580) — which only tracks
 // the body's own `orientation_`. A TS-animated pose therefore cannot move the

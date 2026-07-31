@@ -1,4 +1,4 @@
-// Hanging gong target type (Design/Plans/target-system-plan.md, task T9a).
+// Hanging gong target type (Design/archive/target-system-plan.md, task T9a).
 //
 // The Test Range's original 12″ gong, MIGRATED onto the target system rather than
 // rebuilt. Its whole reason for existing at this point in the batch is the regression

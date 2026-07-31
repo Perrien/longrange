@@ -1,4 +1,4 @@
-// Non-round plate geometry (Design/Plans/target-system-plan.md §5, task T4).
+// Non-round plate geometry (Design/archive/target-system-plan.md §5, task T4).
 //
 // `plate-geometry.ts` is NOT touched by this file or this task. That is deliberate:
 // leaving the disc's generator completely alone is the cheapest possible proof that

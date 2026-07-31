@@ -1,4 +1,4 @@
-// Zone-capable hit testing (Design/Plans/target-system-plan.md §7, task T2).
+// Zone-capable hit testing (Design/archive/target-system-plan.md §7, task T2).
 //
 // `discHit` in `firing-solution.ts` is NOT modified. It stays exactly as shipped
 // and becomes the delegate for the legacy round-plate path, so "byte-identical for

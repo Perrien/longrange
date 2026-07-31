@@ -1,9 +1,18 @@
 # Reactive Target System — plan
 
-**Status:** COMPLETE — approved and delivered 2026-07-30/31. **COMPLETE — all 16 tasks done, every device check passed.** Each task stops for owner
-confirmation per [`../execution/execution-protocol.md`](../execution/execution-protocol.md)
-§2.8; live state is in [`../execution/PROGRESS.md`](../execution/PROGRESS.md), which is
-authoritative.
+**Status:** COMPLETE and ARCHIVED — approved and delivered 2026-07-30/31; moved to
+`Design/archive/` on 2026-07-31. All 16 tasks done, every device check passed. Kept
+for provenance (the locked decisions and the reasoning behind them), **not as a live
+spec** — [`../feature-catalog.md`](../feature-catalog.md) §F and the "Target system"
+rows in [`../execution/PROGRESS.md`](../execution/PROGRESS.md) are the authoritative
+record of what shipped.
+
+⚠ **Its execution rules are out of date.** This plan was written and run under the
+protocol rules in force at the time — *each task stops for owner confirmation*
+(§2.8) and a *hard ~400-line / ~10-file size limit* (§3). Both were retired on
+2026-07-31: plans now declare their own pause points, and size is planning guidance
+only. See [`../execution/execution-protocol.md`](../execution/execution-protocol.md)
+§2b. Read the per-task stop language below as history, not instruction.
 
 Builds the three-axis target abstraction (Target × Mount × Group) that
 [`../feature-catalog.md`](../feature-catalog.md) §F needs for the "steel target menagerie"
