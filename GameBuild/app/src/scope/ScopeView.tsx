@@ -46,7 +46,8 @@ import { gearSolveContext, type GearSolveContext } from '../game/active-gear';
 import { recommendedZeroM } from '../game/zero-distance';
 import { windMarkersFor } from '../range/wind-markers-config';
 import { initWindMarkers, updateWindMarkers, disposeWindMarkers } from './WindMarkers';
-import { initMirage, renderSceneWithMirage, disposeMirage, MIRAGE_REFERENCE_DISTANCE_M } from './Mirage';
+import { initMirage, renderSceneWithMirage, disposeMirage } from './Mirage';
+import { MIRAGE_LAYER_FRACS, aimRayIntersection, viewPitchRad, type Vec3 } from '../game/mirage-model';
 import {
   useGameStore,
   ZOOM_MIN,
@@ -94,6 +95,7 @@ import {
   clockToDeg,
   degToClock,
   mphToMps,
+  mpsToMph,
   formatAngleForDisplay,
   formatSpeedForDisplay,
   formatDistanceForDisplay,
@@ -460,6 +462,22 @@ export function ScopeView({
     // gained it for the ELR Range's raised high line. Flat ranges report nothing and
     // keep the global default, so this is a no-op for the other three ranges.
     const eyeHeightM = sightIn?.eyeHeightM ?? range?.eyeHeightM ?? EYE_HEIGHT_M;
+
+    // Mirage's fallback anchor distance (P16): the range's own "lane length"
+    // when nothing is aimed — the farthest station on this bay, so the
+    // shimmer always has SOME depth to anchor to even with the crosshair off
+    // any target. `RangeDefinition` has no generic lane-length field (each
+    // range names its own stations instead), so this is derived from
+    // whichever station list this bay actually built. 300 m is a reasonable
+    // last-resort default (no plates/targets at all — shouldn't happen on a
+    // real range) rather than 0, which would collapse the aim-ray intersection
+    // onto the camera itself.
+    const laneLengthFallbackM =
+      Math.max(
+        0,
+        ...(range?.plates.map((p) => p.distanceM) ?? []),
+        ...(sightIn?.targets.map((t) => t.distanceM) ?? []),
+      ) || 300;
 
     // Camera reach is a property of the RANGE for the same reason eye height is
     // (`ranges.ts` `CameraReach`): the shipped 0.5/3000 was sized for a 200 m world
@@ -1216,6 +1234,16 @@ export function ScopeView({
       return { dir, target: aimed };
     }
 
+    // Mirage's aimed-distance input (P16): whichever aim-pick this bay uses,
+    // read only the distance — `findAimed`/`findAimedTarget` already
+    // recompute `dir` from `aimQuaternion(st.t)` internally (cheap, and the
+    // established pattern at every other call site in this file), so this
+    // stays a one-line dispatch rather than a second dir-tracking path.
+    function aimedDistanceNow(): number | null {
+      if (isSightIn) return findAimedTarget()?.target.distanceM ?? null;
+      return findAimed()?.plate.distanceM ?? null;
+    }
+
     // Gear-driven solve for a sight-in target (D2): the active rifle+lot's TRUE
     // trajectory (sampled fine for the tracer) + zero offset + stored player zero;
     // else the box-true fallback (believed = true, no zero error) so a fresh save
@@ -1643,25 +1671,58 @@ export function ScopeView({
       camera.fov = SCOPE_BASE_FOV_DEG / store().session.scope.magnification;
       camera.updateProjectionMatrix();
       camera.quaternion.copy(aimQuaternion(st.t));
-      // Mirage (task 1.7c, D1; toggle added 1.7d): renders in BOTH modes when
-      // on, like the flags — Steady shows the dialed mean's shimmer,
-      // Realistic layers the field on top. Sampled near the reference depth
-      // the shimmer's feature size assumes. Defaults OFF (owner feedback,
-      // 2026-07-15: the boil reads, but the crosswind DIRECTION doesn't yet)
-      // — when off, skip the two-pass post-process entirely and render
-      // straight to the screen, same as before 1.7c existed (also the
-      // cheaper path, no offscreen pass to pay for while it's parked).
+      // Mirage (task 1.7c, D1; toggle added 1.7d; layered port W5): renders
+      // in BOTH modes when on, like the flags — Steady shows the dialed
+      // mean's shimmer, Realistic layers the field on top. Defaults OFF
+      // (owner feedback, 2026-07-15: the boil reads, but the crosswind
+      // DIRECTION doesn't yet — W5 is the fix) — when off, skip the two-pass
+      // post-process entirely and render straight to the screen, same as
+      // before 1.7c existed (also the cheaper path, no offscreen pass to pay
+      // for while it's parked).
       // Bracket the render call (P13) — this is the only cost that can be told
       // apart from vsync waiting. See `RenderCostMeter` for what it does and does
       // not measure.
       const renderStartMs = performance.now();
       if (store().settings.mirageEnabled) {
-        const mirageWind = windAtForMarkers({ x: 0, y: eyeHeightM, z: -MIRAGE_REFERENCE_DISTANCE_M });
+        // P16: anchor on whatever's under the crosshair right now (else this
+        // bay's lane length) — `dirNow` reuses the quaternion just set above,
+        // matching `findAimed`/`findAimedTarget`'s own `(0,0,-1)`-rotate
+        // convention.
+        const dirNow = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        const aimedM = aimedDistanceNow();
+        const anchorDistanceM = aimedM ?? laneLengthFallbackM;
+        const { pointYd: intersectionYd, distanceYd } = aimRayIntersection(
+          camera.position,
+          dirNow,
+          aimedM,
+          laneLengthFallbackM,
+        );
+        // P19: the one random pick per layer lives HERE (the renderer), never
+        // in the pure model — one uniform-random depth fraction within that
+        // slab's own [prevFrac, frac) range along the aim ray, sampled for
+        // wind at that world position and converted m/s -> mph (D8's seam).
+        // `windAtForMarkers` is the same sampler the flags/socks/vegetation
+        // read, so the shimmer drifts with the SAME wind the shot solve does.
+        let prevFrac = 0;
+        const layerSamplesMph: Vec3[] = MIRAGE_LAYER_FRACS.map((frac) => {
+          const sampleFrac = prevFrac + Math.random() * (frac - prevFrac);
+          prevFrac = frac;
+          const sampleDistanceM = anchorDistanceM * sampleFrac;
+          const windMps = windAtForMarkers({
+            x: camera.position.x + dirNow.x * sampleDistanceM,
+            y: camera.position.y + dirNow.y * sampleDistanceM,
+            z: camera.position.z + dirNow.z * sampleDistanceM,
+          });
+          return { x: mpsToMph(windMps.x), y: mpsToMph(windMps.y), z: mpsToMph(windMps.z) };
+        });
         renderSceneWithMirage(scene, camera, {
           dt,
           fovDeg: camera.fov,
           baseFovDeg: SCOPE_BASE_FOV_DEG,
-          wind: { x: mirageWind.x, z: mirageWind.z },
+          intersectionYd,
+          distanceYd,
+          viewPitchRad: viewPitchRad(dirNow.y),
+          layerSamplesMph,
         });
       } else {
         renderer.render(scene, camera);

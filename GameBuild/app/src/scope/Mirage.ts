@@ -1,26 +1,30 @@
-// Mirage (heat-shimmer) post-process — task 1.7c. Ports the *approach* of the
-// MIT-licensed reference `BallisticsToolkit/web/fclass-sim/rendering/mirage.js`
-// (do NOT import; see the 1.7 plan's salvage-reference note): render the world
-// to an offscreen target, then warp it onto the screen with a UV distortion
-// driven by a noise field that's advected by the local wind — the classic
-// wind-reading cue, since the shimmer's DRIFT direction tracks the crosswind.
+// Mirage (heat-shimmer) post-process — REWRITTEN wholesale wind-system-btk-
+// port W5 (D2: "a full faithful port, replacing the current one wholesale —
+// the incremental approach is what failed in 1.7c") from BTK's
+// `fclass-sim/rendering/mirage.js` `MirageEffect`. Renders the world to an
+// offscreen target, then warps it onto the screen with a UV distortion driven
+// by THREE decorrelated depth-layered slabs of a shared 4D noise field — near
+// slabs read as big soft blobs, far slabs as crisp small features, without
+// any explicit blur, and each slab's own wind sample gives the shimmer's
+// drift direction the classic wind-reading cue.
 //
-// Deliberately a SINGLE-LAYER simplification of the reference's multi-slab
-// atmosphere model (no per-layer wind EMA, no elevation falloff, no chromatic
-// tint) — those are real polish but not needed for the done-when this task is
-// scoped to ("shimmer drifts in the crosswind direction and intensifies as you
-// zoom in"). The frame-to-frame drift accumulation and the zoom→intensity
-// curve are pure, unit-tested logic in `game/mirage-model.ts`; this file owns
-// only the THREE/WebGL objects, matching the existing scope/*.ts renderer
-// convention (module-singleton, flat init/update/dispose exports — see
-// BulletTrace.ts, WindMarkers.ts, impact-fx.ts).
+// The frame-to-frame per-layer state (EMA wind, accumulated drift) and the
+// zoom/fade/normalization math are pure, unit-tested logic in
+// `game/mirage-model.ts` (the "=== Layered atmosphere ===" section, W4); this
+// file owns only the THREE/WebGL objects, matching the existing scope/*.ts
+// renderer convention (module-singleton, flat init/update/dispose exports —
+// see BulletTrace.ts, WindMarkers.ts, impact-fx.ts). Per P16/P19, the aim-ray
+// intersection and the per-layer random-depth wind SAMPLING happen in
+// ScopeView.tsx (which already owns `findAimed`/`findAimedTarget` and
+// `windAtForMarkers`); this file consumes the resulting mph samples and owns
+// the EMA/drift state + all GPU-facing plumbing.
 //
-// The 4D simplex noise below is copied VERBATIM from the reference (Stefan
-// Gustavson / Ashima Arts, MIT — https://github.com/stegu/webgl-noise,
-// https://github.com/ashima/webgl-noise) rather than hand-derived: this
-// sandbox has no WebGL context to render-verify new GLSL math against, so the
-// one piece that can't be checked any other way is reused as already-proven
-// code, and only the (verifiable-by-inspection) plumbing around it is new.
+// The 4D simplex noise below is copied VERBATIM from BTK (Stefan Gustavson /
+// Ashima Arts, MIT — https://github.com/stegu/webgl-noise,
+// https://github.com/ashima/webgl-noise), unchanged from the pre-port
+// single-layer file: this sandbox has no WebGL context to render-verify new
+// GLSL math against, so the one piece that can't be checked any other way is
+// reused as already-proven code.
 //
 // Sits between the world render and the reticle overlay by construction: the
 // reticle is already a SEPARATE 2D `<canvas>` layered on top via CSS
@@ -28,42 +32,50 @@
 // what ends up in the WebGL canvas underneath it.
 
 import * as THREE from 'three';
-import { advanceMirageDrift, mirageIntensity, MIRAGE_ZERO_DRIFT, type MirageDrift } from '../game/mirage-model';
+import {
+  advanceLayer,
+  zoomIntensity,
+  packMirageLayerUniforms,
+  zeroMirageLayerStates,
+  MIRAGE_LAYER_FRACS,
+  MIRAGE_DEFAULT_LAYER_MASK,
+  type MirageLayerState,
+  type Vec3,
+} from '../game/mirage-model';
 
-// ---- tuning constants (owner feel-knobs, per plan step 3 / 1.7d) -----------
-const NOISE_FREQ_X = 3.3; // 1/m — horizontal feature size
-const NOISE_FREQ_Y = 2.2; // 1/m — vertical feature size (lower than X → tall "columns", matching the reference's anisotropy rationale)
-const NOISE_FREQ_Z = 0.06; // 1/m — headwind churns this slowly (near-static per the reference's own reasoning)
-const NOISE_FREQ_T = 0.2; // 1/s — in-place evolution rate (keeps a dead-calm view boiling, not frozen)
-/** Reference downrange distance (m) the shimmer's feature size is scaled for.
- *  Real mirage is strongest near the ground close to the shooter; this single-
- *  layer simplification picks one representative depth rather than the
- *  reference's 3 depth-varying slabs. Exported so `ScopeView.tsx` can sample
- *  the local wind at roughly the same depth the shimmer is visually "at".
- *  Tunable in 1.7d. */
-export const MIRAGE_REFERENCE_DISTANCE_M = 150;
+// ---- tuning constants, BTK verbatim (owner feel-knobs, re-tuned on device W6) ----
+const NOISE_FREQ_X = 3; // 1/yd — horizontal feature size
+const NOISE_FREQ_Y = 2; // 1/yd — vertical feature size (lower than X → tall "columns")
+const NOISE_FREQ_Z = 0.05; // 1/yd — headwind churns this slowly (near-static)
+const NOISE_FREQ_T = 0.2; // 1/s — in-place evolution rate (keeps a dead-calm view boiling)
+const SPATIAL_DISTORTION_SCALE = 0.003; // UV displacement scale, how far the image warbles
+const SHADING_INTENSITY_SCALE = 1.0; // chromatic edge-tint multiplier
+const SHADING_MAX_STRENGTH = 0.85; // clamp on the tint mix amount
+
+/** Height/line-of-sight elevation falloff (P17): mirage is full at/below
+ *  `ELEV_FULL_DEG`, then fades on an e-folding width of `ELEV_FALLOFF_DEG` as
+ *  the sight tilts up into the sky. BTK verbatim defaults, tuned against a
+ *  1000 yd F-class frame — expect these to need re-tuning on device (W6) for
+ *  Range A's 100–500 yd targets and the ELR range's steep near-line sight
+ *  angles. UNIFORMS, not shader literals (the plan's explicit P17
+ *  instruction), so a debug control can retune them live without a shader
+ *  recompile. */
+export const MIRAGE_ELEV_FULL_DEG = 0.08;
+export const MIRAGE_ELEV_FALLOFF_DEG = 0.14;
+
 /** Render-target resolution vs. the canvas's own device pixels. First lever to
- *  pull if iPad FPS can't hold the post-process pass (plan step 3) — drop this
- *  before cutting anything else. */
+ *  pull if iPad FPS can't hold the post-process pass (P15) — drop this before
+ *  cutting `MSAA_SAMPLES`. */
 const RESOLUTION_SCALE = 1.0;
 
-/**
- * Final UV-displacement multiplier — separate from `intensity` (the
- * zoom-driven curve in `game/mirage-model.ts`, O(0.1–3), a dimensionless
- * "how strong" ratio) on purpose, matching the reference's own two-stage
- * design (`layerIntensity` × a separate `SPATIAL_DISTORTION_SCALE = 0.003`).
- * `intensity` alone is NOT a UV offset — UV space only spans [0,1], so
- * treating a value near 1–3 as a raw offset makes the shader sample
- * completely unrelated parts of the source texture rather than subtly
- * warping it, which is exactly the "solid green/blue blobs, no scene detail"
- * bug the owner's on-device screenshot showed. This constant converts the
- * dimensionless intensity into an actual small UV nudge. Set to the
- * reference's own tuned value (0.003) for the same reason
- * `game/mirage-model.ts`'s `MIRAGE_BASE_INTENSITY`/`MIRAGE_INTENSITY_CAP` were
- * — a real, presumably-already-eyeballed number beats guessing again from a
- * sandbox with no WebGL to render-check against. Still tunable in 1.7d.
- */
-const SPATIAL_DISTORTION_SCALE = 0.003;
+/** MSAA sample count for the offscreen target (P15). The canvas itself is
+ *  `antialias: true`, but a plain WebGLRenderTarget is single-sampled by
+ *  default — without this, every plate/pole edge gets visibly jaggier the
+ *  moment mirage turns on, which reads as "the picture got worse" and is
+ *  easily mistaken for the shimmer itself. WebGL2-only; harmless on WebGL1
+ *  (three silently ignores `samples` there). Second perf lever after
+ *  `RESOLUTION_SCALE` (P15). */
+const MSAA_SAMPLES = 4;
 
 // Simplex 4D noise (Gustavson/Ashima, MIT) — verbatim port, see file header.
 const SIMPLEX_4D_GLSL = `
@@ -151,13 +163,24 @@ const VERTEX_SHADER = `
   }
 `;
 
+const NUM_LAYERS = MIRAGE_LAYER_FRACS.length;
+
 const FRAGMENT_SHADER = `
+  #define NUM_LAYERS ${NUM_LAYERS}
+
   uniform sampler2D tDiffuse;
-  uniform vec3 drift;      // accumulated (x=cross, y=heat-rise, z=head), metres
-  uniform float noiseTime; // elapsed seconds
-  uniform vec4 noiseFreq;  // (x, y, z, t)
-  uniform float viewScale; // metres spanned edge-to-edge at the reference depth, current zoom
-  uniform float intensity; // UV displacement scale (zoom-scaled, capped)
+  uniform vec4  noiseFreq;                    // (x, y, z, t) per-axis frequency
+  uniform float noiseTime;                    // elapsed seconds, drives the t axis
+  uniform float spatialScale;                 // UV displacement multiplier
+  uniform float shadingScale;                 // chromatic tint multiplier
+  uniform vec3  layerOffsets[NUM_LAYERS];     // world-space anchor (yards) per layer
+  uniform float layerScales[NUM_LAYERS];      // viewport world width (yards) per layer
+  uniform vec3  layerDrifts[NUM_LAYERS];      // accumulated wind drift (cross, vertical, head) yards
+  uniform float layerIntensities[NUM_LAYERS]; // per-layer noise weight (zoom * fade / sqrt(N))
+  uniform float viewPitch;                    // elevation of view center (radians, +up)
+  uniform float vFovRad;                      // vertical field of view (radians)
+  uniform float elevFullDeg;                  // P17: full-strength elevation ceiling (deg)
+  uniform float elevFalloffDeg;               // P17: e-folding width of the fade above it (deg)
 
   varying vec2 vUv;
 
@@ -169,35 +192,60 @@ const FRAGMENT_SHADER = `
   // the colorspace_fragment chunk when rendering to the canvas, but a bespoke
   // ShaderMaterial like this one does NOT get it for free. Pass 1 (world ->
   // offscreen target) leaves tDiffuse holding LINEAR-space colour; without
-  // this encode, writing it straight to the screen framebuffer under-
-  // brightens every pixel (the browser displays raw linear values as if they
-  // were already sRGB) — the "like I'm wearing sunglasses" darkening the
-  // owner reported on-device, 2026-07-15.
+  // this encode on the FINAL write (P14), writing it straight to the screen
+  // framebuffer under-brightens every pixel (the browser displays raw linear
+  // values as if they were already sRGB) — the "like I'm wearing sunglasses"
+  // darkening the owner reported on-device, 2026-07-15. Do NOT instead set
+  // renderer.outputColorSpace — that would double-encode the non-mirage
+  // path, which never goes through this shader.
   vec3 linearToSRGB(vec3 c) {
     return mix(pow(c, vec3(0.41666)) * 1.055 - vec3(0.055), c * 12.92, vec3(lessThanEqual(c, vec3(0.0031308))));
   }
 
   void main() {
-    vec4 noisePos = vec4(
-      ((vUv.x - 0.5) * viewScale - drift.x) * noiseFreq.x,
-      ((vUv.y - 0.5) * viewScale - drift.y) * noiseFreq.y,
-      -drift.z * noiseFreq.z,
-      noiseTime * noiseFreq.w
-    );
-    float n = snoise(noisePos);
+    vec2 uv = vUv;
 
-    // Mirage refracts light vertically (rising hot air = vertical n-gradient),
-    // same as the reference. intensity is a dimensionless zoom-driven
-    // strength (O(0.1-3), see game/mirage-model.ts); SPATIAL_DISTORTION_SCALE
-    // converts that into an actual (small) UV nudge — without it, intensity
-    // alone would be a UV offset of order 1, i.e. a near-total resample of a
-    // totally different part of the source image, not a warp.
-    vec2 distortedUv = vUv + vec2(0.0, n) * intensity * ${SPATIAL_DISTORTION_SCALE.toFixed(6)};
+    float totalDistortion = 0.0;
+
+    // One 4D noise sample per layer. The three spatial axes are advected by
+    // their wind drivers (cross→x, vertical+heat→y, head→z); the fourth axis
+    // is the shared clock so the field evolves in place. Layers are
+    // decorrelated by their distinct world-space z (downrange) anchors,
+    // which sit far beyond the noise correlation length.
+    float tCoord = noiseTime * noiseFreq.w;
+    for (int i = 0; i < NUM_LAYERS; i++) {
+      vec4 noisePos = vec4(
+        ((uv.x - 0.5) * layerScales[i] + layerOffsets[i].x - layerDrifts[i].x) * noiseFreq.x,
+        ((uv.y - 0.5) * layerScales[i] + layerOffsets[i].y - layerDrifts[i].y) * noiseFreq.y,
+        (layerOffsets[i].z - layerDrifts[i].z) * noiseFreq.z,
+        tCoord
+      );
+
+      float n = snoise(noisePos);
+      totalDistortion += n * layerIntensities[i];
+    }
+
+    // Height falloff: this pixel's line-of-sight elevation is the view-center
+    // pitch plus its vertical offset across the FOV. Mirage is full when the
+    // sight grazes the deck, then tapers off exponentially as it tilts up
+    // into the sky — a gradual fade with no hard edge, so the sky band above
+    // the target thins away smoothly instead of cutting off at a line.
+    float elevDeg = (viewPitch + (uv.y - 0.5) * vFovRad) * 57.2957795;
+    float elevAtten = exp(-max(elevDeg - elevFullDeg, 0.0) / max(elevFalloffDeg, 0.0001));
+    totalDistortion *= elevAtten;
+
+    // Mirage refracts light vertically (rising hot air = vertical n-gradient).
+    vec2 distortedUv = uv + vec2(0.0, totalDistortion) * spatialScale;
     // Defensive clamp: keeps an extreme-zoom excursion from sampling past the
     // render target's edge and smearing the border pixel across the frame.
     distortedUv = clamp(distortedUv, vec2(0.001), vec2(0.999));
 
     vec4 color = texture2D(tDiffuse, distortedUv);
+
+    // Chromatic edge tint scales with total distortion magnitude.
+    float tintStrength = clamp(abs(totalDistortion) * shadingScale, 0.0, ${SHADING_MAX_STRENGTH.toFixed(3)});
+    color.rgb = mix(color.rgb, color.rgb * vec3(0.85, 0.9, 1.0), tintStrength);
+
     color.rgb = linearToSRGB(color.rgb);
     gl_FragColor = color;
   }
@@ -210,7 +258,7 @@ interface MirageState {
   quadCamera: THREE.OrthographicCamera;
   material: THREE.ShaderMaterial;
   quad: THREE.Mesh;
-  drift: MirageDrift;
+  layerStates: MirageLayerState[];
   elapsed: number;
   width: number;
   height: number;
@@ -228,6 +276,10 @@ function targetSizeFor(renderer: THREE.WebGLRenderer): { width: number; height: 
   };
 }
 
+function zeroLayerVectorArray(): THREE.Vector3[] {
+  return Array.from({ length: NUM_LAYERS }, () => new THREE.Vector3(0, 0, 0));
+}
+
 /** Build the offscreen target + fullscreen quad. Idempotent — safe to call
  *  once at scene init (mirrors `initBulletTrace`/`initWindMarkers`). */
 export function initMirage(renderer: THREE.WebGLRenderer): void {
@@ -238,6 +290,7 @@ export function initMirage(renderer: THREE.WebGLRenderer): void {
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
     format: THREE.RGBAFormat,
+    samples: MSAA_SAMPLES, // P15
   });
 
   const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -245,11 +298,18 @@ export function initMirage(renderer: THREE.WebGLRenderer): void {
   const material = new THREE.ShaderMaterial({
     uniforms: {
       tDiffuse: { value: target.texture },
-      drift: { value: new THREE.Vector3(0, 0, 0) },
-      noiseTime: { value: 0 },
       noiseFreq: { value: new THREE.Vector4(NOISE_FREQ_X, NOISE_FREQ_Y, NOISE_FREQ_Z, NOISE_FREQ_T) },
-      viewScale: { value: 1 },
-      intensity: { value: 0 },
+      noiseTime: { value: 0 },
+      spatialScale: { value: SPATIAL_DISTORTION_SCALE },
+      shadingScale: { value: SHADING_INTENSITY_SCALE },
+      layerOffsets: { value: zeroLayerVectorArray() },
+      layerScales: { value: new Array(NUM_LAYERS).fill(0) },
+      layerDrifts: { value: zeroLayerVectorArray() },
+      layerIntensities: { value: new Array(NUM_LAYERS).fill(0) },
+      viewPitch: { value: 0 },
+      vFovRad: { value: 0 },
+      elevFullDeg: { value: MIRAGE_ELEV_FULL_DEG },
+      elevFalloffDeg: { value: MIRAGE_ELEV_FALLOFF_DEG },
     },
     vertexShader: VERTEX_SHADER,
     fragmentShader: FRAGMENT_SHADER,
@@ -259,29 +319,54 @@ export function initMirage(renderer: THREE.WebGLRenderer): void {
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
   quadScene.add(quad);
 
-  mirage = { renderer, target, quadScene, quadCamera, material, quad, drift: MIRAGE_ZERO_DRIFT, elapsed: 0, width, height };
+  mirage = {
+    renderer,
+    target,
+    quadScene,
+    quadCamera,
+    material,
+    quad,
+    layerStates: zeroMirageLayerStates(),
+    elapsed: 0,
+    width,
+    height,
+  };
+}
+
+/** Everything `ScopeView.tsx` computes per frame and hands to the renderer —
+ *  the aim-ray intersection (P16) and one wind sample per layer, already
+ *  taken at a random depth within that layer's slab (P19: the random pick
+ *  lives in the caller, not here, so this module stays deterministic given
+ *  its inputs). */
+export interface MirageFrameParams {
+  dt: number;
+  fovDeg: number;
+  baseFovDeg: number;
+  /** Aim-ray intersection point, yards (`aimRayIntersection`'s `pointYd`). */
+  intersectionYd: Vec3;
+  /** Aim-ray intersection distance, yards (`aimRayIntersection`'s `distanceYd`). */
+  distanceYd: number;
+  /** `viewPitchRad(dir.y)` — elevation of the aim direction, radians, +up. */
+  viewPitchRad: number;
+  /** One wind sample per `MIRAGE_LAYER_FRACS` entry, mph, already taken at a
+   *  random depth within that layer's own slab range. */
+  layerSamplesMph: Vec3[];
+  /** Strength-preset multiplier (Off/Light/Medium/Heavy, W6). Defaults to 1
+   *  (Medium-equivalent) until W6 wires the control. */
+  intensityScale?: number;
+  /** Per-layer debug isolation mask (W6). Defaults to all layers on. */
+  layerMask?: readonly number[];
 }
 
 /**
  * Render `scene`/`camera` through the mirage post-process instead of directly
  * to the screen: pass 1 renders the world into the offscreen target, pass 2
- * warps that texture onto the screen through the noise shader. Call once per
- * frame in place of the old `renderer.render(scene, camera)`. No-op (falls
- * back silently — caller should just not call this before `initMirage`) if
- * not yet initialized.
- *
- * `wind` is the ALREADY-superposed local wind (Steady: flat dialed mean;
- * Realistic: mean+gust) sampled near the target line — the same value
- * `currentWindAt` produces for the flags and the D6 effective-wind readout, so
- * the shimmer's drift direction always agrees with what the flags show (D1:
- * mirage renders in both modes, showing the steady mean in Steady — same as
- * the flags, not gated to Realistic-only).
+ * warps that texture onto the screen through the layered noise shader. Call
+ * once per frame in place of the old `renderer.render(scene, camera)`. No-op
+ * (caller should just not call this before `initMirage`) if not yet
+ * initialized.
  */
-export function renderSceneWithMirage(
-  scene: THREE.Scene,
-  camera: THREE.PerspectiveCamera,
-  params: { dt: number; fovDeg: number; baseFovDeg: number; wind: { x: number; z: number } },
-): void {
+export function renderSceneWithMirage(scene: THREE.Scene, camera: THREE.PerspectiveCamera, params: MirageFrameParams): void {
   if (!mirage) return;
   const { renderer } = mirage;
 
@@ -297,23 +382,42 @@ export function renderSceneWithMirage(
   renderer.render(scene, camera);
   renderer.setRenderTarget(null);
 
-  // Advance drift + noise clock (pure, unit-tested in game/mirage-model.ts).
-  mirage.drift = advanceMirageDrift(mirage.drift, params.wind, params.dt);
+  // Advance each slab's EMA wind + drift (pure, unit-tested in
+  // game/mirage-model.ts), then pack the four per-layer uniform arrays.
+  for (let i = 0; i < mirage.layerStates.length; i++) {
+    mirage.layerStates[i] = advanceLayer(mirage.layerStates[i], params.layerSamplesMph[i], params.dt);
+  }
   mirage.elapsed += params.dt;
 
-  const fovRad = (params.fovDeg * Math.PI) / 180;
-  const viewScale = 2 * MIRAGE_REFERENCE_DISTANCE_M * Math.tan(fovRad / 2);
-  const intensity = mirageIntensity(params.fovDeg, params.baseFovDeg);
+  const baseIntensity = zoomIntensity(params.fovDeg, params.baseFovDeg) * (params.intensityScale ?? 1);
+  const mask = params.layerMask ?? MIRAGE_DEFAULT_LAYER_MASK;
+  const packed = packMirageLayerUniforms(
+    mirage.layerStates,
+    params.intersectionYd,
+    params.distanceYd,
+    params.fovDeg,
+    baseIntensity,
+    mask,
+  );
 
   const u = mirage.material.uniforms;
-  (u.drift.value as THREE.Vector3).set(mirage.drift.x, mirage.drift.y, mirage.drift.z);
+  const layerOffsets = u.layerOffsets.value as THREE.Vector3[];
+  const layerScales = u.layerScales.value as number[];
+  const layerDrifts = u.layerDrifts.value as THREE.Vector3[];
+  const layerIntensities = u.layerIntensities.value as number[];
+  for (let i = 0; i < NUM_LAYERS; i++) {
+    layerOffsets[i].set(packed.offsetsYd[i].x, packed.offsetsYd[i].y, packed.offsetsYd[i].z);
+    layerScales[i] = packed.scalesYd[i];
+    layerDrifts[i].set(packed.driftsYd[i].x, packed.driftsYd[i].y, packed.driftsYd[i].z);
+    layerIntensities[i] = packed.intensities[i];
+  }
   u.noiseTime.value = mirage.elapsed;
-  u.viewScale.value = viewScale;
-  u.intensity.value = intensity;
+  u.viewPitch.value = params.viewPitchRad;
+  u.vFovRad.value = (params.fovDeg * Math.PI) / 180;
 
   // Pass 2: offscreen target -> screen, warped. The fullscreen quad covers
-  // every pixel, so no explicit clear is needed first (matches the reference's
-  // own `apply()`).
+  // every pixel, so no explicit clear is needed first (matches BTK's own
+  // `apply()`).
   renderer.render(mirage.quadScene, mirage.quadCamera);
 }
 
