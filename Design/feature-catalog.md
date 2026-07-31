@@ -466,6 +466,27 @@ plumbing (`engine-bridge/`, dispersion Monte-Carlo), reactive steel + distance-d
 audio + impact FX, wind controls/HUD/shot-budget/scoring, DOPE side panel
 (`game/dope-row.ts`).
 
+#### Wind-reading renderers — flags/socks + layered heat mirage
+Instanced lit-cloth wind flags, a rigid-body wind sock, and a depth-layered heat-shimmer
+post-process the player reads wind speed/direction from at each station — the visual
+half of "wind is adjustable so every target re-solves," above.
+**Built** — shipped flat/unlit as part of Increment 1 (2026-07-16, task 1.7), mirage OFF
+by default (owner feedback: didn't read as directional). **Faithfully re-ported from BTK
+2026-07-31** (`Design/Plans/wind-system-btk-port-plan.md`, W1–W7, owner-confirmed on
+device — see `execution/PROGRESS.md`'s W1–W7 rows for the full trail): instanced
+shader-deformed flag cloth + rigid-body sock (`scope/WindMarkers.ts`), and a three
+depth-layered noise-slab mirage (`scope/Mirage.ts` + `game/mirage-model.ts`) replacing
+the old flat single layer. Mirage ships with an Off/Light/Medium/Heavy strength preset
+(`state/store.ts` `mirageStrength`, **defaults Medium and persists across launches**,
+owner decision 2026-07-31 after seeing the tuned version on device) and an
+on-device-tuned drift rate, wind-fade ceiling, and elevation falloff —
+the last needed a range-specific retune (ELR's rising terrain puts a valid far target's
+sight line meaningfully above level, which the flat-range-tuned falloff read as "panned
+into the sky" and killed almost entirely past 750 m). **Deferred, per the plan's §7:**
+mirage as a readable wind-call instrument (a HUD hook off BTK's own
+`getSmoothedWindVector()`) — porting the effect makes this possible, wiring it to a
+mechanic is a separate design question.
+
 #### In-scope bullet-flight trace
 Watch the projectile's true sampled arc through the scope as it flies to impact
 (per-shot, not a nominal cue).

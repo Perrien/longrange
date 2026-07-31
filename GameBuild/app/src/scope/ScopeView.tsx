@@ -46,7 +46,7 @@ import { gearSolveContext, type GearSolveContext } from '../game/active-gear';
 import { recommendedZeroM } from '../game/zero-distance';
 import { windMarkersFor } from '../range/wind-markers-config';
 import { initWindMarkers, updateWindMarkers, disposeWindMarkers } from './WindMarkers';
-import { initMirage, renderSceneWithMirage, disposeMirage } from './Mirage';
+import { initMirage, renderSceneWithMirage, disposeMirage, MIRAGE_STRENGTH_SCALE } from './Mirage';
 import { MIRAGE_LAYER_FRACS, aimRayIntersection, viewPitchRad, type Vec3 } from '../game/mirage-model';
 import {
   useGameStore,
@@ -1671,19 +1671,22 @@ export function ScopeView({
       camera.fov = SCOPE_BASE_FOV_DEG / store().session.scope.magnification;
       camera.updateProjectionMatrix();
       camera.quaternion.copy(aimQuaternion(st.t));
-      // Mirage (task 1.7c, D1; toggle added 1.7d; layered port W5): renders
-      // in BOTH modes when on, like the flags — Steady shows the dialed
-      // mean's shimmer, Realistic layers the field on top. Defaults OFF
-      // (owner feedback, 2026-07-15: the boil reads, but the crosswind
-      // DIRECTION doesn't yet — W5 is the fix) — when off, skip the two-pass
-      // post-process entirely and render straight to the screen, same as
-      // before 1.7c existed (also the cheaper path, no offscreen pass to pay
-      // for while it's parked).
+      // Mirage (task 1.7c, D1; toggle added 1.7d; layered port W5; strength
+      // preset W6): renders in BOTH modes when on, like the flags — Steady
+      // shows the dialed mean's shimmer, Realistic layers the field on top.
+      // `mirageStrength` defaults `'medium'` and persists (owner decision
+      // 2026-07-31, after the W5 layered port fixed the "doesn't read as
+      // directional" complaint and the W6 tuning pass — superseding D9,
+      // which had it default off/store-only) — a player can still dial it to
+      // `'off'`, which skips the two-pass post-process entirely and renders
+      // straight to the screen (also the cheaper path, no offscreen pass to
+      // pay for while it's off).
       // Bracket the render call (P13) — this is the only cost that can be told
       // apart from vsync waiting. See `RenderCostMeter` for what it does and does
       // not measure.
       const renderStartMs = performance.now();
-      if (store().settings.mirageEnabled) {
+      const mirageStrength = store().settings.mirageStrength;
+      if (mirageStrength !== 'off') {
         // P16: anchor on whatever's under the crosshair right now (else this
         // bay's lane length) — `dirNow` reuses the quaternion just set above,
         // matching `findAimed`/`findAimedTarget`'s own `(0,0,-1)`-rotate
@@ -1723,6 +1726,7 @@ export function ScopeView({
           distanceYd,
           viewPitchRad: viewPitchRad(dirNow.y),
           layerSamplesMph,
+          intensityScale: MIRAGE_STRENGTH_SCALE[mirageStrength],
         });
       } else {
         renderer.render(scene, camera);

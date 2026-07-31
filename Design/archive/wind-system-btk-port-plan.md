@@ -1,7 +1,15 @@
 # Wind system — port the BTK flag/sock renderers and the BTK mirage
 
 **Plan slug:** `wind-system-btk-port`
-**Status:** decisions locked with owner 2026-07-31. Not started.
+**Status:** COMPLETE and ARCHIVED — all seven tasks (W1–W7) done, every
+owner-verification stop passed on device, 2026-07-31; moved to `Design/archive/` the
+same day. Kept for provenance (the locked D1–D9 decisions, the P1–P22 pitfall register,
+and the reasoning behind them), **not as a live spec** —
+[`../feature-catalog.md`](../feature-catalog.md) §B ("Wind-reading renderers") and the
+"Wind system" rows in [`../execution/PROGRESS.md`](../execution/PROGRESS.md) are the
+authoritative record of what shipped, including four rounds of on-device tuning beyond
+what this plan originally specified (drift rate, wind-fade ceiling, and an ELR-specific
+elevation-falloff retune the plan didn't anticipate).
 **Audience:** a coding agent / junior programmer working alone. Read
 [`../execution/execution-protocol.md`](../execution/execution-protocol.md) §2b–2d and §5
 first — this plan declares its own pause points and commit points, and they are binding.

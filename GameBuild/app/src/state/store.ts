@@ -45,6 +45,14 @@ export type WindRealism = 'steady' | 'realistic';
  *  rather than importing it from here. */
 export type MarkerStyle = 'flag' | 'sock' | 'both';
 
+/** Mirage strength preset (wind-system-btk-port W6, D9) — replaces the 1.7c/
+ *  1.7d on/off boolean now that the layered port (W5) reads as directional.
+ *  `'off'` skips the post-process pass entirely (same cheap path the old
+ *  `false` took); the other three map to BTK's own `MIRAGE_LEVEL_SCALE`
+ *  intensity multiplier (`scope/Mirage.ts`'s `MIRAGE_STRENGTH_SCALE`, kept
+ *  next to the renderer's other tuning constants rather than here). */
+export type MirageStrength = 'off' | 'light' | 'medium' | 'heavy';
+
 /** Wind as the player sets it: a mean speed and the direction it blows FROM.
  *  Constant for Increment 1; the curl-noise field arrives in task 1.7. */
 export interface WindState {
@@ -150,13 +158,13 @@ export interface SettingsState {
    *  `sensitivity`/`traceEnabled`): a cosmetic session preference, not a
    *  durable one. */
   windMarkerStyle: MarkerStyle;
-  /** Mirage heat-shimmer post-process (task 1.7c). Store-only, like
-   *  `traceEnabled`/`windMarkerStyle`. Defaults OFF (owner feedback,
-   *  2026-07-15, after the direction/color-space fixes: the boil is legible
-   *  but the crosswind DIRECTION still doesn't read clearly at a glance —
-   *  "more frantic at higher wind, but no feel that it's moving up or
-   *  sideways") — parked for a later revisit rather than shipped on. */
-  mirageEnabled: boolean;
+  /** Mirage heat-shimmer post-process strength (task 1.7c; Off/Light/Medium/
+   *  Heavy replaced the on/off boolean in W6). Persisted (schema v2, see
+   *  `persist-settings.ts`) like `sensitivity`/`traceEnabled`/`windMarkerStyle`
+   *  — **owner decision 2026-07-31, after the W6 on-device tuning pass**:
+   *  defaults `'medium'` and now survives a relaunch, superseding D9 (which
+   *  had it store-only, defaulting `'off'`, pending exactly this call). */
+  mirageStrength: MirageStrength;
 }
 
 // --- Constants / defaults ---------------------------------------------------
@@ -233,7 +241,7 @@ export const defaultSettings = (): SettingsState => ({
   traceEnabled: true,
   windRealism: 'steady',
   windMarkerStyle: 'flag',
-  mirageEnabled: false,
+  mirageStrength: 'medium',
 });
 
 export const defaultScore = (): ScoreState => ({
@@ -349,8 +357,9 @@ export interface GameStore {
   setWindRealism(mode: WindRealism): void;
   /** Flag / sock / both (task 1.7b). Store-only, not persisted. */
   setWindMarkerStyle(style: MarkerStyle): void;
-  /** Mirage on/off (task 1.7c). Store-only, not persisted; defaults off. */
-  setMirageEnabled(enabled: boolean): void;
+  /** Mirage strength preset (task 1.7c; W6). Persisted (schema v2); defaults
+   *  `'medium'`. */
+  setMirageStrength(strength: MirageStrength): void;
   /** Merge a partial settings patch (used by persistence hydration). */
   applySettings(patch: Partial<SettingsState>): void;
 
@@ -658,8 +667,8 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   setWindMarkerStyle: (windMarkerStyle) =>
     set((s) => ({ settings: { ...s.settings, windMarkerStyle } })),
 
-  setMirageEnabled: (mirageEnabled) =>
-    set((s) => ({ settings: { ...s.settings, mirageEnabled } })),
+  setMirageStrength: (mirageStrength) =>
+    set((s) => ({ settings: { ...s.settings, mirageStrength } })),
 
   applySettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 

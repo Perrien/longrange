@@ -406,7 +406,7 @@ describe('settings persistence round-trip', () => {
       traceEnabled: true,
       windRealism: 'steady' as const,
       windMarkerStyle: 'flag' as const,
-      mirageEnabled: false,
+      mirageStrength: 'off' as const,
     };
     const save = settingsToSave(settings);
     expect(save.settings.unitsPrimary).toBe('MOA');
@@ -421,7 +421,7 @@ describe('settings persistence round-trip', () => {
       traceEnabled: true,
       windRealism: 'realistic' as const,
       windMarkerStyle: 'flag' as const,
-      mirageEnabled: false,
+      mirageStrength: 'off' as const,
     };
     const save = settingsToSave(settings);
     expect(save.settings.windRealism).toBe('realistic');
@@ -469,7 +469,7 @@ describe('settings persistence round-trip', () => {
     st.setSensitivity(2.25);
     st.setTraceEnabled(false);
     st.setWindMarkerStyle('sock');
-    st.setMirageEnabled(true); // store-only — must NOT survive a relaunch
+    st.setMirageStrength('heavy'); // persisted since the W6 close-out — must survive a relaunch
     await new Promise((r) => setTimeout(r, 0));
     unsub();
 
@@ -480,30 +480,32 @@ describe('settings persistence round-trip', () => {
     expect(back.sensitivity).toBe(2.25);
     expect(back.traceEnabled).toBe(false);
     expect(back.windMarkerStyle).toBe('sock');
-    expect(back.mirageEnabled).toBe(false); // not persisted → back to default
+    expect(back.mirageStrength).toBe('heavy');
   });
 
-  it('carries sensitivity, traceEnabled, and windMarkerStyle into the save (schema v2, D5)', () => {
+  it('carries sensitivity, traceEnabled, windMarkerStyle, and mirageStrength into the save (schema v2, D5; mirageStrength added post-v2, W6 close-out)', () => {
     const settings = {
       unitsPrimary: 'MOA' as const,
       sensitivity: 1.75,
       traceEnabled: false,
       windRealism: 'realistic' as const,
       windMarkerStyle: 'both' as const,
-      mirageEnabled: false,
+      mirageStrength: 'heavy' as const,
     };
     const save = settingsToSave(settings);
     expect(save.settings.sensitivity).toBe(1.75);
     expect(save.settings.traceEnabled).toBe(false);
     expect(save.settings.windMarkerStyle).toBe('both');
+    expect(save.settings.mirageStrength).toBe('heavy');
     // Round-trips back through the loader.
     const back = saveToSettings(save, defaultSettings());
     expect(back.sensitivity).toBe(1.75);
     expect(back.traceEnabled).toBe(false);
     expect(back.windMarkerStyle).toBe('both');
+    expect(back.mirageStrength).toBe('heavy');
   });
 
-  it('the carried-over settings default from the store when absent (pre-v2 save)', () => {
+  it('the carried-over settings default from the store when absent (pre-v2 / pre-mirageStrength save)', () => {
     const back = saveToSettings(
       {
         schemaVersion: 1,
@@ -517,38 +519,36 @@ describe('settings persistence round-trip', () => {
     expect(back.sensitivity).toBe(1.0);
     expect(back.traceEnabled).toBe(true);
     expect(back.windMarkerStyle).toBe('flag');
-  });
-
-  it('mirageEnabled is intentionally NOT persisted (store-only until it ships, D5)', () => {
-    const save = settingsToSave({
-      unitsPrimary: 'MIL',
-      sensitivity: 2.0,
-      traceEnabled: false,
-      windRealism: 'steady',
-      windMarkerStyle: 'flag',
-      mirageEnabled: true,
-    });
-    expect('mirageEnabled' in save.settings).toBe(false);
+    expect(back.mirageStrength).toBe('medium'); // defaultSettings()'s default, since the save predates the field
   });
 });
 
-describe('mirage toggle (task 1.7c/1.7d)', () => {
-  it('defaults to OFF (owner feedback, 2026-07-15: direction not legible yet, parked for later)', () => {
-    expect(useGameStore.getState().settings.mirageEnabled).toBe(false);
+describe('mirage strength preset (task 1.7c/1.7d; Off/Light/Medium/Heavy, W6; persisted + defaults Medium, W6 close-out)', () => {
+  it("defaults to 'medium' (owner decision 2026-07-31, after the W5 layered port + W6 tuning pass — supersedes D9's off-default)", () => {
+    expect(useGameStore.getState().settings.mirageStrength).toBe('medium');
   });
 
-  it('setMirageEnabled updates the setting, is not reset by resetSession, and is not persisted', () => {
+  it('setMirageStrength updates the setting, is not reset by resetSession, and IS persisted', () => {
     const st = useGameStore.getState();
-    st.setMirageEnabled(true);
-    expect(useGameStore.getState().settings.mirageEnabled).toBe(true);
+    st.setMirageStrength('heavy');
+    expect(useGameStore.getState().settings.mirageStrength).toBe('heavy');
     st.resetSession();
-    expect(useGameStore.getState().settings.mirageEnabled).toBe(true); // settings untouched
+    expect(useGameStore.getState().settings.mirageStrength).toBe('heavy'); // settings untouched
 
     const save = settingsToSave(useGameStore.getState().settings);
-    expect('mirageEnabled' in save.settings).toBe(false);
+    expect('mirageStrength' in save.settings).toBe(true);
+    expect(save.settings.mirageStrength).toBe('heavy');
 
-    st.setMirageEnabled(false);
-    expect(useGameStore.getState().settings.mirageEnabled).toBe(false);
+    st.setMirageStrength('medium');
+    expect(useGameStore.getState().settings.mirageStrength).toBe('medium');
+  });
+
+  it('walks through all four presets', () => {
+    const st = useGameStore.getState();
+    for (const strength of ['light', 'medium', 'heavy', 'off'] as const) {
+      st.setMirageStrength(strength);
+      expect(useGameStore.getState().settings.mirageStrength).toBe(strength);
+    }
   });
 });
 

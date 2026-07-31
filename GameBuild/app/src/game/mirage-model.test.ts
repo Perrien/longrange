@@ -3,6 +3,8 @@ import {
   MIRAGE_LAYER_FRACS,
   MIRAGE_MPH_TO_YARDS_PER_SEC,
   MIRAGE_HEAT_RISE_YD_PER_S,
+  MIRAGE_DRIFT_RATE_SCALE,
+  MIRAGE_WIND_FADE_SPEED_MPH,
   zeroMirageLayerState,
   zeroMirageLayerStates,
   advanceLayer,
@@ -39,28 +41,40 @@ describe('mirage-model/zeroMirageLayerState(s)', () => {
 });
 
 describe('mirage-model/advanceLayer — P13 (yards/mph unit convention)', () => {
-  it('a 10 mph pure crosswind produces the expected yards of drift after 1 s', () => {
+  it('a 10 mph pure crosswind produces the expected yards of drift after 1 s (driftRateScale=1 isolates the exact conversion from the W6 tuning multiplier)', () => {
     // alpha=0 isolates the drift-conversion math from EMA convergence speed:
     // the smoothed wind is already exactly 10 mph and stays there.
     const state = { smoothedWindMph: { x: 10, y: 0, z: 0 }, driftYd: { x: 0, y: 0, z: 0 } };
-    const next = advanceLayer(state, { x: 10, y: 0, z: 0 }, 1, 0);
+    const next = advanceLayer(state, { x: 10, y: 0, z: 0 }, 1, 0, MIRAGE_HEAT_RISE_YD_PER_S, 1);
     expect(next.driftYd.x).toBeCloseTo(10 * MIRAGE_MPH_TO_YARDS_PER_SEC, 9); // ≈4.8889 yd
     expect(next.driftYd.x).toBeCloseTo(4.888888889, 6);
   });
 
-  it('dead calm advances only the vertical (heat-rise) drift', () => {
+  it('dead calm advances only the vertical (heat-rise) drift, scaled by the default driftRateScale', () => {
     const state = zeroMirageLayerState();
     const next = advanceLayer(state, { x: 0, y: 0, z: 0 }, 2);
     expect(next.driftYd.x).toBe(0);
     expect(next.driftYd.z).toBe(0);
-    expect(next.driftYd.y).toBeCloseTo(MIRAGE_HEAT_RISE_YD_PER_S * 2, 9);
+    expect(next.driftYd.y).toBeCloseTo(MIRAGE_HEAT_RISE_YD_PER_S * 2 * MIRAGE_DRIFT_RATE_SCALE, 9);
   });
 
-  it('a headwind accumulates z drift independently of x', () => {
+  it('a headwind accumulates z drift independently of x, scaled by the default driftRateScale', () => {
     const state = { smoothedWindMph: { x: 0, y: 0, z: 8 }, driftYd: { x: 0, y: 0, z: 0 } };
     const next = advanceLayer(state, { x: 0, y: 0, z: 8 }, 1, 0);
     expect(next.driftYd.x).toBe(0);
-    expect(next.driftYd.z).toBeCloseTo(8 * MIRAGE_MPH_TO_YARDS_PER_SEC, 9);
+    expect(next.driftYd.z).toBeCloseTo(8 * MIRAGE_MPH_TO_YARDS_PER_SEC * MIRAGE_DRIFT_RATE_SCALE, 9);
+  });
+
+  it('MIRAGE_DRIFT_RATE_SCALE (W6 owner tuning) is the .4 factor settled on after iterating .55 → .2 → .4', () => {
+    expect(MIRAGE_DRIFT_RATE_SCALE).toBeCloseTo(0.4, 9);
+  });
+
+  it('driftRateScale linearly scales BOTH the wind-driven and heat-rise terms together', () => {
+    const state = { smoothedWindMph: { x: 10, y: 0, z: 0 }, driftYd: { x: 0, y: 0, z: 0 } };
+    const atHalf = advanceLayer(state, { x: 10, y: 0, z: 0 }, 1, 0, MIRAGE_HEAT_RISE_YD_PER_S, 0.5);
+    const atFull = advanceLayer(state, { x: 10, y: 0, z: 0 }, 1, 0, MIRAGE_HEAT_RISE_YD_PER_S, 1);
+    expect(atHalf.driftYd.x).toBeCloseTo(atFull.driftYd.x * 0.5, 9);
+    expect(atHalf.driftYd.y).toBeCloseTo(atFull.driftYd.y * 0.5, 9); // heat-rise term too
   });
 
   it('the EMA converges toward a constant input over repeated frames', () => {
@@ -86,8 +100,13 @@ describe('mirage-model/layerFade', () => {
   });
 
   it('hits 0 at (and past) the fade speed', () => {
-    expect(layerFade({ x: 15, y: 0, z: 0 })).toBeCloseTo(0, 9);
-    expect(layerFade({ x: 30, y: 0, z: 0 })).toBe(0); // clamped, not negative
+    expect(layerFade({ x: MIRAGE_WIND_FADE_SPEED_MPH, y: 0, z: 0 })).toBeCloseTo(0, 9);
+    expect(layerFade({ x: MIRAGE_WIND_FADE_SPEED_MPH * 2, y: 0, z: 0 })).toBe(0); // clamped, not negative
+  });
+
+  it('is still visible at the wind slider\'s 20 mph max (W6 owner tuning: fade ceiling raised from 15 to 25 mph)', () => {
+    expect(layerFade({ x: 20, y: 0, z: 0 })).toBeGreaterThan(0);
+    expect(layerFade({ x: 20, y: 0, z: 0 })).toBeCloseTo(1 - 20 / MIRAGE_WIND_FADE_SPEED_MPH, 9);
   });
 
   it('is the horizontal (x,z) magnitude only — ignores vertical wind', () => {
@@ -242,7 +261,8 @@ describe('mirage-model/viewPitchRad', () => {
 describe('mirage-model/packMirageLayerUniforms', () => {
   const states = [
     { smoothedWindMph: { x: 0, y: 0, z: 0 }, driftYd: { x: 1, y: 2, z: 3 } },
-    { smoothedWindMph: { x: 15, y: 0, z: 0 }, driftYd: { x: 4, y: 5, z: 6 } }, // faded out (>= fade speed)
+    // MIRAGE_WIND_FADE_SPEED_MPH itself (not a hardcoded 15) — faded out at/past the fade speed by definition.
+    { smoothedWindMph: { x: MIRAGE_WIND_FADE_SPEED_MPH, y: 0, z: 0 }, driftYd: { x: 4, y: 5, z: 6 } },
     { smoothedWindMph: { x: 3, y: 0, z: 0 }, driftYd: { x: 7, y: 8, z: 9 } },
   ];
   const intersectionYd = { x: 10, y: 2, z: -1000 };
@@ -273,7 +293,7 @@ describe('mirage-model/packMirageLayerUniforms', () => {
 
   it('intensity is 0 for a fully-faded (windy) layer and positive for a calm one', () => {
     const packed = packMirageLayerUniforms(states, intersectionYd, distanceYd, fovDeg, 0.05);
-    expect(packed.intensities[1]).toBeCloseTo(0, 9); // 15 mph == fade speed
+    expect(packed.intensities[1]).toBeCloseTo(0, 9); // wind == fade speed
     expect(packed.intensities[0]).toBeGreaterThan(0); // dead calm
   });
 

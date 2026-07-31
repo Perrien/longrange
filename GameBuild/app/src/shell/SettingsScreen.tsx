@@ -1,14 +1,15 @@
 // Settings screen (task 2.1d, Increment 2 — owner request). A full-screen overlay
 // reachable from the scope's gear-icon button and from the range-select screen's
 // Settings button. It is the home for the durable player settings: units, aim
-// sensitivity, bullet trace, wind realism, wind-marker style, and the
-// (experimental) mirage toggle. Reading/writing goes straight through the
-// existing Zustand setters — no new store state.
+// sensitivity, bullet trace, wind realism, wind-marker style, and the mirage
+// strength preset. Reading/writing goes straight through the existing Zustand
+// setters — no new store state.
 //
 // Persistence: units / sensitivity / trace / marker-style ride the schema-v2
 // save (task 2.1a D5), so those stick across launches; wind realism also
-// persists (additive-optional since 1.7a); mirage is intentionally store-only
-// (parked OFF each launch) until it ships.
+// persists (additive-optional since 1.7a); mirage strength now persists too
+// (additive-optional since the W6 close-out, owner decision 2026-07-31 —
+// defaults to Medium and survives a relaunch, superseding D9's "store-only").
 //
 // Rendered as an overlay OVER whatever is underneath (the still-mounted ScopeView
 // in the scope view, the range-select screen otherwise), so opening settings
@@ -19,7 +20,7 @@
 // Guardrail §4.4: no inline unit math here — these are plain preference toggles
 // (unitsPrimary just flips which system every readout elsewhere uses); MIL and
 // MOA are both labelled where the units choice is shown.
-import { useGameStore, type MarkerStyle } from '../state/store';
+import { useGameStore, type MarkerStyle, type MirageStrength } from '../state/store';
 import type { ReactNode } from 'react';
 
 const PANEL_BG = '#1a222c';
@@ -82,8 +83,8 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
   const setWindRealism = useGameStore((s) => s.setWindRealism);
   const windMarkerStyle = useGameStore((s) => s.settings.windMarkerStyle);
   const setWindMarkerStyle = useGameStore((s) => s.setWindMarkerStyle);
-  const mirageEnabled = useGameStore((s) => s.settings.mirageEnabled);
-  const setMirageEnabled = useGameStore((s) => s.setMirageEnabled);
+  const mirageStrength = useGameStore((s) => s.settings.mirageStrength);
+  const setMirageStrength = useGameStore((s) => s.setMirageStrength);
 
   return (
     <div
@@ -169,13 +170,12 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
           ))}
         </Row>
 
-        <Row label="Mirage" hint="Heat-shimmer (experimental — resets off each launch)">
-          <Seg active={mirageEnabled} onClick={() => setMirageEnabled(true)}>
-            On
-          </Seg>
-          <Seg active={!mirageEnabled} onClick={() => setMirageEnabled(false)}>
-            Off
-          </Seg>
+        <Row label="Mirage" hint="Heat-shimmer strength">
+          {(['off', 'light', 'medium', 'heavy'] as MirageStrength[]).map((strength) => (
+            <Seg key={strength} active={mirageStrength === strength} onClick={() => setMirageStrength(strength)}>
+              {strength === 'off' ? 'Off' : strength[0].toUpperCase() + strength.slice(1)}
+            </Seg>
+          ))}
         </Row>
       </div>
     </div>

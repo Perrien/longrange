@@ -68,9 +68,15 @@ export const MIRAGE_HEAT_RISE_YD_PER_S = 1.0;
 export const MIRAGE_MPH_TO_YARDS_PER_SEC = 1760 / 3600;
 
 /** Per-layer attenuation ceiling: a slab fades to 0 by this horizontal wind
- *  speed (mph), BTK verbatim (`WIND_FADE_SPEED_MPH`) — strong wind mixes the
- *  air and washes the shimmer out. */
-export const MIRAGE_WIND_FADE_SPEED_MPH = 15.0;
+ *  speed (mph) — strong wind mixes the air and washes the shimmer out.
+ *  BTK's own default is 15.0; **raised to 25.0 (W6 on-device tuning, owner,
+ *  2026-07-31)** because the game's own wind slider goes to 20 mph and 15
+ *  meant the mirage was already at 20% opacity by 12 mph and exactly ZERO
+ *  from 15 mph up — i.e. invisible across the top quarter of the slider's
+ *  range. 25 keeps a bit of visible boil even at the slider's 20 mph max
+ *  (`1 - 20/25 = 0.2`, matching what 12 mph used to look like under the old
+ *  15 mph ceiling) instead of hard-cutting to nothing partway up the range. */
+export const MIRAGE_WIND_FADE_SPEED_MPH = 25.0;
 
 /** Per-layer noise weight at 1× zoom, pre-normalization, BTK verbatim
  *  (`BASE_INTENSITY`). */
@@ -80,6 +86,35 @@ export const MIRAGE_LAYERED_BASE_INTENSITY = 0.025;
  *  (`ZOOM_INTENSITY_CAP`) — without it, high magnification would warp the UV
  *  sample so far off-pixel the image would tear rather than shimmer. */
 export const MIRAGE_LAYERED_ZOOM_INTENSITY_CAP = 2.0;
+
+/** Overall drift-rate multiplier — W6 on-device tuning (owner, 2026-07-31):
+ *  "the rise/speed of the mirage needs to be about .55 of what it currently
+ *  is... the wind looks much worse than it is and the mirage becomes so fast
+ *  at about 12 MPH that it all but disappears." Both symptoms trace to the
+ *  same cause: `driftYd` (heat-rise AND wind terms together) accumulating too
+ *  fast per real-world mph/second, so (a) the pattern visibly slides faster
+ *  than the dialed wind would suggest, exaggerating how strong it reads, and
+ *  (b) past ~12 mph the drift outruns the noise field's own spatial
+ *  wavelength within a frame, aliasing the shimmer into flicker that reads as
+ *  "disappearing" rather than slowing down like a real heat-boil would.
+ *  Scaling the WHOLE per-frame drift delta (not `MIRAGE_HEAT_RISE_YD_PER_S`
+ *  or `MIRAGE_MPH_TO_YARDS_PER_SEC` individually — the owner described "rise/
+ *  speed" as one dial, and the exact yd/s-per-mph conversion (P13) stays
+ *  untouched as a unit conversion, not a tuning knob) slows both the rise and
+ *  the wind-reactivity together, and pushes the aliasing threshold up by the
+ *  same factor. Not a BTK constant — BTK's own defaults are exactly what read
+ *  wrong here; this is this game's own tuned value from the W6 pass.
+ *  **Iterated 2026-07-31 (same stop), twice:** 0.55 pushed the "goes to
+ *  flicker and vanishes" ceiling to ~12 mph, still short of the wind slider's
+ *  20 mph top end; 0.2 (a further ~0.36× cut) was tried next but landed on
+ *  the SAME ~12 mph ceiling — turned out most of that "disappearing" was
+ *  actually `layerFade`'s opacity curve (`MIRAGE_WIND_FADE_SPEED_MPH`, a
+ *  SEPARATE mechanism — see its own doc comment) hitting zero at 15 mph, not
+ *  the drift-rate/aliasing this constant controls. With the fade ceiling
+ *  raised to 25 alongside this change, settled on **0.4** — partway back up
+ *  from 0.2, since 0.2's extra slowdown wasn't actually buying the visibility
+ *  the symptom suggested it would. */
+export const MIRAGE_DRIFT_RATE_SCALE = 0.4;
 
 /** One atmosphere slab's persistent state, carried frame to frame. */
 export interface MirageLayerState {
@@ -110,8 +145,10 @@ export function zeroMirageLayerStates(count: number = MIRAGE_LAYER_FRACS.length)
  * renderer, so this function is deterministic and fully unit-testable). EMA
  * at `alpha` converges the smoothed wind toward the slab's average over
  * `1/alpha` samples. Drift accumulates the smoothed wind (converted to
- * yards/second) plus a constant heat-rise term on the vertical (y) axis only.
- * Ported verbatim from `MirageEffect.update`'s per-layer loop body.
+ * yards/second) plus a constant heat-rise term on the vertical (y) axis only,
+ * both scaled by `driftRateScale` (W6 on-device tuning, `MIRAGE_DRIFT_RATE_
+ * SCALE` — see its own doc comment) — BTK's per-frame math otherwise verbatim
+ * from `MirageEffect.update`'s per-layer loop body.
  */
 export function advanceLayer(
   state: MirageLayerState,
@@ -119,6 +156,7 @@ export function advanceLayer(
   dtSec: number,
   alpha: number = MIRAGE_WIND_SMOOTHING_ALPHA,
   heatRiseYdPerS: number = MIRAGE_HEAT_RISE_YD_PER_S,
+  driftRateScale: number = MIRAGE_DRIFT_RATE_SCALE,
 ): MirageLayerState {
   const sw = state.smoothedWindMph;
   const smoothedWindMph: Vec3 = {
@@ -129,9 +167,9 @@ export function advanceLayer(
 
   const d = state.driftYd;
   const driftYd: Vec3 = {
-    x: d.x + smoothedWindMph.x * MIRAGE_MPH_TO_YARDS_PER_SEC * dtSec,
-    y: d.y + smoothedWindMph.y * MIRAGE_MPH_TO_YARDS_PER_SEC * dtSec + heatRiseYdPerS * dtSec,
-    z: d.z + smoothedWindMph.z * MIRAGE_MPH_TO_YARDS_PER_SEC * dtSec,
+    x: d.x + smoothedWindMph.x * MIRAGE_MPH_TO_YARDS_PER_SEC * dtSec * driftRateScale,
+    y: d.y + (smoothedWindMph.y * MIRAGE_MPH_TO_YARDS_PER_SEC + heatRiseYdPerS) * dtSec * driftRateScale,
+    z: d.z + smoothedWindMph.z * MIRAGE_MPH_TO_YARDS_PER_SEC * dtSec * driftRateScale,
   };
 
   return { smoothedWindMph, driftYd };

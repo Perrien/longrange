@@ -54,14 +54,39 @@ const SHADING_MAX_STRENGTH = 0.85; // clamp on the tint mix amount
 
 /** Height/line-of-sight elevation falloff (P17): mirage is full at/below
  *  `ELEV_FULL_DEG`, then fades on an e-folding width of `ELEV_FALLOFF_DEG` as
- *  the sight tilts up into the sky. BTK verbatim defaults, tuned against a
- *  1000 yd F-class frame — expect these to need re-tuning on device (W6) for
- *  Range A's 100–500 yd targets and the ELR range's steep near-line sight
- *  angles. UNIFORMS, not shader literals (the plan's explicit P17
- *  instruction), so a debug control can retune them live without a shader
- *  recompile. */
-export const MIRAGE_ELEV_FULL_DEG = 0.08;
-export const MIRAGE_ELEV_FALLOFF_DEG = 0.14;
+ *  the sight tilts up into the sky. UNIFORMS, not shader literals (the plan's
+ *  explicit P17 instruction), so a debug control can retune them live without
+ *  a shader recompile.
+ *
+ *  **Retuned 2026-07-31 (W6 on-device pass, owner):** BTK's verbatim defaults
+ *  (0.08° / 0.14°, tuned against a 1000 yd F-class frame) meant nearly ANY
+ *  upward pitch faded the mirage almost to nothing — fine on a flat range,
+ *  where looking up means looking into open sky, but wrong on the ELR range:
+ *  its convex terrain rises with distance, so aiming at a valid, on-ground
+ *  far target requires looking uphill, not into the sky. Worked out from the
+ *  high line (eye at 9.7 m): 750 m's natural sight pitch is ~+0.29° (already
+ *  past the old 0.08° ceiling, fading to ~22%), 1000 m is ~+0.78° (~1% left,
+ *  effectively invisible), 2000 m is ~+2.3° (gone). Raised both to **3°** —
+ *  comfortably covers ELR's whole elevation profile out to 2000 m while still
+ *  fading if the sight actually pans up above the terrain into open sky.
+ *  Starting point for iteration, not a final value (owner: "we'll try those
+ *  numbers and iterate"). */
+export const MIRAGE_ELEV_FULL_DEG = 3;
+export const MIRAGE_ELEV_FALLOFF_DEG = 3;
+
+/** Strength preset → `intensityScale` multiplier (wind-system-btk-port W6),
+ *  BTK verbatim (`simulator.js`'s `MIRAGE_LEVEL_SCALE`: `None: 0, Light: 0.5,
+ *  Medium: 1.25, Heavy: 2.5`) — applied on top of `zoomIntensity`'s own
+ *  zoom-driven scaling, matching BTK's own `zoomIntensity * intensityScale`
+ *  split (`mirage.js` L380). `'off'` never reaches `renderSceneWithMirage` at
+ *  all (`ScopeView.tsx` skips the whole post-process pass, the cheap path),
+ *  so its `0` entry here is only for completeness/lookup safety. */
+export const MIRAGE_STRENGTH_SCALE = {
+  off: 0,
+  light: 0.5,
+  medium: 1.25,
+  heavy: 2.5,
+} as const;
 
 /** Render-target resolution vs. the canvas's own device pixels. First lever to
  *  pull if iPad FPS can't hold the post-process pass (P15) — drop this before

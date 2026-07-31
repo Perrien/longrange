@@ -2,9 +2,10 @@
 //
 // The store's persisted state is bridged to the SaveStore seam (task 0.8). As of
 // schema v2 the save carries: settings (`unitsPrimary`, `windRealism`,
-// `sensitivity`, `traceEnabled`, `windMarkerStyle` — `mirageEnabled` stays
-// store-only, D5) AND the inventory (`rifles[]`/`ammoLots[]` + `activeRifleId?`/
-// `activeLotId?`, task 2.2b/D10).
+// `sensitivity`, `traceEnabled`, `windMarkerStyle`, and — as of the W6
+// close-out, owner decision 2026-07-31, superseding D9 — `mirageStrength`)
+// AND the inventory (`rifles[]`/`ammoLots[]` + `activeRifleId?`/`activeLotId?`,
+// task 2.2b/D10).
 //
 // FIX (task 2.2b): before this, the wiring projected only settings onto
 // DEFAULT_SAVE, so persisting a settings change wrote empty gear arrays and wiped
@@ -28,6 +29,7 @@ export function settingsToSave(settings: SettingsState, base: SaveData = DEFAULT
       sensitivity: settings.sensitivity,
       traceEnabled: settings.traceEnabled,
       windMarkerStyle: settings.windMarkerStyle,
+      mirageStrength: settings.mirageStrength,
     },
   };
 }
@@ -52,7 +54,10 @@ export function storeToSave(
 
 /** Apply a loaded SaveData back onto settings, preserving store-only fields.
  *  Each optional field defaults when absent (a save written before it existed):
- *  `windRealism` → 'steady'; the three carry-overs → the current store value. */
+ *  `windRealism` → 'steady'; the four carry-overs (`sensitivity`,
+ *  `traceEnabled`, `windMarkerStyle`, `mirageStrength`) → the current store
+ *  value — the same fallback a pre-`mirageStrength` save (before the W6
+ *  close-out) gets, defaulting it to `defaultSettings()`'s `'medium'`. */
 export function saveToSettings(save: SaveData, current: SettingsState): SettingsState {
   return {
     ...current,
@@ -61,6 +66,7 @@ export function saveToSettings(save: SaveData, current: SettingsState): Settings
     sensitivity: save.settings.sensitivity ?? current.sensitivity,
     traceEnabled: save.settings.traceEnabled ?? current.traceEnabled,
     windMarkerStyle: save.settings.windMarkerStyle ?? current.windMarkerStyle,
+    mirageStrength: save.settings.mirageStrength ?? current.mirageStrength,
   };
 }
 

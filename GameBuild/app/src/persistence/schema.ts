@@ -19,12 +19,17 @@ export interface SaveSettings {
   /** Durable player settings carried into persistence at the v2 bump (D5).
    *  Optional so a pre-v2 save (which lacks them) still passes shape-validation,
    *  which runs BEFORE migration; the v1→v2 migration fills them from
-   *  DEFAULT_SAVE, and `saveToSettings` defaults them when otherwise absent.
-   *  `mirageEnabled` is deliberately NOT here — it stays store-only until the
-   *  feature ships (D5). */
+   *  DEFAULT_SAVE, and `saveToSettings` defaults them when otherwise absent. */
   sensitivity?: number;
   traceEnabled?: boolean;
   windMarkerStyle?: 'flag' | 'sock' | 'both';
+  /** Mirage strength preset (task 1.7c; on/off → four-way in W6). Added
+   *  additive-optional AFTER the v2 bump (owner decision 2026-07-31,
+   *  superseding D9's "store-only") — same handling as `windRealism`: no
+   *  migration entry needed (see `migrations.ts`'s NOTE), a save predating it
+   *  simply omits the field, and `saveToSettings` defaults it to the current
+   *  store value (`defaultSettings()`'s `'medium'` on a fresh store). */
+  mirageStrength?: 'off' | 'light' | 'medium' | 'heavy';
 }
 
 /** Normalized [0,1) draws keyed BY FIELD NAME (D1). These are the stored
@@ -191,6 +196,7 @@ export const DEFAULT_SAVE: SaveData = {
     sensitivity: 1.0,
     traceEnabled: true,
     windMarkerStyle: 'flag',
+    mirageStrength: 'medium',
   },
   rifles: [],
   ammoLots: [],
@@ -336,7 +342,8 @@ export function validateSaveShape(data: unknown): asserts data is SaveData {
     fail(`settings.unitsPrimary must be 'MIL' | 'MOA'`);
   // Additive/optional settings — validated only when present, so a save written
   // before the field existed (windRealism: pre-1.7; the three carry-overs:
-  // pre-v2) still passes. The migration/loader supplies defaults.
+  // pre-v2; mirageStrength: pre-W6-close-out) still passes. The migration/loader
+  // supplies defaults.
   if (
     s.windRealism !== undefined &&
     s.windRealism !== 'steady' &&
@@ -357,6 +364,14 @@ export function validateSaveShape(data: unknown): asserts data is SaveData {
     s.windMarkerStyle !== 'both'
   )
     fail(`settings.windMarkerStyle must be 'flag' | 'sock' | 'both' when present`);
+  if (
+    s.mirageStrength !== undefined &&
+    s.mirageStrength !== 'off' &&
+    s.mirageStrength !== 'light' &&
+    s.mirageStrength !== 'medium' &&
+    s.mirageStrength !== 'heavy'
+  )
+    fail(`settings.mirageStrength must be 'off' | 'light' | 'medium' | 'heavy' when present`);
 
   // Hidden-truth record arrays (v2). Required from v2 on; a v1 save legitimately
   // lacks them (the migration adds empty arrays), so only *require* them at v2+,
