@@ -1,67 +1,60 @@
-// Wind flags/socks renderer (task 1.7b; flag half rewritten wind-system-btk-
-// port W2 as a faithful port of BTK's `WindFlagFactory` — see
-// `BallisticsToolkit/web/steel-sim/WindFlag.js`, MIT, copied per P22). The
-// yaw/angle/flutter MATH lives in the pure, tested `game/wind-marker-model.ts`
-// and `range/wind-marker-visual-config.ts`; this file only builds meshes and
-// writes that math into shader attributes each frame.
+// Wind flags/socks renderer. Flag half ported wind-system-btk-port W2 from
+// BTK's `WindFlagFactory` (`BallisticsToolkit/web/steel-sim/WindFlag.js`);
+// sock half ported W3 from BTK's `WindSockFactory`
+// (`BallisticsToolkit/web/steel-sim/WindSock.js`) — both MIT, copied per P22
+// (BTK is local-only/git-ignored and cannot be imported from). The
+// angle/direction/flutter/sway MATH lives in the pure, tested
+// `game/wind-marker-model.ts`; visual dimensions/response curves live in
+// `range/wind-marker-visual-config.ts`. This file only builds meshes and
+// writes that math into shader attributes / instance matrices each frame.
 //
-// SOCK is NOT YET PORTED (that's W3) — it keeps 1.7b's original flat, unlit,
-// CPU-droop-pivot implementation below, unchanged, so 'sock'/'both' styles
-// keep working in the interim. Only the flag half was rewritten this task.
+// --- Shared architecture (D5/D6) --------------------------------------------
+// The marker ROOT (one `THREE.Group` per marker spec) owns exactly one thing:
+// the pole. Neither the flag nor the sock renderer creates its own pole
+// (BTK's own factories each build one, which would double up under the
+// game's 'both' style — D5 factors it out). Both cloth types are instead each
+// a single SHARED `THREE.InstancedMesh` spanning every marker in the active
+// ladder (BTK's own architecture: one instanced draw call per marker TYPE, not
+// one mesh per marker) — per-instance ANIMATION state is written into
+// `InstancedBufferAttribute`s (flag) or a per-instance matrix (sock) every
+// frame; the response curve that drives that state (`markerAngleDeg`,
+// `yawFromWind`) is computed ONCE, on the CPU, in the tested pure model — a
+// deliberate D6 deviation from BTK, which recomputes it twice per flag inside
+// its own vertex shader (position + normal) from a raw wind vector.
 //
-// --- Flag architecture (wind-system-btk-port W2) ----------------------------
-// One SHARED `THREE.InstancedMesh` holds every flag in the active marker set
-// (BTK's own architecture: a single instanced draw call, not one mesh per
-// flag). Per-instance ANIMATION state (`instanceAngleRad`, `instanceDirRad`,
-// `instanceWavePhase`) is written into `InstancedBufferAttribute`s every frame
-// (P8); per-instance POSITION is a one-time translation baked into the
-// instance matrix at build time (flags don't move). The vertex shader (an
-// `onBeforeCompile` patch on `MeshStandardMaterial`, matching BTK) deforms the
-// authored flat-cloth geometry entirely in local space from those three
-// attributes — quadratic pitch bend, a travelling flap wave, and a furl (roll
-// about the length axis, scaled by how "open" the angle is) that reads the
-// cloth as a 3D form rather than a flat card. A custom `beginnormal_vertex`
-// block recomputes the normal from finite differences of the SAME deformed
-// position function (P4) — without it the lit cloth would shade as if it were
-// still flat, and the furl would disappear visually even though the geometry
-// moved.
+// The flag's rotation math is NOT BTK's own `windDir = atan2(-z,x)` /
+// `(cosDir,-sinDir)` parametrization; both the flag (in-shader) and the sock
+// (its rigid-body axis) use `yawFromWind`'s `θ = atan2(x,z)` convention
+// instead — see `yawFromWind`'s doc comment in wind-marker-model.ts for the
+// proof that BTK's own formula is the same rotation (P1), and standardize on
+// the one this codebase already tests (one direction convention, not two).
 //
-// D6 (deliberate deviation from BTK): BTK recomputes its wind→angle/direction
-// response TWICE inside the vertex shader (once for position, once for
-// normals) from a raw `instanceWindVector`. This port computes that response
-// ONCE, on the CPU, in the tested pure model (`markerAngleDeg`, `yawFromWind`),
-// and feeds the shader the already-smoothed `instanceAngleRad`/
-// `instanceDirRad` instead of a raw wind vector — the response curve then
-// lives in exactly one (tested) place, and can be smoothed (D7) before it
-// ever reaches the GPU. The shader's rotation math is consequently NOT BTK's
-// own `windDir = atan2(-z,x)` / `(cosDir,-sinDir)` parametrization; it uses
-// `yawFromWind`'s `θ = atan2(x,z)` / `(sinθ,cosθ)` convention instead — see
-// `yawFromWind`'s doc comment in wind-marker-model.ts for the proof that the
-// two are the same rotation (P1), and standardize on the one this codebase
-// already tests.
-//
-// P4 (unlit → lit): today's markers were flat `MeshBasicMaterial`. BTK's are
-// `MeshStandardMaterial` with `castShadow`/`receiveShadow` — every game scene
-// already carries a `HemisphereLight` + `DirectionalLight`, so this just
-// works, but the pole is upgraded to match (D1's geometry-verbatim decision
-// covers the whole marker, and a thin unlit stick next to a lit BTK-scale
-// flag would read wrong).
+// P4 (unlit → lit): today's PRE-PORT markers were flat `MeshBasicMaterial`.
+// BTK's are `MeshStandardMaterial` with `castShadow`/`receiveShadow` — every
+// game scene already carries a `HemisphereLight` + `DirectionalLight`, so
+// this just works. The pole was upgraded alongside the flag in W2 (D1's
+// geometry-verbatim decision covers the whole marker).
 //
 // World axes match the scene: +X right, +Y up, downrange −Z (same convention
 // as RangeScene / ScopeView).
 
 import * as THREE from 'three';
 import type { WindMarkerSpec, MarkerStyle } from '../range/wind-markers-config';
-import { FLAG_CONFIG, type WindFlagVisualConfig } from '../range/wind-marker-visual-config';
+import {
+  FLAG_CONFIG,
+  SOCK_CONFIG,
+  type WindFlagVisualConfig,
+  type WindSockVisualConfig,
+} from '../range/wind-marker-visual-config';
 import {
   yawFromWind,
-  speedFactor,
   horizontalSpeed,
   smoothYaw,
   smoothAngle,
   markerAngleDeg,
   flapFrequencyHz,
   advanceWavePhase,
+  swayWindFactor,
   type AngleResponseCurve,
   type Vec3,
 } from '../game/wind-marker-model';
@@ -74,20 +67,19 @@ const POLE_METALNESS = 0.4;
 const POLE_ROUGHNESS = 0.6;
 const POLE_RADIAL_SEGMENTS = 16;
 
-// --- sock tunables (visual feel only — UNCHANGED from 1.7b; ported in W3) --
-const MOUNT_HEIGHT_FRACTION = 0.92; // sock's solo mount height, near the pole top
+/** When the style is `'both'`, the sock mounts lower than the flag so the two
+ *  don't visually overlap near the pole top (both BTK anchor points — the
+ *  flag's `poleHeight - baseWidth/2` and the sock's bare `poleHeight` — sit
+ *  within a few inches of each other). BTK itself has no combined style; this
+ *  override is game-specific, carried over unchanged from the pre-port
+ *  marker (1.7b's `SOCK_SECOND_HEIGHT_M`), well clear of both the 2.74 m pole
+ *  top and the flag's ~2.51 m attach point. */
+const SOCK_BOTH_HEIGHT_M = 1.5;
 
-const SOCK_LENGTH_M = 0.7;
-const SOCK_RADIUS_MOUTH_M = 0.14; // wide end, at the hinge (faces "into" the wind)
-const SOCK_RADIUS_TIP_M = 0.03; // narrow end, at the free/downwind tip
-const SOCK_RADIAL_SEGMENTS = 10;
-const SOCK_COLOR = 0xff7a1a;
-const SOCK_SECOND_HEIGHT_M = 1.5; // when 'both': mount the sock lower than the flag
-
-/** Reference speed for the sock's (interim, pre-W3) visual droop curve (NOT
- *  the ballistics D3b gustScale). */
-const MARKER_SPEED_REFERENCE_MPS = 5.5; // ≈ 12 mph
-const YAW_SMOOTH_RATE = 2.5; // 1/s — settle time so direction doesn't snap
+/** BTK hardcodes this inline in `WindSockFactory.updateTransforms` (not part
+ *  of `WIND_SOCK_CONFIG`) as the speed at which the decorative sway reaches
+ *  full strength. */
+const SOCK_SWAY_WIND_FULL_MPH = 12;
 
 /** BTK's flag angle-response curve, read off `FLAG_CONFIG` (wind-marker-
  *  visual-config.ts, transcribed verbatim from BTK per D1). */
@@ -98,12 +90,13 @@ const FLAG_ANGLE_CURVE: AngleResponseCurve = {
   responseExp: FLAG_CONFIG.responseExp,
 };
 
-interface DroopingMesh {
-  mesh: THREE.Mesh;
-  pivot: THREE.Group; // rotation.x = droop angle
-  geometry: THREE.BufferGeometry;
-  material: THREE.Material;
-}
+/** BTK's sock angle-response curve, read off `SOCK_CONFIG`. */
+const SOCK_ANGLE_CURVE: AngleResponseCurve = {
+  minAngle: SOCK_CONFIG.minAngle,
+  maxAngle: SOCK_CONFIG.maxAngle,
+  flatSpeed: SOCK_CONFIG.flatSpeed,
+  responseExp: SOCK_CONFIG.responseExp,
+};
 
 interface FlagMeshState {
   mesh: THREE.InstancedMesh;
@@ -112,6 +105,15 @@ interface FlagMeshState {
   instanceAngleRad: Float32Array;
   instanceDirRad: Float32Array;
   instanceWavePhase: Float32Array;
+}
+
+interface SockMeshState {
+  mesh: THREE.InstancedMesh;
+  geometry: THREE.BufferGeometry;
+  material: THREE.MeshStandardMaterial;
+  stringLines: THREE.LineSegments;
+  stringGeometry: THREE.BufferGeometry;
+  stringMaterial: THREE.LineBasicMaterial;
 }
 
 interface MarkerInstance {
@@ -124,10 +126,12 @@ interface MarkerInstance {
   flagAngleRad: number;
   flagDirRad: number;
   flagWavePhase: number;
-  // Sock (1.7b interim; ported W3) — a child of `root`, unchanged.
-  sockYawGroup: THREE.Group | null;
-  sock: DroopingMesh | null;
-  yaw: number; // shared sock droop/yaw heading
+  // Sock smoothing state (W3) — likewise index-aligned with the shared sock
+  // InstancedMesh; independent of the flag's own state (BTK treats
+  // `WindFlagFactory`/`WindSockFactory` as fully separate systems).
+  sockAngleRad: number;
+  sockDirRad: number;
+  sockSwayPhase: number;
 }
 
 interface WindMarkersState {
@@ -135,6 +139,7 @@ interface WindMarkersState {
   style: MarkerStyle;
   instances: MarkerInstance[];
   flag: FlagMeshState | null; // null when the style has no flag
+  sock: SockMeshState | null; // null when the style has no sock
 }
 
 let state: WindMarkersState | null = null;
@@ -154,29 +159,7 @@ function buildPole(spec: WindMarkerSpec): THREE.Mesh {
   return mesh;
 }
 
-/** Sock geometry: a tapered, open-ended cylinder spanning local Z from 0
- *  (wide mouth, at the hinge) to SOCK_LENGTH_M (narrow tip) — unchanged from
- *  1.7b; see the file header for the rotateX/translate derivation. Ported to
- *  BTK's rigid-body sock in W3. */
-function buildSockMesh(): DroopingMesh {
-  const geometry = new THREE.CylinderGeometry(
-    SOCK_RADIUS_TIP_M,
-    SOCK_RADIUS_MOUTH_M,
-    SOCK_LENGTH_M,
-    SOCK_RADIAL_SEGMENTS,
-    1,
-    true,
-  );
-  geometry.rotateX(Math.PI / 2);
-  geometry.translate(0, 0, SOCK_LENGTH_M / 2);
-  const material = new THREE.MeshBasicMaterial({ color: SOCK_COLOR, side: THREE.DoubleSide });
-  const mesh = new THREE.Mesh(geometry, material);
-  const pivot = new THREE.Group();
-  pivot.add(mesh);
-  return { mesh, pivot, geometry, material };
-}
-
-// --- flag geometry (ported from BTK's WindFlagFactory.createFlagGeometry) --
+// === Flag (wind-system-btk-port W2, ported from WindFlagFactory) ===========
 
 /**
  * Static tapered-cloth geometry with a `segmentT` attribute (0 at the hinge,
@@ -451,78 +434,8 @@ function buildFlagInstancedMesh(scene: THREE.Scene, markers: readonly WindMarker
 function disposeFlagMesh(scene: THREE.Scene, flag: FlagMeshState): void {
   scene.remove(flag.mesh);
   flag.geometry.dispose();
-  flag.material.map?.dispose(); // P8: today's old flag had no texture to dispose; this one does
+  flag.material.map?.dispose();
   flag.material.dispose();
-}
-
-function buildMarker(scene: THREE.Scene, spec: WindMarkerSpec, style: MarkerStyle): MarkerInstance {
-  const root = new THREE.Group();
-  // groundYM (wind-system-btk-port W1, P5): flat 0 on Range A, the sloped ELR
-  // terrain height elsewhere — was hardcoded 0, which buried the ELR ladder's
-  // poles up to the flag in the hillside.
-  root.position.set(spec.xOffsetM, spec.groundYM, -spec.distanceM);
-
-  const poleMesh = buildPole(spec);
-  root.add(poleMesh);
-
-  let sock: DroopingMesh | null = null;
-  let sockYawGroup: THREE.Group | null = null;
-  const wantSock = style === 'sock' || style === 'both';
-  if (wantSock) {
-    sock = buildSockMesh();
-    sockYawGroup = new THREE.Group();
-    sockYawGroup.position.y = style === 'both' ? SOCK_SECOND_HEIGHT_M : spec.poleHeightM * MOUNT_HEIGHT_FRACTION;
-    sockYawGroup.add(sock.pivot);
-    root.add(sockYawGroup);
-  }
-
-  scene.add(root);
-  return {
-    spec,
-    root,
-    poleMesh,
-    flagAngleRad: degToRad(FLAG_CONFIG.minAngle),
-    flagDirRad: 0,
-    flagWavePhase: Math.random() * Math.PI * 2,
-    sockYawGroup,
-    sock,
-    yaw: 0,
-  };
-}
-
-function disposeMarker(scene: THREE.Scene, instance: MarkerInstance): void {
-  scene.remove(instance.root);
-  instance.poleMesh.geometry.dispose();
-  (instance.poleMesh.material as THREE.Material).dispose();
-  if (instance.sock) {
-    instance.sock.geometry.dispose();
-    instance.sock.material.dispose();
-  }
-}
-
-/** Build every marker at `style`. Idempotent (a repeat call with the same
- *  style is a no-op; call `disposeWindMarkers()` first to force a rebuild). */
-export function initWindMarkers(scene: THREE.Scene, markers: readonly WindMarkerSpec[], style: MarkerStyle): void {
-  if (state) return;
-  const instances = markers.map((spec) => buildMarker(scene, spec, style));
-  const wantFlag = style === 'flag' || style === 'both';
-  const flag = wantFlag ? buildFlagInstancedMesh(scene, markers) : null;
-  state = { scene, style, instances, flag };
-}
-
-/** Rebuild all markers with a new style (dispose + reconstruct). No-op if the
- *  style hasn't actually changed. */
-function rebuildWithStyle(style: MarkerStyle): void {
-  if (!state) return;
-  const { scene, instances: oldInstances, flag: oldFlag } = state;
-  const markers = oldInstances.map((i) => i.spec);
-  for (const instance of oldInstances) disposeMarker(scene, instance);
-  if (oldFlag) disposeFlagMesh(scene, oldFlag);
-
-  const instances = markers.map((spec) => buildMarker(scene, spec, style));
-  const wantFlag = style === 'flag' || style === 'both';
-  const flag = wantFlag ? buildFlagInstancedMesh(scene, markers) : null;
-  state = { scene, style, instances, flag };
 }
 
 /** Advance the shared flag InstancedMesh one frame: sample wind at each
@@ -565,14 +478,348 @@ function updateFlagInstances(markersState: WindMarkersState, dt: number, windAt:
   flag.mesh.geometry.attributes.instanceWavePhase.needsUpdate = true;
 }
 
+// === Sock (wind-system-btk-port W3, ported from WindSockFactory) ===========
+
+/**
+ * Tapered open-ended tube geometry along local +X (mouth at 0, tail at
+ * `cfg.sockLengthM`) — the whole mesh is oriented as a rigid body each frame
+ * (`computeSockPose`), unlike the flag's per-vertex shader deform. Exported
+ * (pure, no DOM) so it's unit-testable without a THREE.Scene/canvas.
+ */
+export function createSockGeometry(cfg: WindSockVisualConfig = SOCK_CONFIG): THREE.BufferGeometry {
+  const radial = cfg.radialSegments;
+  const lengthSegs = cfg.lengthSegments;
+  const length = cfg.sockLengthM;
+  const mouthR = cfg.sockMouthRadiusM;
+  const tailR = cfg.sockTailRadiusM;
+
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let j = 0; j <= lengthSegs; j++) {
+    const t = j / lengthSegs;
+    const x = length * t;
+    const r = mouthR + (tailR - mouthR) * t;
+    for (let k = 0; k <= radial; k++) {
+      const theta = (k / radial) * Math.PI * 2;
+      positions.push(x, r * Math.cos(theta), r * Math.sin(theta));
+      uvs.push(t, k / radial);
+    }
+  }
+
+  const ringStride = radial + 1;
+  for (let j = 0; j < lengthSegs; j++) {
+    for (let k = 0; k < radial; k++) {
+      const a = j * ringStride + k;
+      const b = a + 1;
+      const c = a + ringStride;
+      const d = c + 1;
+      indices.push(a, c, b);
+      indices.push(b, c, d);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  // No explicit boundingSphere (unlike the flag): the sock's matrices are
+  // recomputed on the CPU every frame (a rigid-body rotation, not a shader
+  // deform), so `frustumCulled = false` is set on the mesh instead (P7) — a
+  // static sphere sized for a static instance transform wouldn't be
+  // meaningful here.
+  return geometry;
+}
+
+/** Banded orange/white sock texture — ported verbatim from
+ *  `WindSockFactory.createSockTexture`. */
+function createSockTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 16;
+  const ctx = canvas.getContext('2d')!;
+
+  const bands = 5;
+  const bandWidth = canvas.width / bands;
+  for (let i = 0; i < bands; i++) {
+    ctx.fillStyle = i % 2 === 0 ? '#ff6a00' : '#f2f2f2';
+    ctx.fillRect(i * bandWidth, 0, Math.ceil(bandWidth), canvas.height);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function createSockMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    map: createSockTexture(),
+    color: 0xffffff,
+    roughness: 0.85,
+    metalness: 0.0,
+    side: THREE.DoubleSide, // open tube - inside is visible
+  });
+}
+
+export interface SockPose {
+  /** Unit vector: the sock's local +X (mouth→tail) axis, in world space. */
+  axis: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  /** World position of the mouth (one string-length out from the anchor). */
+  mouthPosition: THREE.Vector3;
+}
+
+const SOCK_LOCAL_X_AXIS = new THREE.Vector3(1, 0, 0);
+
+/**
+ * Rigid-body pose for a sock at a given (already-smoothed) pitch/direction —
+ * ported from `WindSockFactory.updateTransforms`'s per-frame axis/quaternion
+ * math. `pitchRad` is measured from vertical (0 = straight down); `dirRad`
+ * follows `yawFromWind`'s convention, NOT BTK's own `atan2(-z,x)` (a W3
+ * extension of the W2 flag's D6 standardization — see the file header): at
+ * full pitch (π/2) the axis points along `(sin(dirRad), 0, cos(dirRad))`,
+ * matching the flag's tip-displacement direction for the same wind (P1).
+ * At zero pitch the axis is straight down regardless of direction (a calm
+ * sock hangs limp, with no defined heading).
+ */
+export function computeSockPose(
+  anchor: THREE.Vector3,
+  pitchRad: number,
+  dirRad: number,
+  cfg: WindSockVisualConfig = SOCK_CONFIG,
+): SockPose {
+  const sinP = Math.sin(pitchRad);
+  const cosP = Math.cos(pitchRad);
+  const sinDir = Math.sin(dirRad);
+  const cosDir = Math.cos(dirRad);
+
+  const axis = new THREE.Vector3(sinP * sinDir, -cosP, sinP * cosDir).normalize();
+  const quaternion = new THREE.Quaternion().setFromUnitVectors(SOCK_LOCAL_X_AXIS, axis);
+  const mouthPosition = anchor.clone().addScaledVector(axis, cfg.stringLengthM);
+
+  return { axis, quaternion, mouthPosition };
+}
+
+/** World position of the sock's anchor (pole-top swivel point). Under the
+ *  `'both'` style the sock mounts lower (`SOCK_BOTH_HEIGHT_M`) so it doesn't
+ *  overlap the flag — see that constant's doc comment. */
+function sockAnchorWorldPos(spec: WindMarkerSpec, style: MarkerStyle): Vec3 {
+  const heightM = style === 'both' ? SOCK_BOTH_HEIGHT_M : spec.poleHeightM;
+  return { x: spec.xOffsetM, y: spec.groundYM + heightM, z: -spec.distanceM };
+}
+
+/** Write one sock's two strings (anchor → mouth rim, ±local Y) into the
+ *  shared `LineSegments` position buffer at instance `i` (4 vertices/sock —
+ *  BTK verbatim). */
+function writeSockStrings(stringPos: THREE.BufferAttribute, i: number, anchor: THREE.Vector3, pose: SockPose): void {
+  const rimUp = new THREE.Vector3(0, SOCK_CONFIG.sockMouthRadiusM, 0).applyQuaternion(pose.quaternion);
+  const rimDown = new THREE.Vector3(0, -SOCK_CONFIG.sockMouthRadiusM, 0).applyQuaternion(pose.quaternion);
+
+  const base = i * 4;
+  stringPos.setXYZ(base + 0, anchor.x, anchor.y, anchor.z);
+  stringPos.setXYZ(base + 1, pose.mouthPosition.x + rimUp.x, pose.mouthPosition.y + rimUp.y, pose.mouthPosition.z + rimUp.z);
+  stringPos.setXYZ(base + 2, anchor.x, anchor.y, anchor.z);
+  stringPos.setXYZ(
+    base + 3,
+    pose.mouthPosition.x + rimDown.x,
+    pose.mouthPosition.y + rimDown.y,
+    pose.mouthPosition.z + rimDown.z,
+  );
+}
+
+function buildSockInstancedMesh(scene: THREE.Scene, markers: readonly WindMarkerSpec[]): SockMeshState {
+  const geometry = createSockGeometry(SOCK_CONFIG);
+  const material = createSockMaterial();
+  const numSocks = markers.length;
+
+  const mesh = new THREE.InstancedMesh(geometry, material, numSocks);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.frustumCulled = false; // P7: matrices are computed on the CPU every frame
+  mesh.raycast = () => {}; // not interactive (BTK verbatim)
+  scene.add(mesh);
+
+  // 2 strings * 2 endpoints * 3 coords = 12 floats/sock.
+  const stringPositions = new Float32Array(numSocks * 12);
+  const stringGeometry = new THREE.BufferGeometry();
+  stringGeometry.setAttribute('position', new THREE.BufferAttribute(stringPositions, 3));
+  const stringMaterial = new THREE.LineBasicMaterial({ color: 0x333333 });
+  const stringLines = new THREE.LineSegments(stringGeometry, stringMaterial);
+  stringLines.frustumCulled = false;
+  // Not interactive: LineSegments use the raycaster's Line threshold (~1 m),
+  // so at long range these thin strings would catch the rangefinder/aim pick
+  // over a wide zone at the sock's height — excluded so ranging reads through
+  // to the terrain/target (BTK's own reasoning; the game's `findAimed` has
+  // the same exposure). The pole, a solid cylinder, is only hit when aimed
+  // at it directly.
+  stringLines.raycast = () => {};
+  scene.add(stringLines);
+
+  return { mesh, geometry, material, stringLines, stringGeometry, stringMaterial };
+}
+
+function disposeSockMesh(scene: THREE.Scene, sock: SockMeshState): void {
+  scene.remove(sock.mesh);
+  sock.geometry.dispose();
+  sock.material.map?.dispose();
+  sock.material.dispose();
+  scene.remove(sock.stringLines);
+  sock.stringGeometry.dispose();
+  sock.stringMaterial.dispose();
+}
+
+/** Prime the sock instances' matrices/strings from their INITIAL smoothing
+ *  state, without sampling wind at all — ported from BTK's
+ *  `updateTransforms(0, null)` call at the end of `createFlagsAtPositions`,
+ *  so nothing pops at the world origin on the frame before the first real
+ *  `updateWindMarkers` call. */
+function primeSockInstances(sock: SockMeshState, instances: readonly MarkerInstance[], style: MarkerStyle): void {
+  const matrix = new THREE.Matrix4();
+  const scaleVec = new THREE.Vector3(1, 1, 1);
+  const stringPos = sock.stringGeometry.getAttribute('position') as THREE.BufferAttribute;
+
+  for (let i = 0; i < instances.length; i++) {
+    const instance = instances[i];
+    const anchor = sockAnchorWorldPos(instance.spec, style);
+    const anchorVec = new THREE.Vector3(anchor.x, anchor.y, anchor.z);
+    const pose = computeSockPose(anchorVec, instance.sockAngleRad, instance.sockDirRad, SOCK_CONFIG);
+
+    matrix.compose(pose.mouthPosition, pose.quaternion, scaleVec);
+    sock.mesh.setMatrixAt(i, matrix);
+    writeSockStrings(stringPos, i, anchorVec, pose);
+  }
+
+  sock.mesh.instanceMatrix.needsUpdate = true;
+  stringPos.needsUpdate = true;
+}
+
+/** Advance the shared sock InstancedMesh (+ strings) one frame: sample wind
+ *  at each sock's anchor, smooth angle/direction toward BTK's response curve
+ *  the same way the flag does, add a small wind-scaled sway (`swayWindFactor`
+ *  — "never looks rigid", BTK's own comment) to the direction only, then
+ *  recompute the rigid-body pose and write the instance matrix + strings. */
+function updateSockInstances(markersState: WindMarkersState, dt: number, windAt: (worldPos: Vec3) => Vec3): void {
+  const sock = markersState.sock;
+  if (!sock) return;
+
+  const matrix = new THREE.Matrix4();
+  const scaleVec = new THREE.Vector3(1, 1, 1);
+  const stringPos = sock.stringGeometry.getAttribute('position') as THREE.BufferAttribute;
+
+  for (let i = 0; i < markersState.instances.length; i++) {
+    const instance = markersState.instances[i];
+    const anchor = sockAnchorWorldPos(instance.spec, markersState.style);
+    const wind = windAt(anchor);
+    const speedMps = horizontalSpeed(wind);
+    const speedMph = mpsToMph(speedMps);
+
+    const targetAngleDeg = markerAngleDeg(speedMph, SOCK_ANGLE_CURVE);
+    instance.sockAngleRad = degToRad(
+      smoothAngle(radToDeg(instance.sockAngleRad), targetAngleDeg, SOCK_CONFIG.angleInterpolationSpeed, dt),
+    );
+
+    const targetDirRad = speedMps > 1e-6 ? yawFromWind(wind) : instance.sockDirRad;
+    instance.sockDirRad = smoothYaw(instance.sockDirRad, targetDirRad, SOCK_CONFIG.directionInterpolationSpeed, dt);
+
+    const swayFreqHz = flapFrequencyHz(speedMph, SOCK_CONFIG.swayFrequencyBase, SOCK_CONFIG.swayFrequencyScale);
+    instance.sockSwayPhase = advanceWavePhase(instance.sockSwayPhase, swayFreqHz, dt);
+    const swayFactor = swayWindFactor(speedMph, SOCK_SWAY_WIND_FULL_MPH);
+    const swayDeg = Math.sin(instance.sockSwayPhase) * SOCK_CONFIG.swayAmplitude * swayFactor;
+    const dirWithSway = instance.sockDirRad + degToRad(swayDeg);
+
+    const anchorVec = new THREE.Vector3(anchor.x, anchor.y, anchor.z);
+    const pose = computeSockPose(anchorVec, instance.sockAngleRad, dirWithSway, SOCK_CONFIG);
+
+    matrix.compose(pose.mouthPosition, pose.quaternion, scaleVec);
+    sock.mesh.setMatrixAt(i, matrix);
+    writeSockStrings(stringPos, i, anchorVec, pose);
+  }
+
+  sock.mesh.instanceMatrix.needsUpdate = true;
+  stringPos.needsUpdate = true;
+}
+
+// === Marker roots (pole only, D5) ===========================================
+
+function buildMarker(scene: THREE.Scene, spec: WindMarkerSpec): MarkerInstance {
+  const root = new THREE.Group();
+  // groundYM (wind-system-btk-port W1, P5): flat 0 on Range A, the sloped ELR
+  // terrain height elsewhere — was hardcoded 0, which buried the ELR ladder's
+  // poles up to the flag in the hillside.
+  root.position.set(spec.xOffsetM, spec.groundYM, -spec.distanceM);
+
+  const poleMesh = buildPole(spec);
+  root.add(poleMesh);
+
+  scene.add(root);
+  return {
+    spec,
+    root,
+    poleMesh,
+    flagAngleRad: degToRad(FLAG_CONFIG.minAngle),
+    flagDirRad: 0,
+    flagWavePhase: Math.random() * Math.PI * 2,
+    sockAngleRad: degToRad(SOCK_CONFIG.minAngle),
+    sockDirRad: 0,
+    sockSwayPhase: Math.random() * Math.PI * 2,
+  };
+}
+
+function disposeMarker(scene: THREE.Scene, instance: MarkerInstance): void {
+  scene.remove(instance.root);
+  instance.poleMesh.geometry.dispose();
+  (instance.poleMesh.material as THREE.Material).dispose();
+}
+
+/** Build every marker at `style`. Idempotent (a repeat call with the same
+ *  style is a no-op; call `disposeWindMarkers()` first to force a rebuild). */
+export function initWindMarkers(scene: THREE.Scene, markers: readonly WindMarkerSpec[], style: MarkerStyle): void {
+  if (state) return;
+  const instances = markers.map((spec) => buildMarker(scene, spec));
+
+  const wantFlag = style === 'flag' || style === 'both';
+  const flag = wantFlag ? buildFlagInstancedMesh(scene, markers) : null;
+
+  const wantSock = style === 'sock' || style === 'both';
+  const sock = wantSock ? buildSockInstancedMesh(scene, markers) : null;
+  if (sock) primeSockInstances(sock, instances, style);
+
+  state = { scene, style, instances, flag, sock };
+}
+
+/** Rebuild all markers with a new style (dispose + reconstruct). No-op if the
+ *  style hasn't actually changed. */
+function rebuildWithStyle(style: MarkerStyle): void {
+  if (!state) return;
+  const { scene, instances: oldInstances, flag: oldFlag, sock: oldSock } = state;
+  const markers = oldInstances.map((i) => i.spec);
+  for (const instance of oldInstances) disposeMarker(scene, instance);
+  if (oldFlag) disposeFlagMesh(scene, oldFlag);
+  if (oldSock) disposeSockMesh(scene, oldSock);
+
+  const instances = markers.map((spec) => buildMarker(scene, spec));
+
+  const wantFlag = style === 'flag' || style === 'both';
+  const flag = wantFlag ? buildFlagInstancedMesh(scene, markers) : null;
+
+  const wantSock = style === 'sock' || style === 'both';
+  const sock = wantSock ? buildSockInstancedMesh(scene, markers) : null;
+  if (sock) primeSockInstances(sock, instances, style);
+
+  state = { scene, style, instances, flag, sock };
+}
+
 /**
  * Advance every marker one frame: rebuild (lazily) if `style` has changed,
  * then sample the live wind at each marker's world position (`windAt` — the
  * caller's `meanVector + gustScale × field.sample(worldPos)`, D2/D3b) and
- * drive the flag's instanced shader attributes (W2) and/or the sock's
- * (interim, pre-W3) droop pivot. `t` is reserved for W3's sock sway phase —
- * unused here since flag flutter now runs on an internally-accumulated phase
- * (`advanceWavePhase`), not the render loop's elapsed clock.
+ * drive the flag's instanced shader attributes and/or the sock's rigid-body
+ * pose. `t` is unused: flag flutter and sock sway both run on internally
+ * accumulated phases (`advanceWavePhase`), not the render loop's elapsed
+ * clock — kept in the signature to preserve the module's `init/update/
+ * dispose` API (D5).
  */
 export function updateWindMarkers(
   dt: number,
@@ -585,20 +832,7 @@ export function updateWindMarkers(
   if (!state) return; // defensive; rebuildWithStyle always re-sets state
 
   updateFlagInstances(state, dt, windAt);
-
-  for (const instance of state.instances) {
-    if (!instance.sock) continue;
-    const worldPos: Vec3 = { x: instance.root.position.x, y: 0, z: instance.root.position.z };
-    const wind = windAt(worldPos);
-    const speed = horizontalSpeed(wind);
-    const factor = speedFactor(speed, MARKER_SPEED_REFERENCE_MPS);
-    const targetYaw = speed > 1e-6 ? yawFromWind(wind) : instance.yaw; // becalmed: hold last heading
-    instance.yaw = smoothYaw(instance.yaw, targetYaw, YAW_SMOOTH_RATE, dt);
-    const droopAngle = (1 - factor) * (Math.PI / 2);
-
-    if (instance.sockYawGroup) instance.sockYawGroup.rotation.y = instance.yaw;
-    instance.sock.pivot.rotation.x = droopAngle;
-  }
+  updateSockInstances(state, dt, windAt);
 }
 
 /** Tear down all marker resources. Idempotent. */
@@ -606,5 +840,6 @@ export function disposeWindMarkers(): void {
   if (!state) return;
   for (const instance of state.instances) disposeMarker(state.scene, instance);
   if (state.flag) disposeFlagMesh(state.scene, state.flag);
+  if (state.sock) disposeSockMesh(state.scene, state.sock);
   state = null;
 }

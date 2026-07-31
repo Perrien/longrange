@@ -4,12 +4,12 @@ import { describe, it, expect } from 'vitest';
 import {
   horizontalSpeed,
   yawFromWind,
-  speedFactor,
   smoothYaw,
   markerAngleDeg,
   flapFrequencyHz,
   advanceWavePhase,
   smoothAngle,
+  swayWindFactor,
   type Vec3,
 } from './wind-marker-model';
 
@@ -73,31 +73,21 @@ describe('wind-marker-model/yawFromWind — P1 guard (ported flag tip displaceme
   });
 });
 
-describe('wind-marker-model/speedFactor', () => {
-  it('is 0 at calm and non-negative speeds only', () => {
-    expect(speedFactor(0, 5)).toBe(0);
-    expect(speedFactor(-3, 5)).toBe(0);
+describe('wind-marker-model/swayWindFactor', () => {
+  it('is 0 at dead calm', () => {
+    expect(swayWindFactor(0, 12)).toBe(0);
   });
 
-  it('is monotonically increasing with speed', () => {
-    const a = speedFactor(1, 5);
-    const b = speedFactor(3, 5);
-    const c = speedFactor(10, 5);
+  it('scales with wind and saturates to 1 at/after windFullMph', () => {
+    const a = swayWindFactor(3, 12);
+    const b = swayWindFactor(9, 12);
     expect(b).toBeGreaterThan(a);
-    expect(c).toBeGreaterThan(b);
+    expect(swayWindFactor(12, 12)).toBeCloseTo(1, 9);
+    expect(swayWindFactor(30, 12)).toBeCloseTo(1, 9); // clamped, not >1
   });
 
-  it('never reaches 1 but saturates close to it at high speed', () => {
-    // (Not an arbitrarily huge speed: exp(-x) underflows to exactly 0 in
-    // float64 once x ≳150, which would make `f === 1` exactly and defeat the
-    // "never reaches 1" check — 50/5=10 is well within safe float range.)
-    const f = speedFactor(50, 5);
-    expect(f).toBeLessThan(1);
-    expect(f).toBeGreaterThan(0.99);
-  });
-
-  it('is ~1-1/e (~0.632) at speed === referenceMps', () => {
-    expect(speedFactor(5, 5)).toBeCloseTo(1 - 1 / Math.E, 9);
+  it('is linear in speed below windFullMph (BTK: a plain ratio, not a curve)', () => {
+    expect(swayWindFactor(6, 12)).toBeCloseTo(0.5, 9);
   });
 });
 

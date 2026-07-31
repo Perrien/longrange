@@ -52,23 +52,6 @@ export function yawFromWind(vec: Vec3): number {
   return Math.atan2(vec.x, vec.z);
 }
 
-/**
- * A saturating 0..1 "how gusty does this feel" factor: 0 at dead calm,
- * trending toward (but never reaching) 1 as speed grows. Drives the (interim,
- * pre-W3) sock's droop→extend angle — a rendering FEEL curve, not physics
- * (unrelated to the D3b `gustScale` used in the actual ballistics
- * superposition). `referenceMps` is the speed at which the curve is ~63% of
- * the way to fully extended (1 − 1/e).
- *
- * Superseded for the FLAG by `markerAngleDeg` (BTK's own concave response
- * curve, wind-system-btk-port W2) — kept here because the sock renderer still
- * uses it until it's ported in W3.
- */
-export function speedFactor(speedMps: number, referenceMps: number): number {
-  if (speedMps <= 0 || referenceMps <= 0) return 0;
-  return 1 - Math.exp(-speedMps / referenceMps);
-}
-
 /** Shortest signed angular difference `b − a`, wrapped to `(-π, π]`. */
 function shortestAngleDelta(a: number, b: number): number {
   let d = (b - a) % (2 * Math.PI);
@@ -169,4 +152,18 @@ export function smoothAngle(current: number, target: number, ratePerSecond: numb
   const maxStep = Math.max(0, ratePerSecond * dt);
   const step = Math.sign(diff) * Math.min(Math.abs(diff), maxStep);
   return current + step;
+}
+
+/**
+ * The sock's decorative swing strength: 0 at dead calm, saturating to 1 by
+ * `windFullMph` — "a small wind-scaled swing so it never looks rigid" (BTK's
+ * own comment, `WindSockFactory.updateTransforms`). Ported verbatim
+ * (wind-system-btk-port W3); BTK hardcodes `windFullMph = 12` inline (not
+ * part of `WIND_SOCK_CONFIG`), well below the sock's own 20 mph `flatSpeed` —
+ * the wobble is fully in by a moderate breeze, before the sock itself has
+ * finished lifting.
+ */
+export function swayWindFactor(speedMph: number, windFullMph: number): number {
+  if (windFullMph <= 0) return speedMph > 0 ? 1 : 0;
+  return Math.min(1, Math.max(0, speedMph / windFullMph));
 }
