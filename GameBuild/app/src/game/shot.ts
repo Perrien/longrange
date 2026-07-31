@@ -10,17 +10,25 @@
 import type { ScatterShot } from '../engine-bridge/types';
 import {
   centerOffsetM,
-  discHit,
   requiredCorrectionRad,
   type Correction,
   type PlanePoint,
 } from './firing-solution';
+import { hitTargetZone, type ZoneHit } from './target-hit';
 
 /** A minimal plate: its world centre on the rack plane and its diameter. */
 export interface ShotPlate {
   instanceId: number;
   position: PlanePoint; // world x,y at the rack plane (z = -distanceM)
+  /** The plate's WIDTH (m). Named `diameterM` because every shipped plate is a
+   *  disc; for a non-round target type it is the outline's full width. */
   diameterM: number;
+  /** Target-type id (task T2). Omitted ⇒ the legacy round-plate path: `discHit`
+   *  verbatim, reported as zone `'plate'`. */
+  typeId?: string;
+  /** Explicit height (m) for a non-round plate. Omitted ⇒ derived from the type's
+   *  aspect, or equal to the width for an untyped plate (`plateHeightM`). */
+  heightM?: number;
 }
 
 export interface Vec3 {
@@ -38,6 +46,14 @@ export interface ShotResult {
   hitPlateId: number | null;
   /** instanceId of the plate the shot was aimed at (nearest the crosshair). */
   aimedPlateId: number | null;
+  /**
+   * WHICH zone of the struck target was hit, or null for a miss (task T2).
+   *
+   * Additive: `hitPlateId` is derived from this and keeps its exact old meaning,
+   * so every pre-T2 caller and test is unaffected. For a legacy round plate the
+   * zone is `'plate'`.
+   */
+  hitZone: ZoneHit | null;
 }
 
 export interface ResolveShotParams {
@@ -126,10 +142,13 @@ export function resolveShot(p: ResolveShotParams): ShotResult {
   };
 
   // A wide shot can catch a neighbouring plate, so test the whole rack.
-  let hit: ShotPlate | null = null;
+  // `hitTargetZone` delegates to `discHit` verbatim for a plate with no `typeId`,
+  // so this loop is decision-identical to the pre-T2 one for every shipped range.
+  let hitZone: ZoneHit | null = null;
   for (const plate of p.plates) {
-    if (discHit(impact, plate.position, plate.diameterM, p.bulletDiameterM)) {
-      hit = plate;
+    const zone = hitTargetZone(impact, plate, p.bulletDiameterM);
+    if (zone) {
+      hitZone = zone;
       break;
     }
   }
@@ -137,7 +156,8 @@ export function resolveShot(p: ResolveShotParams): ShotResult {
   return {
     impact,
     distanceM: p.distanceM,
-    hitPlateId: hit ? hit.instanceId : null,
+    hitPlateId: hitZone ? hitZone.instanceId : null,
     aimedPlateId: aimed ? aimed.instanceId : null,
+    hitZone,
   };
 }

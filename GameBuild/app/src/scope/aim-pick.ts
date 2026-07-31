@@ -35,6 +35,11 @@ export interface AimablePlate {
    *  `resolveTargetPlate`. Optional so callers that only need `pickAimedPlate`
    *  need not supply it. */
   diameterM?: number;
+  /** Plate HEIGHT (m). Omitted ⇒ `diameterM`, i.e. round or square — which is every
+   *  plate on every range before the target system. A tall silhouette must supply it,
+   *  or the "crosshair is on it" test only covers a disc of its width and its head
+   *  becomes unselectable (see `crosshairIsOnPlate`). */
+  heightM?: number;
   /** Instance id, matched against the committed target. */
   instanceId?: number;
 }
@@ -102,10 +107,44 @@ export function pickAimedPlate<T extends AimablePlate>(
   return best;
 }
 
-/** How close the crosshair must get to `plate` to claim the engagement (rad). */
+/** How close the crosshair must get to `plate` to claim the engagement (rad).
+ *
+ *  Isotropic — the round-plate case, and the horizontal component of the general one. */
 export function switchThresholdRad(plate: AimablePlate): number {
   const angularRadius = plate.diameterM ? plate.diameterM / 2 / plate.distanceM : 0;
   return Math.max(SWITCH_RADII * angularRadius, SWITCH_FLOOR_RAD);
+}
+
+/**
+ * Is the crosshair ON this plate, allowing for its actual SHAPE?
+ *
+ * THE BUG THIS FIXES (owner, on device 2026-07-31): "on the poppers the bottom and
+ * middle circle accept hits and fall but the head area doesn't. Shots pass clean
+ * through them." The switch test sized itself off `diameterM` alone — a CIRCLE of the
+ * plate's width. That is right for every round plate, but a 42″ popper is 3.5× taller
+ * than wide: its head sits 11.7 mrad above centre while 2× its angular *width* radius
+ * is only 6.7 mrad. So aiming at the head never met the threshold, the auto-committed
+ * gong kept the engagement, the shot resolved on the gong's plane, and the popper was
+ * never hit-tested at all.
+ *
+ * The test is therefore ELLIPTICAL: the miss is normalised by the plate's own angular
+ * half-extent on each axis. For a round plate (`heightM` omitted or equal to
+ * `diameterM`) both denominators collapse to `switchThresholdRad`, so this reduces to
+ * the previous circular test EXACTLY — every shipped range is unchanged.
+ */
+export function crosshairIsOnPlate(
+  eye: AimPoint,
+  dir: AimDirection,
+  plate: AimablePlate,
+): boolean {
+  const p = rayPointAtDistance(eye, dir, plate.distanceM);
+  const dxRad = Math.abs(p.x - plate.position.x) / plate.distanceM;
+  const dyRad = Math.abs(p.y - plate.position.y) / plate.distanceM;
+  const halfW = (plate.diameterM ?? 0) / 2;
+  const halfH = (plate.heightM ?? plate.diameterM ?? 0) / 2;
+  const xLimit = Math.max((SWITCH_RADII * halfW) / plate.distanceM, SWITCH_FLOOR_RAD);
+  const yLimit = Math.max((SWITCH_RADII * halfH) / plate.distanceM, SWITCH_FLOOR_RAD);
+  return Math.hypot(dxRad / xLimit, dyRad / yLimit) <= 1;
 }
 
 /**
@@ -162,8 +201,11 @@ export function resolveTargetPlate<T extends AimablePlate>(
   let claimantMiss = Number.POSITIVE_INFINITY;
   for (const plate of plates) {
     if (plate === committed) continue;
+    if (!crosshairIsOnPlate(eye, dir, plate)) continue;
+    // Rank surviving claimants by angular miss to centre, so overlapping targets
+    // resolve to the one actually under the crosshair.
     const miss = angularMissRad(eye, dir, plate);
-    if (miss <= switchThresholdRad(plate) && miss < claimantMiss) {
+    if (miss < claimantMiss) {
       claimantMiss = miss;
       claimant = plate;
     }

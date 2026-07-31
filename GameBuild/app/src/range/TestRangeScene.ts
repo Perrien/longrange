@@ -1,22 +1,39 @@
-// Test Range scene builder (Stage 1-2 of Design/archive/test-range-environment-plan.md)
-// — a minimal single-rack steel world: one 12" gong at 100 yd, built so the
-// existing shot loop (commit, fire, swing, chains, splat, ping, score, bullet
-// trace, dust puffs) works with zero changes to ScopeView's fireSteel /
-// reaction-loop paths. Stage 2 swaps the Stage-1 flat placeholder world for
-// the reusable environment module (terrain/sky/fog/lighting; trees/mountains/
-// clouds land in Stages 3-4) without touching the rack/gong/chains below.
+// Test Range scene builder. Originally Stage 1-2 of
+// Design/archive/test-range-environment-plan.md (one 12" gong on a rack, on the shared
+// environment module); rebuilt at tasks T9a/T9b onto the target system.
 //
-// Structure mirrors RangeScene.ts (task 1.2) — a single-rack, single-plate
-// RangeScene without berms — so it satisfies SteelSceneApi the same way.
+// The range's targets now come from `placements.data.json` — which is what makes this
+// the "permanent proving ground for new target types" `ranges.ts` charters it as: a new
+// target here is a data entry plus, at most, a furniture case below.
+//
+// THREE THINGS THIS SCENE HAS TO GET RIGHT, all of them invariants other code depends on:
+//
+//  1. ONE GLOBAL instanceId SPACE across several plate meshes. A shape needs its own
+//     geometry and therefore its own InstancedMesh, but `instanceId` is simultaneously
+//     the paint-atlas layer index, the `chainRest[id*2+ci]` key, the reaction-map key and
+//     the store's `currentTarget.plateInstanceId`. Per-mesh index spaces break all four,
+//     so ids stay global and `meshFor()` says which mesh holds which row.
+//  2. A CHAIN SLOT PAIR FOR EVERY PLATE, even ones that do not hang. The reaction loop
+//     indexes `chainRest[id*2+ci]` unconditionally; a beamless mount gets a collapsed
+//     zero-length pair, exactly as ELR's stake plates do.
+//  3. ONE PIECE OF FURNITURE PER GROUP. A `groupId` means one rack/stand carrying
+//     several targets, so the group is built once rather than per plate.
 
 import * as THREE from 'three';
 import { TEST_RANGE_GONG, TEST_RANGE_ENVIRONMENT } from './test-range-config';
+import { getTargetPlacements } from './targets/placements';
+import { buildTestRangePlates } from './test-range-targets';
 import { setChainInstance, PLATE_THICKNESS_M, makeSignTexture, type PlateInstance } from './RangeScene';
-import { chainAnchorLocalOffset, CHAIN_SPLAY_FRACTION } from '../engine-bridge/steel-target';
+import { chainAnchorFor, CHAIN_SPLAY_FRACTION } from '../engine-bridge/steel-target';
 import { createPlateDiscGeometry } from './plate-geometry';
+import { createPlateOutlineGeometry } from './plate-outline-geometry';
 import { createPlateSurface, createPlateMaterial, type PlateSurface } from './plate-surface';
 import type { SteelSceneApi } from './steel-scene-api';
 import { buildEnvironment, type EnvironmentHandle } from './environment';
+import { planFace } from './targets/face-plan';
+import { browserFaceDeps, rasterizeFace } from './targets/face-raster';
+import { outlinePolygon } from './targets/target-geometry';
+import type { ResolvedPlacement } from './targets/placements';
 
 const FRAME_COLOR = 0xaaaaaa; // galvanised posts/beam
 const CHAIN_COLOR = 0x4a4a4a; // dark galvanised chain
@@ -31,6 +48,10 @@ export class TestRangeScene implements SteelSceneApi {
   plateSurface!: PlateSurface;
   chainMesh!: THREE.InstancedMesh;
   readonly chainRest: THREE.Matrix4[] = [];
+  /** Which mesh row holds each global instanceId (SteelSceneApi's `meshFor`). */
+  private readonly slots = new Map<number, { mesh: THREE.InstancedMesh; index: number }>();
+  private placements: readonly ResolvedPlacement[] = [];
+  private disposed = false;
   private readonly scene: THREE.Scene;
   private readonly env: EnvironmentHandle;
 
@@ -46,82 +67,190 @@ export class TestRangeScene implements SteelSceneApi {
     this.scene = scene;
     this.env = buildEnvironment(scene, TEST_RANGE_ENVIRONMENT);
 
-    this.addRack();
-    this.addGong();
+    this.addTargets();
+    this.addFurniture();
     this.addChains();
     this.addSign();
   }
 
-  // --- rack frame (one beam + two posts) -------------------------------------
-  private addRack(): void {
-    const g = TEST_RANGE_GONG;
+  // --- targets: one mesh per SHAPE, one global instanceId space --------------
+  private addTargets(): void {
+    this.placements = getTargetPlacements('test-range');
+    this.plates.push(...buildTestRangePlates(this.placements));
+
+    this.plateSurface = createPlateSurface(this.plates.map((p) => p.paintColor));
+    this.disposables.push(this.plateSurface);
+    const material = this.track(createPlateMaterial(this.plateSurface.texture));
+
+    // Group plates by target type: same type ⇒ same geometry ⇒ one InstancedMesh.
+    const byType = new Map<string, PlateInstance[]>();
+    for (const plate of this.plates) {
+      const key = plate.targetTypeId ?? 'disc';
+      const list = byType.get(key);
+      if (list) list.push(plate);
+      else byType.set(key, [plate]);
+    }
+
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    for (const [typeKey, group] of byType) {
+      const placement = this.placements.find((pl) => pl.type.id === typeKey);
+      const type = placement?.type;
+      // A round plate keeps the shipped disc generator untouched; anything else gets
+      // its outline triangulated. Positions are in the width-normalised frame either
+      // way, so the instance scale is uniform in x/y.
+      const geo = this.track(
+        type && type.shape.kind !== 'disc'
+          ? createPlateOutlineGeometry(outlinePolygon(type.shape, type.aspect), type.aspect)
+          : createPlateDiscGeometry(),
+      );
+      const mesh = new THREE.InstancedMesh(geo, material, group.length);
+      // The GLOBAL instanceId per row, so the shader samples the right atlas layer
+      // even though this mesh's own rows are 0..group.length-1.
+      geo.setAttribute(
+        'instanceTargetIndex',
+        new THREE.InstancedBufferAttribute(Float32Array.from(group.map((pl) => pl.instanceId)), 1),
+      );
+      group.forEach((plate, row) => {
+        this.slots.set(plate.instanceId, { mesh, index: row });
+        m.compose(
+          plate.position,
+          q,
+          new THREE.Vector3(plate.diameterM, plate.diameterM, PLATE_THICKNESS_M),
+        );
+        mesh.setMatrixAt(row, m);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      // `plateMesh` is the SteelSceneApi fallback for scenes with one shape; with
+      // several it is only a default and `meshFor` is what callers must use.
+      if (!this.plateMesh) this.plateMesh = mesh;
+      this.add(mesh);
+    }
+
+    this.rasterizeFaces();
+  }
+
+  /**
+   * Draw each target's authored face into its atlas layer.
+   *
+   * Fire-and-forget: art is fetched, so this cannot block the constructor. Until it
+   * lands a plate shows its solid paint colour (the atlas is already filled with it),
+   * which is why a failed or slow fetch degrades to "plain steel" rather than to a
+   * hole. Only types whose face needs more than that flat fill are rasterised at all.
+   */
+  private rasterizeFaces(): void {
+    const deps = browserFaceDeps();
+    const done = new Set<string>();
+    for (const placement of this.placements) {
+      // One raster per TYPE+palette, reused across every plate sharing it.
+      const key = `${placement.type.id}|${JSON.stringify(placement.palette)}`;
+      const plan = planFace(placement.type, { palette: placement.palette });
+      const needsArt = plan.ops.some((op) => op.kind !== 'fill');
+      if (!needsArt) continue;
+      const layers = this.plates
+        .filter((pl) => pl.targetTypeId === placement.type.id)
+        .map((pl) => pl.instanceId);
+      if (done.has(key)) continue;
+      done.add(key);
+      void rasterizeFace(plan, deps)
+        .then((rgba) => {
+          // The scene may have been disposed while the fetch was in flight.
+          if (this.disposed) return;
+          for (const layer of layers) this.plateSurface.setBaseLayer(layer, rgba);
+        })
+        .catch((err) => {
+          // A face is cosmetic; never let it take the range down.
+          console.warn(`TestRangeScene: face raster failed for '${placement.type.id}'`, err);
+        });
+    }
+  }
+
+  // --- furniture: one build per GROUP, shaped by the mount -------------------
+  private addFurniture(): void {
     const mat = this.track(
       new THREE.MeshStandardMaterial({ color: FRAME_COLOR, metalness: 0.6, roughness: 0.5 }),
     );
-    const halfW = g.rackWidthM / 2;
-    const z = -g.distanceM;
+    const built = new Set<string>();
+    for (let i = 0; i < this.placements.length; i++) {
+      const placement = this.placements[i];
+      const plate = this.plates[i];
+      // A group is ONE piece of furniture carrying several targets, so build it once.
+      if (placement.groupId) {
+        if (built.has(placement.groupId)) continue;
+        built.add(placement.groupId);
+      }
+      const members = placement.groupId
+        ? this.plates.filter((_, j) => this.placements[j].groupId === placement.groupId)
+        : [plate];
+      switch (placement.mount.furniture) {
+        case 'beam-rack':
+        case 'panel':
+          this.addBeamRack(members, placement, mat);
+          break;
+        case 'stake':
+          for (const member of members) this.addStake(member, mat);
+          break;
+        case 'hinge-stem':
+          for (const member of members) this.addHingeStem(member, mat);
+          break;
+        case 'none':
+          break;
+      }
+    }
+  }
 
-    const postGeo = this.track(
-      new THREE.CylinderGeometry(POST_RADIUS_M, POST_RADIUS_M, g.beamHeightM, 8),
-    );
+  /** Two posts and a beam, wide enough to span every plate on it. */
+  private addBeamRack(
+    members: readonly PlateInstance[],
+    placement: ResolvedPlacement,
+    mat: THREE.Material,
+  ): void {
+    const beamY = placement.beamHeightM ?? members[0].beamHeightM;
+    const z = -placement.distanceM;
+    // Frame width from the authored Test Range rack, widened if a group needs it.
+    const span = Math.max(...members.map((p) => p.position.x)) - Math.min(...members.map((p) => p.position.x));
+    const width = Math.max(TEST_RANGE_GONG.rackWidthM, span + members[0].diameterM * 1.5);
+    const centreX = (Math.max(...members.map((p) => p.position.x)) + Math.min(...members.map((p) => p.position.x))) / 2;
+
+    const postGeo = this.track(new THREE.CylinderGeometry(POST_RADIUS_M, POST_RADIUS_M, beamY, 8));
     for (const sx of [-1, 1]) {
       const post = new THREE.Mesh(postGeo, mat);
-      post.position.set(g.xOffsetM + sx * halfW, g.beamHeightM / 2, z);
+      post.position.set(centreX + sx * (width / 2), beamY / 2, z);
       this.add(post);
     }
-
-    const beamGeo = this.track(
-      new THREE.CylinderGeometry(BEAM_RADIUS_M, BEAM_RADIUS_M, g.rackWidthM, 8),
-    );
+    const beamGeo = this.track(new THREE.CylinderGeometry(BEAM_RADIUS_M, BEAM_RADIUS_M, width, 8));
     const beam = new THREE.Mesh(beamGeo, mat);
     beam.rotation.z = Math.PI / 2;
-    beam.position.set(g.xOffsetM, g.beamHeightM, z);
+    beam.position.set(centreX, beamY, z);
     this.add(beam);
   }
 
-  // --- the single gong --------------------------------------------------
-  private addGong(): void {
-    const g = TEST_RANGE_GONG;
-    this.plateSurface = createPlateSurface([g.paintColor]);
-    this.disposables.push(this.plateSurface);
-
-    const geo = this.track(createPlateDiscGeometry());
-    const mat = this.track(createPlateMaterial(this.plateSurface.texture));
-    const mesh = new THREE.InstancedMesh(geo, mat, 1);
-    geo.setAttribute(
-      'instanceTargetIndex',
-      new THREE.InstancedBufferAttribute(new Float32Array([0]), 1),
-    );
-
-    const p = new THREE.Vector3(g.xOffsetM, g.plateCenterYM, -g.distanceM);
-    const m = new THREE.Matrix4().compose(
-      p,
-      new THREE.Quaternion(),
-      new THREE.Vector3(g.gongDiameterM, g.gongDiameterM, PLATE_THICKNESS_M),
-    );
-    mesh.setMatrixAt(0, m);
-    mesh.instanceMatrix.needsUpdate = true;
-
-    this.plates.push({
-      rackId: g.rackId,
-      distanceM: g.distanceM,
-      distanceYards: g.distanceYards,
-      diameterM: g.gongDiameterM,
-      position: p.clone(),
-      beamHeightM: g.beamHeightM,
-      instanceId: 0,
-      paintColor: g.paintColor,
-    });
-
-    this.plateMesh = mesh;
-    this.add(mesh);
+  /** A single post from the ground to the plate's lower edge — a bolted target. */
+  private addStake(plate: PlateInstance, mat: THREE.Material): void {
+    const halfHeight = (plate.heightM ?? plate.diameterM) / 2;
+    const postTop = Math.max(0.05, plate.position.y - halfHeight);
+    const geo = this.track(new THREE.CylinderGeometry(POST_RADIUS_M, POST_RADIUS_M, postTop, 8));
+    const post = new THREE.Mesh(geo, mat);
+    post.position.set(plate.position.x, postTop / 2, plate.position.z);
+    this.add(post);
   }
 
-  // --- hanging chains (two, for the one plate) -------------------------------
-  // Copied from RangeScene.addChains() — it iterates `this.plates` generically,
-  // so with one plate it writes chain instances 0 and 1 and fills
-  // chainRest[0..1]. Do not skip: the reaction loop indexes
-  // chainRest[id*2 + ci] unconditionally on a hit.
+  /** A stem from the hinge at the ground up to the plate — a knockdown target. */
+  private addHingeStem(plate: PlateInstance, mat: THREE.Material): void {
+    const pivotY = plate.pivotYM ?? 0;
+    const halfHeight = (plate.heightM ?? plate.diameterM) / 2;
+    const length = Math.max(0.05, plate.position.y - halfHeight - pivotY);
+    if (length <= 0.05) return; // the plate reaches the hinge; nothing to draw
+    const geo = this.track(new THREE.CylinderGeometry(POST_RADIUS_M, POST_RADIUS_M, length, 8));
+    const stem = new THREE.Mesh(geo, mat);
+    stem.position.set(plate.position.x, pivotY + length / 2, plate.position.z);
+    this.add(stem);
+  }
+
+  // --- hanging chains (two slots per plate, ALWAYS) --------------------------
+  // The reaction loop indexes `chainRest[id*2+ci]` unconditionally, so every plate
+  // gets a pair. A plate that does not hang gets a COLLAPSED (zero-length) pair —
+  // invisible, and safe to read — which is what ELR's stake plates already do.
   private addChains(): void {
     const geo = this.track(new THREE.CylinderGeometry(1, 1, 1, 6));
     const mat = this.track(
@@ -133,17 +262,28 @@ export class TestRangeScene implements SteelSceneApi {
     const fixed = { x: 0, y: 0, z: 0 };
     const rm = new THREE.Matrix4();
     for (const plate of this.plates) {
-      const { ax, ay, az } = chainAnchorLocalOffset(plate.diameterM, PLATE_THICKNESS_M);
+      const hangs = plate.swings !== false;
+      const { ax, ay, az } = chainAnchorFor(
+        plate.diameterM,
+        plate.heightM ?? plate.diameterM,
+        PLATE_THICKNESS_M,
+      );
       const c = plate.position;
-      const sides = [-1, 1];
-      for (let j = 0; j < sides.length; j++) {
-        const sx = sides[j];
-        attach.x = c.x + sx * ax;
-        attach.y = c.y + ay;
-        attach.z = c.z + az;
-        fixed.x = attach.x + sx * ax * CHAIN_SPLAY_FRACTION;
-        fixed.y = plate.beamHeightM;
-        fixed.z = attach.z;
+      for (let j = 0; j < 2; j++) {
+        const sx = j === 0 ? -1 : 1;
+        if (hangs) {
+          attach.x = c.x + sx * ax;
+          attach.y = c.y + ay;
+          attach.z = c.z + az;
+          fixed.x = attach.x + sx * ax * CHAIN_SPLAY_FRACTION;
+          fixed.y = plate.beamHeightM;
+          fixed.z = attach.z;
+        } else {
+          // Collapsed: both ends at the plate centre.
+          attach.x = fixed.x = c.x;
+          attach.y = fixed.y = c.y;
+          attach.z = fixed.z = c.z;
+        }
         const idx = plate.instanceId * 2 + j;
         setChainInstance(mesh, idx, attach, fixed);
         mesh.getMatrixAt(idx, rm);
@@ -181,6 +321,14 @@ export class TestRangeScene implements SteelSceneApi {
     this.add(group);
   }
 
+  /** Where instance `id`'s matrix lives — this scene draws one mesh per target SHAPE
+   *  while keeping a single global id space. */
+  meshFor(instanceId: number): { mesh: THREE.InstancedMesh; index: number } {
+    const slot = this.slots.get(instanceId);
+    if (!slot) throw new Error(`TestRangeScene: no mesh slot for instanceId ${instanceId}`);
+    return slot;
+  }
+
   /** Delegates to the environment handle (Stage 4 adds cloud drift there;
    *  a no-op until then). */
   update(
@@ -203,6 +351,8 @@ export class TestRangeScene implements SteelSceneApi {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.slots.clear();
     this.env.dispose();
     for (const o of this.objects) this.scene.remove(o);
     for (const d of this.disposables) d.dispose();

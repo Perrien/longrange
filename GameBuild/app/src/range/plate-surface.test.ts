@@ -84,6 +84,152 @@ describe('plate surface atlas', () => {
   });
 });
 
+describe('base-layer compositing (task T4)', () => {
+  const PAINT = 0xf0f0ea;
+  const CHIP = 0x8c8c8c; // engine metal-ish, deliberately not the paint colour
+
+  /** An engine-style buffer: all paint, with a chip at one texel. */
+  function engineBuffer(chipTexel: number): Uint8Array {
+    const buf = new Uint8Array(PLATE_LAYER_BYTES);
+    const p = hexToRgb(PAINT);
+    for (let i = 0; i < PLATE_LAYER_BYTES; i += 4) {
+      buf[i] = p.r;
+      buf[i + 1] = p.g;
+      buf[i + 2] = p.b;
+      buf[i + 3] = 255;
+    }
+    const c = hexToRgb(CHIP);
+    const o = chipTexel * 4;
+    buf[o] = c.r;
+    buf[o + 1] = c.g;
+    buf[o + 2] = c.b;
+    buf[o + 3] = 255;
+    return buf;
+  }
+
+  /** Art: a distinctive colour everywhere. */
+  function artBuffer(hex: number): Uint8Array {
+    const buf = new Uint8Array(PLATE_LAYER_BYTES);
+    fillLayerRgb(buf, 0, hex);
+    return buf;
+  }
+
+  it('with NO base registered, writeEngineLayer is byte-identical to writeLayer', () => {
+    // THE guarantee that makes T4 safe for Range A and the ELR Range: neither calls
+    // setBaseLayer, so both keep the exact pre-T4 behaviour.
+    const incoming = engineBuffer(17);
+    const viaWrite = createPlateSurface([PAINT, PAINT]);
+    const viaEngine = createPlateSurface([PAINT, PAINT]);
+    viaWrite.writeLayer(1, incoming);
+    viaEngine.writeEngineLayer(1, incoming, PAINT);
+    expect(viaEngine.texture.image.data).toEqual(viaWrite.texture.image.data);
+    // …including the partial-upload bookkeeping.
+    expect(Array.from(viaEngine.texture.layerUpdates)).toEqual(
+      Array.from(viaWrite.texture.layerUpdates),
+    );
+    viaWrite.dispose();
+    viaEngine.dispose();
+  });
+
+  it('setBaseLayer draws the art and leaves other layers alone', () => {
+    const s = createPlateSurface([PAINT, PAINT]);
+    s.setBaseLayer(1, artBuffer(0xff0000));
+    const data = s.texture.image.data as Uint8Array;
+    expect([data[layerByteOffset(1)], data[layerByteOffset(1) + 1]]).toEqual([255, 0]);
+    expect(data[0]).toBe(hexToRgb(PAINT).r); // layer 0 untouched
+    s.dispose();
+  });
+
+  it('setBaseLayer requests a FULL upload, never a partial one', () => {
+    // THE BUG (owner, on device 2026-07-31): the Test Range gong rendered BLACK until
+    // its first hit. three's DataArrayTexture path calls texStorage3D to ALLOCATE and
+    // then, if `layerUpdates` is non-empty, uploads ONLY those layers — everything
+    // else is left undefined. Async `setBaseLayer` calls for the arted plates landed
+    // before the first render and narrowed the pending full upload to layers 1–3, so
+    // layer 0 never got data.
+    const s = createPlateSurface([PAINT, PAINT, PAINT]);
+    const before = s.texture.version;
+    s.setBaseLayer(1, artBuffer(0xff0000));
+    expect(Array.from(s.texture.layerUpdates)).toEqual([]);
+    // `needsUpdate` is setter-only in three; the version bump is what it drives, and
+    // what tells the renderer to re-upload.
+    expect(s.texture.version).toBeGreaterThan(before);
+    s.dispose();
+  });
+
+  it('setBaseLayer CLEARS a partial upload queued before it', () => {
+    // The exact sequence that broke: a queued partial, then a base write. The base
+    // write must widen the upload back to everything, not add to the queue.
+    const s = createPlateSurface([PAINT, PAINT, PAINT]);
+    s.writeEngineLayer(2, engineBuffer(3), PAINT); // queues layer 2
+    expect(Array.from(s.texture.layerUpdates)).toEqual([2]);
+    s.setBaseLayer(1, artBuffer(0xff0000));
+    expect(Array.from(s.texture.layerUpdates)).toEqual([]);
+    s.dispose();
+  });
+
+  it('keeps hit-time writes PARTIAL — the optimisation that matters', () => {
+    // By the time a hit lands, a frame has rendered and the texture is fully uploaded,
+    // so a 512 KB per-layer write is safe and avoids a whole-atlas re-send at impact.
+    const s = createPlateSurface([PAINT, PAINT, PAINT]);
+    s.writeEngineLayer(2, engineBuffer(3), PAINT);
+    expect(Array.from(s.texture.layerUpdates)).toEqual([2]);
+    s.dispose();
+  });
+
+  it('preserves art wherever the engine left paint, and shows the chip where it did not', () => {
+    // This is the ELR bullseye fix in miniature: rings survive a hit, the splat
+    // still lands.
+    const s = createPlateSurface([PAINT]);
+    s.setBaseLayer(0, artBuffer(0x2f6fd0)); // the ELR mid-blue ring colour
+    s.writeEngineLayer(0, engineBuffer(42), PAINT);
+    const data = s.texture.image.data as Uint8Array;
+    const art = hexToRgb(0x2f6fd0);
+    const chip = hexToRgb(CHIP);
+    // Texel 0: engine left paint → art shows through.
+    expect([data[0], data[1], data[2]]).toEqual([art.r, art.g, art.b]);
+    // Texel 42: engine chipped → the chip wins.
+    expect([data[42 * 4], data[42 * 4 + 1], data[42 * 4 + 2]]).toEqual([chip.r, chip.g, chip.b]);
+    s.dispose();
+  });
+
+  it('accumulates chips across repeat writes without losing the art', () => {
+    const s = createPlateSurface([PAINT]);
+    s.setBaseLayer(0, artBuffer(0x2f6fd0));
+    s.writeEngineLayer(0, engineBuffer(10), PAINT);
+    // A later buffer carries BOTH chips, as the engine's does (it accumulates).
+    const two = engineBuffer(10);
+    const c = hexToRgb(CHIP);
+    two[20 * 4] = c.r;
+    two[20 * 4 + 1] = c.g;
+    two[20 * 4 + 2] = c.b;
+    s.writeEngineLayer(0, two, PAINT);
+    const data = s.texture.image.data as Uint8Array;
+    const art = hexToRgb(0x2f6fd0);
+    expect([data[10 * 4], data[10 * 4 + 1]]).toEqual([c.r, c.g]);
+    expect([data[20 * 4], data[20 * 4 + 1]]).toEqual([c.r, c.g]);
+    expect([data[30 * 4], data[30 * 4 + 1]]).toEqual([art.r, art.g]);
+    s.dispose();
+  });
+
+  it('composites against the plate colour it is TOLD, not the layer fill', () => {
+    // The engine is given each plate's own paintColorHex, so the comparison colour
+    // is a parameter rather than an assumption about the atlas.
+    const s = createPlateSurface([0x000000]); // atlas filled black, paint is not
+    s.setBaseLayer(0, artBuffer(0x00ff00));
+    s.writeEngineLayer(0, engineBuffer(5), PAINT);
+    const data = s.texture.image.data as Uint8Array;
+    expect([data[0], data[1], data[2]]).toEqual([0, 255, 0]); // art, not black
+    s.dispose();
+  });
+
+  it('rejects a base layer of the wrong size', () => {
+    const s = createPlateSurface([PAINT]);
+    expect(() => s.setBaseLayer(0, new Uint8Array(16))).toThrow(/must be \d+ bytes/);
+    s.dispose();
+  });
+});
+
 describe('plate material patch', () => {
   const mockShader = () => ({
     uniforms: {} as Record<string, { value: unknown }>,

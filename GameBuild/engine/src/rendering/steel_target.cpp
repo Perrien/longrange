@@ -431,10 +431,7 @@ namespace btk::rendering
         btk::math::Vector3D axis = angular_velocity_ / angular_speed;
         btk::math::Quaternion rotation = btk::math::Quaternion::fromAxisAngle(axis, angle);
         orientation_ = rotation * orientation_;
-        orientation_.normalize();
-        // Recompute surface normal from orientation.
-        // Local default normal is (0, 0, -1) (uprange), so rotate that into world space.
-        normal_ = orientation_.rotate(btk::math::Vector3D(0.0f, 0.0f, -1.0f));
+        syncNormalToOrientation();
       }
 
       // Twist limit about world vertical (Y). Real hanging chains BIND before a
@@ -452,8 +449,7 @@ namespace btk::rendering
           float clamped = (twist > 0.0f ? MAX_TWIST : -MAX_TWIST);
           btk::math::Quaternion t_delta = btk::math::Quaternion::fromAxisAngle(btk::math::Vector3D(0.0f, 1.0f, 0.0f), clamped - twist);
           orientation_ = orientation_ * t_delta; // remove the excess world-Y twist
-          orientation_.normalize();
-          normal_ = orientation_.rotate(btk::math::Vector3D(0.0f, 0.0f, -1.0f));
+          syncNormalToOrientation();
           angular_velocity_.y = 0.0f; // stop winding further into the limit
         }
       }
@@ -622,6 +618,19 @@ namespace btk::rendering
       texture_buffer_[i * 4 + 2] = paint_color_[2]; // B
       texture_buffer_[i * 4 + 3] = 255;             // A
     }
+  }
+
+  void SteelTarget::syncNormalToOrientation()
+  {
+    orientation_.normalize();
+    // Local default normal is (0, 0, -1) (uprange), rotated into world space.
+    normal_ = orientation_.rotate(btk::math::Vector3D(0.0f, 0.0f, -1.0f));
+  }
+
+  void SteelTarget::setOrientation(const btk::math::Quaternion& orientation)
+  {
+    orientation_ = orientation;
+    syncNormalToOrientation();
   }
 
   void SteelTarget::drawImpactOnTexture(const btk::math::Vector3D& local_position, float bullet_diameter, bool is_front_face)

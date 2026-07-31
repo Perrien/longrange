@@ -37,12 +37,14 @@ import type { DopeNode } from '../persistence';
 import type { SaveData } from '../persistence';
 import { DEFAULT_LOT_ROUNDS } from '../game/acquire';
 
-/** Build a minimal ShotResult for scoring tests (impact geometry doesn't matter here). */
-const shotResult = (hitPlateId: number | null): ShotResult => ({
+/** Build a minimal ShotResult for scoring tests (impact geometry doesn't matter here).
+ *  `zoneId` defaults to the legacy `'plate'`; pass one to exercise `score.zoneHits`. */
+const shotResult = (hitPlateId: number | null, zoneId = 'plate'): ShotResult => ({
   impact: { x: 0, y: 0 },
   distanceM: 300,
   hitPlateId,
   aimedPlateId: hitPlateId,
+  hitZone: hitPlateId === null ? null : { instanceId: hitPlateId, zoneId, localX: 0, localY: 0 },
 });
 
 /** Build a DopeNode for store tests. */
@@ -300,6 +302,35 @@ describe('scoring & engagement (task 1.6b, D2)', () => {
     expect(score.shotsFired).toBe(3);
     expect(score.hits).toBe(2);
     expect(score.firstRoundHits).toBe(1);
+  });
+
+  it('tallies hits by zone, and the tally always sums to hits (task T2)', () => {
+    const st = useGameStore.getState();
+    st.commitTarget(7, yardsToMeters(100));
+    st.recordShot(shotResult(7, 'head-0'));
+    st.recordShot(shotResult(7, 'minus-1'));
+    st.recordShot(shotResult(7, 'minus-1'));
+    st.recordShot(shotResult(null)); // miss: no zone
+    st.recordShot(shotResult(9, 'head-0')); // wrong plate: not a hit, so not tallied
+    const score = useGameStore.getState().score;
+    expect(score.zoneHits).toEqual({ 'head-0': 1, 'minus-1': 2 });
+    // The invariant that keeps `zoneHits` and `hits` from telling different
+    // stories — asserted rather than assumed, because they are incremented in two
+    // separate expressions.
+    const summed = Object.values(score.zoneHits).reduce((a, b) => a + b, 0);
+    expect(summed).toBe(score.hits);
+    expect(score.hits).toBe(3);
+    expect(score.shotsFired).toBe(5);
+  });
+
+  it('starts and resets with an empty zone tally', () => {
+    expect(useGameStore.getState().score.zoneHits).toEqual({});
+    const st = useGameStore.getState();
+    st.commitTarget(1, yardsToMeters(100));
+    st.recordShot(shotResult(1, 'plate'));
+    expect(useGameStore.getState().score.zoneHits).toEqual({ plate: 1 });
+    useGameStore.getState().resetScore();
+    expect(useGameStore.getState().score.zoneHits).toEqual({});
   });
 
   it('resetScore zeroes the score slice without touching session', () => {

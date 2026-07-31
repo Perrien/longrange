@@ -35,6 +35,21 @@ export interface SteelSceneApi {
   chainMesh: THREE.InstancedMesh;
   /** Rest transform per chain instance; chains for plate `id` are id*2, id*2+1. */
   chainRest: THREE.Matrix4[];
+  /**
+   * Where instance `id`'s matrix lives, when a scene draws more than one plate
+   * SHAPE (task T5/T9b).
+   *
+   * A shape needs its own geometry and therefore its own `InstancedMesh`, but
+   * `instanceId` must stay a single global space: it is simultaneously the paint
+   * atlas layer index, the `chainRest[id*2+ci]` key, the reaction map key, and the
+   * store's `currentTarget.plateInstanceId`. Per-mesh index spaces would break all
+   * four. So a multi-shape scene keeps global ids and uses this to say which mesh
+   * (and which local row) a given id lives in.
+   *
+   * OMIT for `{ mesh: plateMesh, index: instanceId }` — which is every shipped
+   * range, so omitting it is a guarantee of no change.
+   */
+  meshFor?(instanceId: number): { mesh: THREE.InstancedMesh; index: number };
   /** Optional per-frame environment animation (cloud drift etc.). windVec is the
    *  dialed mean wind in world m/s. RangeScene doesn't implement it — callers
    *  must use `scene.update?.(…)`. */
@@ -47,4 +62,14 @@ export interface SteelSceneApi {
     sampleWindAt?: (p: { x: number; y: number; z: number }) => { x: number; y: number; z: number },
   ): void;
   dispose(): void;
+}
+
+/** Resolve a plate instance to the mesh row holding its matrix. Falls back to the
+ *  single shared `plateMesh`, so a scene that never implements `meshFor` behaves
+ *  exactly as it did before the field existed. */
+export function plateMeshSlot(
+  scene: Pick<SteelSceneApi, 'plateMesh' | 'meshFor'>,
+  instanceId: number,
+): { mesh: THREE.InstancedMesh; index: number } {
+  return scene.meshFor?.(instanceId) ?? { mesh: scene.plateMesh, index: instanceId };
 }

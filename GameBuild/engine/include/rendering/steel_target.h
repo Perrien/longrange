@@ -194,6 +194,26 @@ namespace btk::rendering
     const btk::math::Quaternion& getOrientation() const { return orientation_; }
 
     /**
+     * @brief Set the orientation directly, for a pose driven OUTSIDE this rigid body.
+     *
+     * Added for the game's TS-animated reaction modes (target-system task T10). The
+     * knockdown and flip modes compute their pose in TypeScript rather than in
+     * `timeStep`, because a base hinge with a one-sided angular limit, a latch and a
+     * reset actuator are not things this solver models.
+     *
+     * Without this, such a target's paint goes to the WRONG FACE. `hit()` picks the
+     * texture half from `vel · normal_`, and stores the impact at
+     * `inverse(orientation_) · local_pos` — both read this body's own state, which a
+     * TS-driven pose never updates. So a flipped paddle would keep painting the half
+     * the player can no longer see, at the un-flipped position.
+     *
+     * Recomputes `normal_` from the new orientation, exactly as `timeStep` does, so
+     * `hit()`, `intersectSegment()` and `getNormal()` all stay consistent. Does NOT
+     * touch velocity or angular velocity: a caller driving the pose owns the motion.
+     */
+    void setOrientation(const btk::math::Quaternion& orientation);
+
+    /**
      * @brief Get target dimensions
      * @return Vector3D with width, height, thickness
      */
@@ -348,6 +368,17 @@ namespace btk::rendering
 
     // Physics state
     btk::math::Vector3D position_;         // Center of mass position
+    /**
+     * @brief Normalise `orientation_` and re-derive `normal_` from it.
+     *
+     * ONE definition of that pairing, shared by `timeStep`'s two rotation sites and by
+     * `setOrientation`. The local default normal is (0, 0, -1) — uprange — so the world
+     * normal is that vector rotated by the current orientation. Keeping it in one place
+     * is what stops a future pose path updating the orientation and forgetting the
+     * normal, which would silently send impact paint to the wrong face.
+     */
+    void syncNormalToOrientation();
+
     btk::math::Vector3D normal_;           // Current surface normal direction
     btk::math::Quaternion orientation_;    // Full 3D orientation (from local +X-normal frame to world)
     btk::math::Vector3D velocity_ms_;      // Linear velocity

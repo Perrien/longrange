@@ -2,9 +2,10 @@
 // now the plate face the ELR Range uses.
 //
 // Pure: builds the RGBA bytes for one plate-atlas layer, no THREE and no DOM, so
-// the ring geometry is unit-testable. `ELRRangeScene` hands the result to the
-// EXISTING `PlateSurface.writeLayer()` — the plate paint/chip system is reused
-// unmodified.
+// the ring geometry is unit-testable. `ELRRangeScene` registers the result as the
+// layer's BASE via `PlateSurface.setBaseLayer()`, and hits then composite over it
+// through `writeEngineLayer` (task T4b). It originally went through `writeLayer`,
+// which a hit overwrote wholesale — erasing the rings on the first shot.
 //
 // UV CONVENTION (pinned by the TS-A native tests, see `plate-geometry.ts`): a
 // plate layer is a 2:1 tile holding BOTH caps. The front cap occupies u ∈ [0, 0.5]

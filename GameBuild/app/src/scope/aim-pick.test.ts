@@ -5,6 +5,7 @@ import {
   rayPointAtDistance,
   resolveTargetPlate,
   switchThresholdRad,
+  crosshairIsOnPlate,
 } from './aim-pick';
 
 const EYE = { x: 0, y: 1.7 };
@@ -204,5 +205,124 @@ describe('resolveTargetPlate — commit-preferred', () => {
 
   it('returns null when not pointing downrange, committed or not', () => {
     expect(resolveTargetPlate(EYE, { x: 0, y: 0, z: 1 }, ladderPlates, idOf(1000))).toBeNull();
+  });
+});
+
+// --- shape-aware target selection (owner fix, 2026-07-31) ----------------------
+// "On the poppers the bottom and middle circle accept hits and fall but the head area
+// doesn't. Shots pass clean through them." The switch test sized itself off a CIRCLE of
+// the plate's width, so a 42" popper's head sat outside it and the committed plate kept
+// the engagement — the popper was never hit-tested.
+
+describe('crosshairIsOnPlate', () => {
+  const at = (x: number, y: number, distanceM: number) => aimAt(x, y, distanceM);
+
+  it('reduces EXACTLY to the old circular test for a round plate', () => {
+    // The guarantee that keeps every shipped range unchanged: with `heightM` omitted,
+    // the elliptical test and `switchThresholdRad` must agree on every point.
+    for (const diameterM of [0.05, 0.1524, 0.3048, 1.0, 2.0]) {
+      for (const distanceM of [50, 100, 457, 1000, 2000]) {
+        const plate = { distanceM, position: { x: 0, y: 1.5 }, diameterM };
+        const threshold = switchThresholdRad(plate);
+        for (const f of [0.5, 0.9, 0.99, 1.01, 1.1, 2]) {
+          for (const angle of [0, Math.PI / 4, Math.PI / 2, Math.PI]) {
+            const rad = threshold * f;
+            const dir = at(
+              plate.position.x + Math.cos(angle) * rad * distanceM,
+              plate.position.y + Math.sin(angle) * rad * distanceM,
+              distanceM,
+            );
+            const circular = angularMissRad(EYE, dir, plate) <= threshold;
+            expect(crosshairIsOnPlate(EYE, dir, plate)).toBe(circular);
+          }
+        }
+      }
+    }
+  });
+
+  it('treats heightM === diameterM as the round case', () => {
+    const round = { distanceM: 100, position: { x: 0, y: 1.5 }, diameterM: 0.3048 };
+    const square = { ...round, heightM: 0.3048 };
+    const dir = at(0.4, 1.5, 100);
+    expect(crosshairIsOnPlate(EYE, dir, square)).toBe(crosshairIsOnPlate(EYE, dir, round));
+  });
+
+  it('selects a TALL plate by its head, which the circular test could not', () => {
+    // The exact popper geometry: 12" wide, 42" tall, centre 0.533 m up, at 50 yd.
+    const popper = {
+      distanceM: 45.72,
+      position: { x: 1.4, y: 0.5334 },
+      diameterM: 0.3048,
+      heightM: 1.0668,
+    };
+    const headY = popper.position.y + popper.heightM / 2 - 0.05; // just inside the top
+    const dir = at(popper.position.x, headY, popper.distanceM);
+    // The old circular test rejected this…
+    expect(angularMissRad(EYE, dir, popper)).toBeGreaterThan(switchThresholdRad(popper));
+    // …the shape-aware one accepts it.
+    expect(crosshairIsOnPlate(EYE, dir, popper)).toBe(true);
+  });
+
+  it('still rejects a shot well above a tall plate', () => {
+    // Taller is not unlimited: 2× half-height is the limit, so a metre above the head
+    // is still not "on it".
+    const popper = {
+      distanceM: 45.72,
+      position: { x: 1.4, y: 0.5334 },
+      diameterM: 0.3048,
+      heightM: 1.0668,
+    };
+    const dir = at(popper.position.x, popper.position.y + 2.0, popper.distanceM);
+    expect(crosshairIsOnPlate(EYE, dir, popper)).toBe(false);
+  });
+
+  it('does NOT widen a tall plate horizontally', () => {
+    // The wrong fix would be `max(halfW, halfH)`, which would make a 42" popper
+    // selectable a metre off to the side and let it steal its neighbour's engagement.
+    const popper = {
+      distanceM: 45.72,
+      position: { x: 1.4, y: 0.5334 },
+      diameterM: 0.3048,
+      heightM: 1.0668,
+    };
+    const dir = at(popper.position.x + 0.7, popper.position.y, popper.distanceM);
+    expect(crosshairIsOnPlate(EYE, dir, popper)).toBe(false);
+  });
+});
+
+describe('resolveTargetPlate with a tall plate', () => {
+  // The Test Range as staged: an auto-committed gong at 100 yd plus two poppers at 50.
+  const gong = {
+    distanceM: 91.44,
+    position: { x: 0, y: 0.5486 },
+    diameterM: 0.3048,
+    instanceId: 0,
+    station: 'gong',
+  };
+  const popper = {
+    distanceM: 45.72,
+    position: { x: 1.4, y: 0.5334 },
+    diameterM: 0.3048,
+    heightM: 1.0668,
+    instanceId: 1,
+    station: 'popper',
+  };
+  const plates = [gong, popper];
+
+  it('gives the engagement to a popper aimed at its HEAD', () => {
+    // What was broken: the gong kept it, the shot resolved on the gong's plane, and the
+    // popper was never hit-tested — "shots pass clean through".
+    const head = aimAt(popper.position.x, popper.position.y + 0.48, popper.distanceM);
+    expect(resolveTargetPlate(EYE, head, plates, gong.instanceId)?.station).toBe('popper');
+  });
+
+  it('still gives it to a popper aimed at its body', () => {
+    const body = aimAt(popper.position.x, popper.position.y, popper.distanceM);
+    expect(resolveTargetPlate(EYE, body, plates, gong.instanceId)?.station).toBe('popper');
+  });
+
+  it('leaves the gong committed when the crosshair is on neither', () => {
+    const nowhere = aimAt(-3, 3, popper.distanceM);
+    expect(resolveTargetPlate(EYE, nowhere, plates, gong.instanceId)?.station).toBe('gong');
   });
 });

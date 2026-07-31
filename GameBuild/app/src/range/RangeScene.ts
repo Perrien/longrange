@@ -68,6 +68,37 @@ export interface PlateInstance {
    * with constant-angular (i.e. very small near) plates must scale it.
    */
   chainOutwardOffsetM?: number;
+  /**
+   * Target-system fields (task T1b). ALL OPTIONAL, and omitting them is what
+   * keeps every shipped range provably unchanged: `reactionModeOf` falls back to
+   * `swings` when `mountId` is absent, and nothing else reads these yet.
+   *
+   * `targetTypeId` / `mountId` resolve through `range/targets/registry.ts` and
+   * `mount-registry.ts` — the target says what is being shot at (outline, zones,
+   * face), the mount says how it is held and therefore how it reacts.
+   */
+  targetTypeId?: string;
+  mountId?: string;
+  /** Plate height (m) for a non-round target. Omitted ⇒ `diameterM` (round or
+   *  square). `diameterM` stays the WIDTH in both cases, so the existing
+   *  circle-only hit test and the C++ target's `width` keep their meaning. */
+  heightM?: number;
+  /**
+   * World Y of a knockdown target's hinge (m). Omitted ⇒ not a knockdown.
+   *
+   * Deliberately its own field rather than an overload of `beamHeightM`: that one
+   * means "chain-anchor height" and is load-bearing for the swing physics, so
+   * reusing it for a pivot would give one field two incompatible meanings.
+   */
+  pivotYM?: number;
+  /**
+   * Which piece of furniture this plate shares (task T6). Omitted ⇒ it stands alone.
+   *
+   * A group is ONE rack/tree/stand carrying several targets, so its members share a
+   * distance and a mount (enforced by the placement loader). Its consumer today is
+   * `resetDownTargets(groupId)`, which stands a whole plate rack back up together.
+   */
+  groupId?: string;
 }
 
 /**

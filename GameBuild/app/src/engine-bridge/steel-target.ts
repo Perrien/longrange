@@ -56,9 +56,35 @@ export function chainAnchorLocalOffset(
   };
 }
 
+/**
+ * Chain attach offset for a plate of any shape.
+ *
+ * Round plates delegate to `chainAnchorLocalOffset` UNCHANGED, so every shipped
+ * range's chain geometry is bit-identical. A non-round plate cannot use the round
+ * formula: it derives both offsets from one radius, which on a 42″-tall silhouette
+ * would put the attach point far outside the plate horizontally and far below its top
+ * edge. Instead the attach sits just inside the top edge, splayed to 40 % of the
+ * half-width — a plausible two-point hang for a tall face.
+ */
+export function chainAnchorFor(
+  widthM: number,
+  heightM: number,
+  thicknessM: number,
+): { ax: number; ay: number; az: number } {
+  if (Math.abs(widthM - heightM) < 1e-9) return chainAnchorLocalOffset(widthM, thicknessM);
+  return {
+    ax: widthM * 0.4,
+    ay: heightM * 0.45,
+    az: -thicknessM / 2,
+  };
+}
+
 export interface SteelReactionSpec {
-  /** Round-plate diameter (m). */
+  /** Round-plate diameter, or a non-round plate's WIDTH (m). */
   diameterM: number;
+  /** Plate height (m). Omitted ⇒ `diameterM` (round or square), which is what every
+   *  shipped range gets, so omitting it is a guarantee of no change. */
+  heightM?: number;
   /** Plate thickness (m). */
   thicknessM: number;
   /** Plate face centre in world coordinates (rest position). */
@@ -72,6 +98,16 @@ export interface SteelReactionSpec {
   /** Inward offset of the chains' fixed anchors (m). Omitted ⇒ the shared
    *  `CHAIN_OUTWARD_OFFSET_M`. See `chainOutwardOffsetFor`. */
   chainOutwardOffsetM?: number;
+  /**
+   * Mass/inertia model. Omitted ⇒ `true` (elliptical), the shipped behaviour for
+   * every round plate.
+   *
+   * The C++ `calculateMassAndInertia` already branches oval-ellipse vs rectangle, so
+   * an irregular silhouette can take `false` and get a bounding-box tensor — which
+   * overstates its mass by the fill factor, and is the closer of the two available
+   * models for a tall shape. See `target-type.ts`'s `MassModel`.
+   */
+  isOval?: boolean;
 }
 
 /**
@@ -108,6 +144,16 @@ export interface SteelReaction {
   /** Current pose: COM (world) + orientation quaternion (relative to the rest
    * frame, which equals the world frame). */
   getPose(): { position: Vec3; quaternion: Quat };
+  /**
+   * Tell the engine a pose this body did NOT compute (task T10).
+   *
+   * Only needed by TS-animated reaction modes — knockdown, and the future flip. The
+   * engine picks which texture half to paint from its own surface normal and stores the
+   * impact in its own local frame, so a target whose pose lives in TypeScript must push
+   * that pose down or its marks land on the wrong FACE at the wrong PLACE. A swinging
+   * plate must never call this: `timeStep` owns its pose.
+   */
+  setOrientation(q: Quat): void;
   /** Current world endpoints of each hanging chain: `attach` (plate-side, tracks
    * the swing via localToWorld) and `fixed` (the beam-side fixed anchor). Used to
    * draw the chains so they follow the plate (task 1.5c). */
@@ -135,7 +181,11 @@ function v3(module: BtkModule, x: number, y: number, z: number): EVector3D {
  * intersect/score paths are unused.
  */
 export function createSteelReaction(module: BtkModule, spec: SteelReactionSpec): SteelReaction {
-  const isOval = true; // round steel plate
+  // Round plates are elliptical; a non-round silhouette opts into the rectangular
+  // tensor. Both defaults reproduce the shipped behaviour exactly when the optional
+  // fields are omitted (task T6).
+  const isOval = spec.isOval ?? true;
+  const heightM = spec.heightM ?? spec.diameterM;
   const pos = v3(module, spec.position.x, spec.position.y, spec.position.z);
   // Engine default normal — points DOWNRANGE (−Z), giving identity orientation
   // (plate local axes == world axes). The surface the shooter sees is therefore
@@ -147,7 +197,7 @@ export function createSteelReaction(module: BtkModule, spec: SteelReactionSpec):
   const normal = v3(module, 0, 0, -1);
   const st: ESteelTarget = new module.SteelTarget(
     spec.diameterM,
-    spec.diameterM,
+    heightM,
     spec.thicknessM,
     isOval,
     pos,
@@ -169,7 +219,7 @@ export function createSteelReaction(module: BtkModule, spec: SteelReactionSpec):
 
   // Two chains from near the top edge (steel-sim geometry). Oval attach point is
   // at ~35° off vertical on the rim, mirrored left/right.
-  const { ax, ay, az } = chainAnchorLocalOffset(spec.diameterM, spec.thicknessM);
+  const { ax, ay, az } = chainAnchorFor(spec.diameterM, heightM, spec.thicknessM);
   // Keep the plate-side local attach handles alive: getChains() re-projects them
   // through localToWorld every frame so the drawn chains track the swing. The
   // fixed beam anchors don't move, so store them as plain numbers.
@@ -208,6 +258,11 @@ export function createSteelReaction(module: BtkModule, spec: SteelReactionSpec):
     },
     step(dt): void {
       st.timeStep(dt);
+    },
+    setOrientation(q): void {
+      const eq = new module.Quaternion(q.w, q.x, q.y, q.z);
+      st.setOrientation(eq);
+      eq.delete();
     },
     getPose(): { position: Vec3; quaternion: Quat } {
       const com = st.getCenterOfMass(); // COPY → delete

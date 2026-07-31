@@ -9,6 +9,12 @@ const shot = (dx: number, dy: number, hitPlateId: number | null): ShotResult => 
   distanceM: 300,
   hitPlateId,
   aimedPlateId: hitPlateId ?? 7,
+  // Legacy round-plate zone (task T2). `callImpact` reads only hit/miss + the
+  // impact offset, so the zone is here to satisfy the type, not the assertions.
+  hitZone:
+    hitPlateId === null
+      ? null
+      : { instanceId: hitPlateId, zoneId: 'plate', localX: 0, localY: 0 },
 });
 
 describe('impact-call (task 1.6c)', () => {

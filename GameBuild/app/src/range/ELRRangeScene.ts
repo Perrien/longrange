@@ -179,8 +179,13 @@ export class ELRRangeScene implements SteelSceneApi {
     this.plateSurface = createPlateSurface(new Array(count).fill(PLATE_HEX));
     this.disposables.push(this.plateSurface);
 
+    // The bullseye is authored ART, not paint, so it is registered as the layer's
+    // BASE (task T4b). Before this it went through `writeLayer`, which the first
+    // hit then overwrote wholesale with the engine's paint buffer — so the rings
+    // were wiped by the first shot on every station. `writeEngineLayer` composites
+    // splats over the base instead, and the rings survive.
     const face = buildBullseyeLayer();
-    for (let i = 0; i < count; i++) this.plateSurface.writeLayer(i, face);
+    for (let i = 0; i < count; i++) this.plateSurface.setBaseLayer(i, face);
 
     const geo = this.track(createPlateDiscGeometry());
     const mat = this.track(createPlateMaterial(this.plateSurface.texture));

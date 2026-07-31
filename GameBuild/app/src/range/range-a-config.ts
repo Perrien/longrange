@@ -145,7 +145,7 @@ const X_OFFSET_YARDS: Record<number, number> = {
 /** Plate centre height as a fraction of the beam height — plates hang at ~half
  *  the rack frame (dropped 2026-07-14 from ~0.73× on owner note; sits well below
  *  the beam so the frame clears the tallest plate). */
-const PLATE_CENTER_FRACTION = 0.5;
+export const PLATE_CENTER_FRACTION = 0.5;
 
 /** AUTHORED per-rack paint colors (target-surface TS-B). Racks not listed keep
  *  the default bright-steel paint (`RangeScene` `PLATE_COLOR`). Currently every

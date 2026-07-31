@@ -247,6 +247,8 @@ export interface ESteelTarget extends EmbindHandle {
   getCenterOfMass(): EVector3D;
   /** COPY → delete. */
   getOrientation(): EQuaternion;
+  /** Push a pose computed outside this body (task T10); recomputes the normal. */
+  setOrientation(q: EQuaternion): void;
   /** COPY → delete. */
   localToWorld(local: EVector3D): EVector3D;
   isMoving(): boolean;
@@ -312,6 +314,9 @@ export interface EMatchSimulator extends EmbindHandle {
 
 export interface BtkModule {
   Vector3D: new (x: number, y: number, z: number) => EVector3D;
+  /** `(w, x, y, z)` — note the W-FIRST order, which is the C++ constructor's and NOT
+   *  the `{x,y,z,w}` field order the rest of the bridge passes around. */
+  Quaternion: new (w: number, x: number, y: number, z: number) => EQuaternion;
   Bullet: {
     /** Box bullet (no flight state). */
     new (

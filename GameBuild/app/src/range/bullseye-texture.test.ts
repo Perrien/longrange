@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   buildBullseyeLayer,
   ringColorAt,
@@ -6,7 +7,7 @@ import {
   CENTRE_EDGE,
   MIDDLE_EDGE,
 } from './bullseye-texture';
-import { PLATE_TILE_WIDTH, PLATE_TILE_HEIGHT, PLATE_LAYER_BYTES, hexToRgb } from './plate-surface';
+import { PLATE_TILE_WIDTH, PLATE_TILE_HEIGHT, PLATE_LAYER_BYTES, hexToRgb, createPlateSurface } from './plate-surface';
 import { PLATE_HEX, RING_HEX } from './elr-range-config';
 
 const texelAt = (data: Uint8Array, x: number, y: number) => {
@@ -138,5 +139,125 @@ describe('buildBullseyeLayer', () => {
     }
     expect(discTexels).toBeGreaterThan(0);
     expect(ringTexels / discTexels).toBeCloseTo(1 / 3, 2);
+  });
+});
+
+// --- the first-hit wipe, and its fix (task T4b) -------------------------------
+// The defect: `ELRRangeScene` wrote the bullseye through `writeLayer`, and a hit
+// then overwrote that same layer wholesale with the engine's paint buffer — so the
+// rings were erased by the first shot on every station. These tests reproduce the
+// old behaviour and pin the new one, using the REAL ring art rather than a fixture.
+
+describe('bullseye survives a hit (task T4b)', () => {
+  /** An engine-style buffer: uniform plate paint, with a chip at one texel. */
+  function engineBuffer(chipTexel: number): Uint8Array {
+    const buf = new Uint8Array(PLATE_LAYER_BYTES);
+    const p = hexToRgb(PLATE_HEX);
+    for (let i = 0; i < PLATE_LAYER_BYTES; i += 4) {
+      buf[i] = p.r;
+      buf[i + 1] = p.g;
+      buf[i + 2] = p.b;
+      buf[i + 3] = 255;
+    }
+    // Engine chips reveal metal — deliberately not the paint colour.
+    const o = chipTexel * 4;
+    buf[o] = 0x8c;
+    buf[o + 1] = 0x8c;
+    buf[o + 2] = 0x8c;
+    buf[o + 3] = 255;
+    return buf;
+  }
+
+  /** A texel inside the blue band, found from the ring geometry itself. */
+  function blueTexelIndex(): number {
+    for (let y = 0; y < PLATE_TILE_HEIGHT; y++) {
+      for (let x = 0; x < PLATE_TILE_WIDTH; x++) {
+        const r = texelRadius(x, y);
+        if (r > CENTRE_EDGE + 0.05 && r < MIDDLE_EDGE - 0.05) return y * PLATE_TILE_WIDTH + x;
+      }
+    }
+    throw new Error('no blue texel found — ring geometry changed');
+  }
+
+  const blueIdx = blueTexelIndex();
+  const blue = hexToRgb(RING_HEX);
+
+  it('REPRODUCES the old defect: writeLayer erases the rings', () => {
+    // Kept so a revert to `writeLayer` fails loudly instead of silently regressing
+    // a shipped range's appearance.
+    const s = createPlateSurface([PLATE_HEX]);
+    s.writeLayer(0, buildBullseyeLayer());
+    s.writeLayer(0, engineBuffer(4));
+    const data = s.texture.image.data as Uint8Array;
+    expect(data[blueIdx * 4]).not.toBe(blue.r); // blue gone
+    s.dispose();
+  });
+
+  it('keeps the rings when the art is a BASE layer and the hit composites', () => {
+    const s = createPlateSurface([PLATE_HEX]);
+    s.setBaseLayer(0, buildBullseyeLayer());
+    s.writeEngineLayer(0, engineBuffer(4), PLATE_HEX);
+    const data = s.texture.image.data as Uint8Array;
+    expect([data[blueIdx * 4], data[blueIdx * 4 + 1], data[blueIdx * 4 + 2]]).toEqual([
+      blue.r, blue.g, blue.b,
+    ]);
+    // …and the splat still landed.
+    expect([data[4 * 4], data[4 * 4 + 1], data[4 * 4 + 2]]).toEqual([0x8c, 0x8c, 0x8c]);
+    s.dispose();
+  });
+
+  it('lets a splat chip THROUGH the blue ring, not just around it', () => {
+    // The rings must not become armour: a hit inside the blue band has to mark it.
+    const s = createPlateSurface([PLATE_HEX]);
+    s.setBaseLayer(0, buildBullseyeLayer());
+    s.writeEngineLayer(0, engineBuffer(blueIdx), PLATE_HEX);
+    const data = s.texture.image.data as Uint8Array;
+    expect([data[blueIdx * 4], data[blueIdx * 4 + 1]]).toEqual([0x8c, 0x8c]);
+    s.dispose();
+  });
+
+  it('survives repeat hits', () => {
+    const s = createPlateSurface([PLATE_HEX]);
+    s.setBaseLayer(0, buildBullseyeLayer());
+    for (const t of [4, 9, 400]) s.writeEngineLayer(0, engineBuffer(t), PLATE_HEX);
+    const data = s.texture.image.data as Uint8Array;
+    expect(data[blueIdx * 4]).toBe(blue.r);
+    s.dispose();
+  });
+});
+
+// --- wiring guard -------------------------------------------------------------
+
+describe('ELR + shot-loop wiring uses the compositing path (task T4b)', () => {
+  // A SOURCE-TEXT check, deliberately, and only because the alternative is nothing:
+  // `ELRRangeScene` needs a THREE scene and a 2D canvas, so it cannot be
+  // constructed in the node test env (`vite.config.ts` sets environment: 'node',
+  // and adding `canvas` is forbidden by execution-protocol §3). The composite logic
+  // itself is properly unit-tested above; this guards only the WIRING — that the
+  // scene registers art as a base and the shot loop composites rather than
+  // overwrites. Without it, a revert to `writeLayer` would be caught only by an
+  // owner looking at a plate on device.
+  const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8');
+
+  it('ELRRangeScene registers the bullseye as a BASE layer, not a plain write', () => {
+    const src = read('./ELRRangeScene.ts');
+    expect(src).toContain('setBaseLayer');
+    expect(src).not.toMatch(/plateSurface\.writeLayer\(/);
+  });
+
+  it('the reaction controller writes engine buffers through writeEngineLayer', () => {
+    // Moved here from ScopeView by T5's extraction — the paint write now lives with
+    // the rest of the reaction lifecycle. (This guard failing on that move is the
+    // brittleness a source-text test buys; it is still cheaper than no check.)
+    const src = read('../scope/steel-reactions.ts');
+    expect(src).toContain('writeEngineLayer');
+    expect(src).not.toMatch(/plateSurface\.writeLayer\(/);
+  });
+
+  it('ScopeView no longer touches the plate surface directly', () => {
+    // It delegates to the controller, so neither call should appear.
+    const src = read('../scope/ScopeView.tsx');
+    expect(src).not.toMatch(/plateSurface\.writeLayer\(/);
+    expect(src).not.toMatch(/plateSurface\.writeEngineLayer\(/);
   });
 });

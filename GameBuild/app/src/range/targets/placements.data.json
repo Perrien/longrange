@@ -1,0 +1,50 @@
+{
+  "_readme": "Authored target placements per range (target-system task T3). Consumed by range/targets/placements.ts, which resolves each entry against the target-type and mount registries and hands scenes a ready-to-build ResolvedPlacement. A range with no entry here gets [] and is unaffected.",
+  "_scope": "AUTHORED placements only. Computed layouts stay in code — Range A's ladder is derived (buildRack + BTK authored-inputs model) and the ELR Range solves its stations at runtime against the generated tree field. Neither can be expressed here without losing the derivation; both still produce PlateInstance[] the same way. See placements.ts's header.",
+  "_units": "Distances may be given as distanceYards OR distanceM (exactly one). Sizes are SI metres unless given as widthInches; beam height may be given as beamHeightYards. xOffsetM is lateral offset from the lane centreline, + = right of the shooter.",
+  "placementsVersion": 1,
+  "ranges": {
+    "test-range": {
+      "_note": "ORDER IS LOAD-BEARING: instanceId is the array index, and ScopeView's test-range branch auto-commits plates[0]. The gong must stay first.",
+      "_layout": "Everything stays clear of the NO_HILL_CORRIDOR (10 yd wide, 100 yd long) that test-range-config guarantees down the sight line, and clear of the environment's shooterClearM: 18 grass-free circle. The IDPA sits left, the poppers right, so all three are in one sight picture without occluding each other.",
+      "targets": [
+        {
+          "_note": "The original 12in gong, migrated from TEST_RANGE_GONG (task T9a). Every value here reproduces what that const produced: 100 yd, 12in, dead centre, hung at half the 1.2 yd beam. test-range-targets.test.ts asserts field-for-field equality against the old construction.",
+          "id": "test-gong-100",
+          "typeId": "hanging-gong",
+          "mountId": "chain-beam",
+          "distanceYards": 100,
+          "xOffsetM": 0,
+          "widthInches": 12,
+          "beamHeightYards": 1.2
+        },
+        {
+          "_note": "Stake-mounted IDPA silhouette (owner, task T9b). 18in wide x 30.75in tall. centreYM 1.2876 puts the SHOULDER LINE at 5 ft (1.524 m) above ground — owner spec, 2026-07-31; it was previously staged at 1.05, which drew the shoulders at only 4.22 ft. Feet then sit ~0.90 m up on the stake and the head reaches ~1.67 m, which is how an IDPA target is actually staged: the cardboard is a torso, not a whole body. 1.8 m left of centre keeps it inside the 10 yd corridor's half-width (4.57 m) and well clear of the poppers.",
+          "id": "test-idpa-75",
+          "typeId": "idpa-silhouette",
+          "mountId": "bolt-stake",
+          "distanceYards": 75,
+          "xOffsetM": -1.8,
+          "centreYM": 1.2876
+        },
+        {
+          "_note": "Two poppers sharing one groupId, so COMMIT and resetDownTargets('test-poppers') stand them up together (task T6). 12in wide x 42in tall. NO centreYM: a hinge-stem target is hinged at its own base and stands on the ground, so the height is derived (heightM/2) — owner, 2026-07-31: poppers must sit at or very near ground level.",
+          "id": "test-popper-50a",
+          "typeId": "popper",
+          "mountId": "hinge-stem",
+          "groupId": "test-poppers",
+          "distanceYards": 50,
+          "xOffsetM": 1.4
+        },
+        {
+          "id": "test-popper-50b",
+          "typeId": "popper",
+          "mountId": "hinge-stem",
+          "groupId": "test-poppers",
+          "distanceYards": 50,
+          "xOffsetM": 2.1
+        }
+      ]
+    }
+  }
+}

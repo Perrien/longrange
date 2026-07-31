@@ -121,6 +121,16 @@ export interface ScoreState {
   firstRoundHits: number;
   /** Number of `commitTarget` calls this session. */
   targetsEngaged: number;
+  /**
+   * Hits broken down by the zone struck (task T2), e.g.
+   * `{ 'head-0': 2, 'minus-1': 5 }`. `'plate'` for legacy round plates.
+   *
+   * Counted on exactly the same condition as `hits` — the shot struck the
+   * COMMITTED plate — so `sum(zoneHits) === hits` always holds and the two cannot
+   * tell different stories. Recorded only; no points math and no HUD read it yet
+   * (that is deliberately out of scope, plan §7).
+   */
+  zoneHits: Record<string, number>;
 }
 
 export interface SettingsState {
@@ -231,6 +241,7 @@ export const defaultScore = (): ScoreState => ({
   shotsFired: 0,
   firstRoundHits: 0,
   targetsEngaged: 0,
+  zoneHits: {},
 });
 
 /** Owned gear + active loadout (task 2.2b). Persisted in the v2 save (the arrays
@@ -530,6 +541,10 @@ export const useGameStore = create<GameStore>()((set, get) => ({
         s.session.currentTarget != null &&
         result.hitPlateId === s.session.currentTarget.plateInstanceId;
       const isFirstRoundAtTarget = shotsAtCurrentTarget === 1;
+      // Same gate as `hits`, so sum(zoneHits) === hits by construction. A hit
+      // always carries a zone (`'plate'` at minimum), but fall back rather than
+      // asserting — a dropped counter is not worth breaking a shot over.
+      const zoneId = isHit ? (result.hitZone?.zoneId ?? null) : null;
       return {
         session: {
           ...s.session,
@@ -541,6 +556,10 @@ export const useGameStore = create<GameStore>()((set, get) => ({
           shotsFired: s.score.shotsFired + 1,
           hits: s.score.hits + (isHit ? 1 : 0),
           firstRoundHits: s.score.firstRoundHits + (isHit && isFirstRoundAtTarget ? 1 : 0),
+          zoneHits:
+            zoneId === null
+              ? s.score.zoneHits
+              : { ...s.score.zoneHits, [zoneId]: (s.score.zoneHits[zoneId] ?? 0) + 1 },
         },
       };
     }),

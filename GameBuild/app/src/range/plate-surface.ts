@@ -56,6 +56,30 @@ export interface PlateSurface {
   /** Overwrite one plate's layer (an engine `getTexture()` RGBA buffer, TS-C)
    * and queue a partial GPU upload of just that layer. */
   writeLayer(layer: number, rgba: ArrayLike<number>): void;
+  /**
+   * Register authored ART for a layer (task T4): a face image, drawn scoring rings,
+   * anything that is not flat paint. Stores it as that layer's BASE and draws it.
+   *
+   * A layer with no base behaves exactly as before, which is what keeps every
+   * shipped range on the identical code path — see `writeEngineLayer`.
+   */
+  setBaseLayer(layer: number, rgba: ArrayLike<number>): void;
+  /**
+   * Write an engine paint buffer, preserving any authored art underneath.
+   *
+   * THE DEFECT THIS FIXES (T4b applies it): `writeLayer` overwrites a layer
+   * wholesale, and the ELR Range writes its bullseye rings through that same layer
+   * — so the rings were wiped by the first hit. Compositing keeps them.
+   *
+   * The rule: a texel the engine left at the plate's paint colour is untouched
+   * ground, so the base shows through; anything else is a chip the engine painted,
+   * so the engine wins. That works for arbitrarily complex art because the base is
+   * only ever consulted where the engine says no chip landed.
+   *
+   * With NO base registered this is byte-for-byte `writeLayer` — asserted by test,
+   * because that equivalence is what makes T4 safe for Range A and the ELR Range.
+   */
+  writeEngineLayer(layer: number, rgba: ArrayLike<number>, paintHex: number): void;
   dispose(): void;
 }
 
@@ -79,14 +103,78 @@ export function createPlateSurface(paintColors: readonly number[]): PlateSurface
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.needsUpdate = true; // first upload = the whole atlas
 
+  /** Authored art per layer, kept so an engine write can composite over it rather
+   *  than erase it. Absent for every plate on every shipped range. */
+  const bases = new Map<number, Uint8Array>();
+
+  const upload = (layer: number): void => {
+    texture.addLayerUpdate(layer); // partial upload: only this layer re-sends
+    texture.needsUpdate = true;
+  };
+
+  /**
+   * Request a FULL re-upload of every layer.
+   *
+   * THE BUG THIS FIXES (owner, on device 2026-07-31): the Test Range gong rendered
+   * BLACK until its first hit, then went to plate colour. Cause: three's
+   * `DataArrayTexture` path calls `texStorage3D` to ALLOCATE and then, if
+   * `layerUpdates` is non-empty, uploads ONLY those layers
+   * (`WebGLTextures`, the `isDataArrayTexture` branch) — every other layer is left
+   * undefined. The atlas is created with a full upload pending, but async
+   * `setBaseLayer` calls for the arted plates landed BEFORE the first render and
+   * narrowed that upload to layers 1–3, so layer 0 never got data. It only appeared
+   * once a hit queued layer 0 explicitly.
+   *
+   * So a base-layer write must never narrow the pending upload. It clears the queue
+   * and asks for everything. That is cheap: base layers are written a handful of times
+   * at scene load, and the partial-upload optimisation exists for HIT-time writes,
+   * where the texture has provably been fully uploaded already (a frame has rendered).
+   */
+  const uploadAll = (): void => {
+    texture.clearLayerUpdates();
+    texture.needsUpdate = true;
+  };
+
   return {
     texture,
     writeLayer(layer: number, rgba: ArrayLike<number>): void {
       data.set(rgba, layerByteOffset(layer));
-      texture.addLayerUpdate(layer); // partial upload: only this layer re-sends
-      texture.needsUpdate = true;
+      upload(layer);
+    },
+    setBaseLayer(layer: number, rgba: ArrayLike<number>): void {
+      if (rgba.length !== PLATE_LAYER_BYTES)
+        throw new Error(
+          `plate-surface: base layer must be ${PLATE_LAYER_BYTES} bytes, got ${rgba.length}`,
+        );
+      const copy = new Uint8Array(PLATE_LAYER_BYTES);
+      copy.set(rgba as ArrayLike<number>);
+      bases.set(layer, copy);
+      data.set(copy, layerByteOffset(layer));
+      uploadAll();
+    },
+    writeEngineLayer(layer: number, rgba: ArrayLike<number>, paintHex: number): void {
+      const base = bases.get(layer);
+      if (!base) {
+        // No art on this layer ⇒ the pre-T4 path, unchanged.
+        data.set(rgba, layerByteOffset(layer));
+        upload(layer);
+        return;
+      }
+      const { r, g, b } = hexToRgb(paintHex);
+      const start = layerByteOffset(layer);
+      for (let i = 0; i < PLATE_LAYER_BYTES; i += 4) {
+        // Still the plate's paint colour ⇒ the engine chipped nothing here, so the
+        // art shows through. Anything else is a chip and the engine wins.
+        const src = rgba[i] === r && rgba[i + 1] === g && rgba[i + 2] === b ? base : rgba;
+        data[start + i] = src[i];
+        data[start + i + 1] = src[i + 1];
+        data[start + i + 2] = src[i + 2];
+        data[start + i + 3] = src[i + 3];
+      }
+      upload(layer);
     },
     dispose(): void {
+      bases.clear();
       texture.dispose();
     },
   };

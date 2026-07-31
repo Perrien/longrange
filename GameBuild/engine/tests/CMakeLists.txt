@@ -10,6 +10,7 @@ add_executable(engine_tests
   test_zeroing.cpp
   test_steel_target_paint.cpp
   test_steel_target_settle.cpp
+  test_steel_target_setorientation.cpp
 )
 
 target_link_libraries(engine_tests PRIVATE
