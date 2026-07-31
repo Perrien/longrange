@@ -124,6 +124,22 @@ export function findChronoSummary(
   return summaries.find((s) => s.rifleId === rifleId && s.lotId === lotId);
 }
 
+/**
+ * D15's named re-true loop (bc-truing-plan T4): true when a lot's BC was fitted
+ * (`effective.bcSetAt`) BEFORE its most recent chrono commit — i.e. the BC was
+ * trued against an MV that's since been superseded, so the card and the
+ * asserted hold have quietly drifted apart. Purely informational (D15: last
+ * write wins, neither lever invalidates the other) — this only flags the
+ * mismatch, never clears or recomputes anything.
+ *
+ * `bcSetAt` absent means "unknown" (a save from before this field existed, or a
+ * BC that's never been trued) and never warns — there's nothing to compare.
+ */
+export function isBcStaleVsChrono(bcSetAtIso: string | undefined, chrono: ChronoSummary | undefined): boolean {
+  if (!bcSetAtIso || !chrono) return false;
+  return new Date(chrono.updatedAtIso).getTime() > new Date(bcSetAtIso).getTime();
+}
+
 /** Drop every summary belonging to a rifle (cascade on rifle delete). */
 export function pruneChronoForRifle(summaries: ChronoSummary[], rifleId: string): ChronoSummary[] {
   return summaries.filter((s) => s.rifleId !== rifleId);

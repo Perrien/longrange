@@ -176,16 +176,21 @@ an ordered roadmap, §K). Full decisions in
 
 #### Solver truing (two-lever: chronograph → MV, node → BC)
 Fits the model to the player's confirmed reality. Two independent levers, each moving one
-value: **chronograph sets effective MV** (the only thing that ever does), and **confirming a
-downrange node fits effective BC/drag-scale** (always — with MV held at its current effective
-value, chrono if one exists else box). The levers never swap roles; neither invalidates the
-other; whichever was written last is current ("last write wins"). A single node can't separate
-an MV error from a BC error, so a BC fit made before chronographing dumps that residual onto BC
-and stays **provisional** until the curve is chrono-anchored (D13). A node's own measured value
-is never overwritten by a recompute; only unmeasured distances ride the retrued curve (D12).
-Re-truing after a new chrono is a manual re-confirm of the affected node (D15).
-**Not built** — planned 2.5. Lever decisions locked: D11–D13 (2026-07-21), D14 (2026-07-24),
-**D15 (2026-07-26, supersedes D11's no-chrono path)** — see
+value: **chronograph sets effective MV** (the only thing that ever does), and a BC fit sets
+**effective BC/drag-scale**, with MV held at its current effective value (chrono if one exists
+else box). The levers never swap roles; neither invalidates the other; whichever was written
+last is current ("last write wins"). A single fit can't separate an MV error from a BC error,
+so a BC fit made before chronographing dumps that residual onto BC and stays **provisional**
+until the curve is chrono-anchored (D13). Re-truing after a new chrono is a manual re-fit,
+flagged by a "chrono is newer than your BC" signal rather than auto-recomputed (D15).
+**Both levers built** — lever 1 (chrono → MV) **2026-07-27** via the DOPE-first plan (step 3);
+lever 2 (BC) **2026-07-31** via [`Plans/bc-truing-plan.md`](./Plans/bc-truing-plan.md), as an
+**asserted-hold fit** (`engine-bridge/bc-fit.ts` bracketed bisection + the in-scope DOPE panel's
+"Update BC" dialog + `state/store.ts`'s `setLotEffectiveBc`) — **not** via a confirmed downrange
+node, which still doesn't exist (see the node/confidence system below, still not built). D15
+frames a future confirmed node as a *second producer* of the same `effective.bc` value once
+that system is built — this ships the first producer. Lever decisions locked: D11–D13
+(2026-07-21), D14 (2026-07-24), **D15 (2026-07-26, supersedes D11's no-chrono path)** — see
 [`Plans/D15-two-lever-truing-independent.md`](./Plans/D15-two-lever-truing-independent.md),
 [`archive/increment-2.4-plan.md`](./archive/increment-2.4-plan.md) §8, and
 [`archive/increment-2.md`](./archive/increment-2.md) §2.5.
@@ -193,16 +198,18 @@ Re-truing after a new chrono is a manual re-confirm of the affected node (D15).
 #### Exposed effective MV/BC + manual override ("manual truing")
 Surface the two values currently driving the believed DOPE table (effective MV, BC)
 directly in the table/Data Book — starting at box values, then updating as the
-chronograph feeds MV and confirmed nodes feed BC (see Solver truing, above) — and let
+chronograph feeds MV and a BC fit feeds BC (see Solver truing, above) — and let
 the player hand-edit either value directly. This is the classic field technique: notice
 the actual required holdover differs from the card (card says 5 MOA at some range, but
 you're actually holding 5.25) and nudge BC (or MV) until the computed table matches.
-Functionally this sets the same effective-MV/BC field that solver truing's node-confirm
-path sets automatically — this just adds a second, direct way to move it, without
-waiting for a confirmed node.
-**Not built** — unscheduled (no increment assigned yet). Sits inside Solver truing
-(above) and would surface in the Data Book screen (§I, `Design/execution/PROGRESS.md`
-2.4f) once both exist. **D14 locked with owner 2026-07-24** (see
+**MV/BC readout: built** (DOPE-first plan step 2/`DopeBookScreen.tsx`'s status chips — value +
+source tag, `(box)`/`(chrono)`/`(trued)`/`(provisional)`). **Standalone manual-nudge field: not
+built, and no longer planned as a stopgap** — resolved 2026-07-31 (`Plans/dope-first-plan.md`
+step 5 close-out): the BC-truing "Update BC" dialog's editable, pre-filled come-up field
+already gives the player the equivalent hand-truing control (assert the number you're actually
+holding, the game fits BC to it) without a second, separate raw-BC input. D14's overwrite rule
+(below) would still apply if a raw manual-BC field is ever added on top of a future confirmed-
+node system, but nothing currently builds one. **D14 locked with owner 2026-07-24** (see
 [`archive/increment-2.4-plan.md`](./archive/increment-2.4-plan.md) §8): a confirmed
 node's auto-fit always overwrites a manual MV/BC override — manual edits are an
 unmeasured placeholder, useful for previewing/hand-truing between confirmed nodes, but

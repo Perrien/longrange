@@ -412,13 +412,14 @@ export interface GameStore {
   /** Replace the whole inventory (used by persistence hydration). */
   applyInventory(inventory: InventoryState): void;
   /** Set a lot's effective BC from an asserted-hold fit (D15 lever 2, bc-truing-plan
-   *  T2/"Update BC"). Writes `effective.bc` + `bcSource`, leaving the MV side
-   *  (`mvMps`/`mvSource`) byte-identical — the two truing levers are independent
+   *  T2/"Update BC"). Writes `effective.bc` + `bcSource` + `bcSetAt` (T4 — the
+   *  timestamp the re-true signal compares against a later chrono), leaving the MV
+   *  side (`mvMps`/`mvSource`) byte-identical — the two truing levers are independent
    *  and neither invalidates the other (D15). The caller decides `source` per D13:
    *  `'trued'` when a `ChronoSummary` exists for the rifle+lot, `'provisional'`
    *  otherwise (a BC fit with no chrono behind it is provisional no matter what).
    *  No-op for an unknown lot id. */
-  setLotEffectiveBc(lotId: string, bc: number, source: EffectiveSource): void;
+  setLotEffectiveBc(lotId: string, bc: number, source: EffectiveSource, nowIso: string): void;
 
   // DOPE nodes (task 2.4a)
   /** Confirm a DOPE node: replace-by-station (D5 — a re-confirm at the same
@@ -459,11 +460,18 @@ function withLotEffectiveMv(lots: AmmoLot[], lotId: string, avgMps: number): Amm
 /** Set a lot's effective BC from an asserted-hold fit (D15 lever 2, confirm-hold
  *  → BC / bc-truing-plan T2). Preserves any existing MV side untouched (the
  *  levers are independent — a BC fit never touches MV); a lot with no
- *  `effective` yet gets `mvSource: 'box'`. Pure — returns a new array. */
-function withLotEffectiveBc(lots: AmmoLot[], lotId: string, bc: number, source: EffectiveSource): AmmoLot[] {
+ *  `effective` yet gets `mvSource: 'box'`. Stamps `bcSetAt` (T4, D15's re-true
+ *  loop) so a later chrono can be compared against it. Pure — returns a new array. */
+function withLotEffectiveBc(
+  lots: AmmoLot[],
+  lotId: string,
+  bc: number,
+  source: EffectiveSource,
+  nowIso: string,
+): AmmoLot[] {
   return lots.map((l) =>
     l.id === lotId
-      ? { ...l, effective: { ...(l.effective ?? { mvSource: 'box' as const }), bc, bcSource: source } }
+      ? { ...l, effective: { ...(l.effective ?? { mvSource: 'box' as const }), bc, bcSource: source, bcSetAt: nowIso } }
       : l,
   );
 }
@@ -814,9 +822,9 @@ export const useGameStore = create<GameStore>()((set, get) => ({
 
   applyInventory: (inventory) => set({ inventory }),
 
-  setLotEffectiveBc: (lotId, bc, source) =>
+  setLotEffectiveBc: (lotId, bc, source, nowIso) =>
     set((s) => ({
-      inventory: { ...s.inventory, ammoLots: withLotEffectiveBc(s.inventory.ammoLots, lotId, bc, source) },
+      inventory: { ...s.inventory, ammoLots: withLotEffectiveBc(s.inventory.ammoLots, lotId, bc, source, nowIso) },
     })),
 
   confirmNode: (node) =>

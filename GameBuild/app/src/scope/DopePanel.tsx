@@ -30,7 +30,7 @@ import { gearSolveContext, type GearSolveContext } from '../game/active-gear';
 import { windToVec } from '../game/firing-solution';
 import { assembleComeUp, nearestRow, type ComeUpDisplayRow } from '../game/dope-row';
 import { comeUpStationsM } from '../game/dope-book';
-import { findChronoSummary } from '../game/chrono';
+import { findChronoSummary, isBcStaleVsChrono } from '../game/chrono';
 import { getRifleModel, isRimfireCartridge, catalogEffectiveRangeYd, catalogTwistM, believedLoad } from '../game/catalog';
 import { getGameLoad, DEFAULT_GAME_LOAD_ID, DEFAULT_GAME_LOAD_CARTRIDGE_ID, SIGHT_HEIGHT_M } from '../game/loads';
 import { recommendedZeroM } from '../game/zero-distance';
@@ -91,6 +91,10 @@ export function DopePanel({ onOpenBook }: { onOpenBook?: () => void } = {}) {
   const notZeroed = hasGear ? !activeRifle!.playerZero : false;
   const chrono = hasGear ? findChronoSummary(chronoSummaries, activeRifle!.id, activeLot!.id) : undefined;
   const notChronoed = hasGear ? !chrono : false;
+  // D15's named re-true loop (bc-truing-plan T4): the BC was fitted before the
+  // most recent chrono, so the card and the asserted hold have quietly drifted
+  // apart. Purely informational — nothing is invalidated or recomputed.
+  const staleBc = hasGear ? isBcStaleVsChrono(activeLot!.effective?.bcSetAt, chrono) : false;
 
   // Update BC (bc-truing-plan T3, D15 lever 2): the dialed elevation (pre-fill
   // source, B1) and the store action the dialog's Update button writes through.
@@ -178,7 +182,7 @@ export function DopePanel({ onOpenBook }: { onOpenBook?: () => void } = {}) {
 
   const handleUpdateBc = () => {
     if (!bcFitResult?.ok || !activeLot) return;
-    setLotEffectiveBc(activeLot.id, bcFitResult.bc, chrono ? 'trued' : 'provisional');
+    setLotEffectiveBc(activeLot.id, bcFitResult.bc, chrono ? 'trued' : 'provisional', new Date().toISOString());
     closeBcDialog();
   };
 
@@ -367,6 +371,11 @@ export function DopePanel({ onOpenBook }: { onOpenBook?: () => void } = {}) {
               {[notZeroed ? '⚠ not zeroed' : null, notChronoed ? '⚠ not chronoed' : null]
                 .filter(Boolean)
                 .join(' · ')}
+            </div>
+          )}
+          {hasGear && staleBc && (
+            <div style={{ marginBottom: 4, fontSize: 10, color: '#e8c95a' }}>
+              ⚠ chrono is newer than your BC — re-true at distance
             </div>
           )}
           {!error && module && rows.length > 0 && (

@@ -1,10 +1,25 @@
 # DOPE-first plan — auto-populated, chrono-fed DOPE book to 1000 yd
 
-**Status:** DRAFT / basic plan — locked as the direction 2026-07-26. Detailed per-step plan
-to follow. This supersedes the increment 2.4b–f node-confirmation sequencing *as the path to a
-working DOPE book* — the heavy node/confidence machinery is no longer a prerequisite. Builds on
+**Status: COMPLETE 2026-07-31 — all five steps shipped.** Locked as the direction
+2026-07-26; supersedes the increment 2.4b–f node-confirmation sequencing *as the path to a
+working DOPE book* — the heavy node/confidence machinery was not a prerequisite. Built on
 D15 ([`D15-two-lever-truing-independent.md`](./D15-two-lever-truing-independent.md)): two
 independent levers, chrono→MV, confirm-hold→BC.
+
+**Step 5 — DONE (2026-07-31)** via [`bc-truing-plan.md`](./bc-truing-plan.md) (T1–T4, all
+owner-verification stops confirmed on device). Shipped as an **asserted-hold fit**, not a
+measured confirm: the player dials/holds until rounds land, then presses **Update BC** in the
+in-scope DOPE panel; a bracketed bisection (`engine-bridge/bc-fit.ts`) fits the BC that
+reproduces that come-up, writes it to `lot.effective.bc` via `setLotEffectiveBc` (D13
+provisional/trued labelling), and the table recomputes. The plan's two "open decisions" below
+are resolved by what actually shipped, not left open: **(1)** the manual-BC-nudge stopgap is
+subsumed by the dialog's editable pre-filled field — no separate manual-truing UI was needed;
+**(2)** the `provisional` label is carried **from the start** (D13/D15), not deferred. T4 also
+added the **stale-BC signal** (`game/chrono.ts`'s `isBcStaleVsChrono`, D15's named re-true
+loop): a chip in both the in-scope panel and the DOPE book when a chrono postdates the BC it
+was fitted against. See `bc-truing-plan.md` for the full build record and scope fence (no
+impact capture, no group tracking, no DopeNode recording — this is deliberately narrower than
+the old 2.4b–f node/confidence system, which remains valid future work per D15).
 
 **Steps 2–4 — DONE (2026-07-27)** via the expanded [`dope-book-ui-plan.md`](../archive/dope-book-ui-plan.md)
 (P1–P4): the tabbed rifle-scoped DOPE book (status header, come-up table extended past
@@ -100,12 +115,16 @@ No engine blocker (sim has no distance cap). Extend the range config's target st
 the DOPE table's hardcoded `MAX_RANGE_M` (currently 500 yd) so shots and the come-up table
 reach ~1000 yd. Primarily content/config.
 
-### 5. BC from confirming hold at distance
+### 5. BC from confirming hold at distance — DONE (2026-07-31)
 Capture the hold the player actually needed at a downrange target and 1-D-solve BC so the
 computed come-up matches. This is D15 lever 2 (confirm-hold → BC). Last because it needs the
 long range (step 4) to have a far shot to true against and MV pinned (step 3) so the residual
 is genuinely BC. This is a *narrow* confirm-a-hold interaction — **not** the full node/
-confidence-tier system.
+confidence-tier system. Shipped per [`bc-truing-plan.md`](./bc-truing-plan.md): an **asserted
+hold** (not a measured/observed one) — the player dials/holds until rounds land, then presses
+Update BC in the in-scope DOPE panel to fit BC to that number. Bracketed bisection
+(`engine-bridge/bc-fit.ts`), a plausible-BC-band rejection with a readable reason (rather than
+clamping), and the D15 re-true signal (`isBcStaleVsChrono`) when a later chrono outdates the fit.
 
 ## What this deliberately drops (vs. old 2.4b–f)
 
@@ -114,12 +133,14 @@ confidence-tier system.
   shots) but are layered on later; the node flow just becomes a second producer of the same BC
   value, exactly as D15 already frames it.
 
-## Open decisions (deferred to detailed plan)
+## Open decisions — RESOLVED by what shipped (bc-truing-plan.md, 2026-07-31)
 
-1. **Manual BC field as a stopgap before step 4?** D14 "manual truing" (a nudgeable BC field)
-   is smaller than confirm-at-distance and could ship first. Or go straight to confirm-hold.
-2. **Carry the `provisional` label from the start?** D15 keeps no-chrono BC fits provisional;
-   the minimal path could skip confidence labels initially and add them later.
+1. **Manual BC field as a stopgap before step 4?** Resolved: **not needed.** Went straight to
+   confirm-hold (Update BC); the dialog's editable, pre-filled come-up field already gives the
+   player direct control over the asserted number, so a separate D14 manual-nudge UI was never
+   built as a stopgap.
+2. **Carry the `provisional` label from the start?** Resolved: **yes** — D13/D15's
+   provisional/trued labelling is live from T2 onward; no confidence-label deferral.
 
 ## Resolved: zeroing model
 

@@ -939,7 +939,7 @@ describe('chronograph (task 2.4e)', () => {
   });
 });
 
-describe('setLotEffectiveBc (bc-truing-plan T2, D15 lever 2)', () => {
+describe('setLotEffectiveBc (bc-truing-plan T2/T4, D15 lever 2)', () => {
   it('writes bc + source, leaving mvMps/mvSource byte-identical', () => {
     const st = useGameStore.getState();
     const rid = st.acquireRifle('65cm-custom', { rng: () => 0.5 });
@@ -949,7 +949,7 @@ describe('setLotEffectiveBc (bc-truing-plan T2, D15 lever 2)', () => {
     st.commitChronoString('2026-07-31T00:00:00.000Z'); // effective.mvMps = 805, mvSource: 'chrono'
     const before = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!.effective;
 
-    st.setLotEffectiveBc(lid, 0.251, 'trued');
+    st.setLotEffectiveBc(lid, 0.251, 'trued', '2026-07-31T01:00:00.000Z');
 
     const lot = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!;
     expect(lot.effective?.bc).toBeCloseTo(0.251, 9);
@@ -963,7 +963,7 @@ describe('setLotEffectiveBc (bc-truing-plan T2, D15 lever 2)', () => {
     const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
     expect(useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!.effective).toBeUndefined();
 
-    st.setLotEffectiveBc(lid, 0.243, 'provisional');
+    st.setLotEffectiveBc(lid, 0.243, 'provisional', '2026-07-31T01:00:00.000Z');
 
     const lot = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!;
     expect(lot.effective?.bc).toBeCloseTo(0.243, 9);
@@ -974,8 +974,16 @@ describe('setLotEffectiveBc (bc-truing-plan T2, D15 lever 2)', () => {
 
   it('is a no-op for an unknown lot id', () => {
     const before = useGameStore.getState().inventory.ammoLots;
-    useGameStore.getState().setLotEffectiveBc('no-such-lot', 0.3, 'trued');
+    useGameStore.getState().setLotEffectiveBc('no-such-lot', 0.3, 'trued', '2026-07-31T01:00:00.000Z');
     expect(useGameStore.getState().inventory.ammoLots).toEqual(before);
+  });
+
+  it('stamps bcSetAt (T4, D15 re-true signal)', () => {
+    const st = useGameStore.getState();
+    const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
+    st.setLotEffectiveBc(lid, 0.251, 'provisional', '2026-07-31T01:00:00.000Z');
+    const lot = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!;
+    expect(lot.effective?.bcSetAt).toBe('2026-07-31T01:00:00.000Z');
   });
 
   it('survives a save/load round trip', async () => {
@@ -983,7 +991,7 @@ describe('setLotEffectiveBc (bc-truing-plan T2, D15 lever 2)', () => {
     const unsub = persistSettingsOnChange(useGameStore, store);
     const st = useGameStore.getState();
     const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
-    st.setLotEffectiveBc(lid, 0.257, 'provisional'); // inventory change → persist
+    st.setLotEffectiveBc(lid, 0.257, 'provisional', '2026-07-31T01:00:00.000Z'); // inventory change → persist
     await new Promise((r) => setTimeout(r, 0));
     unsub();
 
@@ -993,6 +1001,7 @@ describe('setLotEffectiveBc (bc-truing-plan T2, D15 lever 2)', () => {
     const lot = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!;
     expect(lot.effective?.bc).toBeCloseTo(0.257, 9);
     expect(lot.effective?.bcSource).toBe('provisional');
+    expect(lot.effective?.bcSetAt).toBe('2026-07-31T01:00:00.000Z');
   });
 });
 

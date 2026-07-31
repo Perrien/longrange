@@ -25,7 +25,7 @@ import { gearSolveContext } from '../game/active-gear';
 import { windToVec } from '../game/firing-solution';
 import { assembleComeUp, nearestRow, type ComeUpDisplayRow } from '../game/dope-row';
 import { comeUpStationsM, believedVerticalSdRad } from '../game/dope-book';
-import { findChronoSummary, type ChronoSummary } from '../game/chrono';
+import { findChronoSummary, isBcStaleVsChrono, type ChronoSummary } from '../game/chrono';
 import {
   getRifleModel,
   getAmmoLoad,
@@ -150,6 +150,10 @@ export function DopeBookScreen({ onClose }: { onClose: () => void }) {
   const zeroDistM = rifle?.playerZero?.zeroRangeM;
   const notZeroed = !rifle?.playerZero;
   const notChronoed = !chrono;
+  // D15's named re-true loop (bc-truing-plan T4): the BC was fitted before the
+  // most recent chrono, so the card and the asserted hold have quietly drifted
+  // apart. Purely informational — nothing is invalidated or recomputed.
+  const staleBc = isBcStaleVsChrono(lot?.effective?.bcSetAt, chrono);
 
   return (
     <div
@@ -208,6 +212,7 @@ export function DopeBookScreen({ onClose }: { onClose: () => void }) {
                   BC {fmt(bc.value, 3)} {bc.model} <span style={{ opacity: 0.6 }}>({bc.source})</span>
                 </Chip>
               )}
+              {staleBc && <Chip warn>⚠ chrono is newer than your BC — re-true at distance</Chip>}
             </div>
 
             {/* Tabs */}

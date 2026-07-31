@@ -10,6 +10,7 @@ import {
   findChronoSummary,
   pruneChronoForRifle,
   pruneChronoForLot,
+  isBcStaleVsChrono,
   type ChronoSummary,
 } from './chrono';
 
@@ -125,5 +126,35 @@ describe('prune helpers (cascade)', () => {
   it('pruneChronoForLot drops every summary for a lot', () => {
     const out = pruneChronoForLot(summaries, 'l1');
     expect(out.map((s) => s.lotId)).toEqual(['l2']);
+  });
+});
+
+describe('isBcStaleVsChrono (bc-truing-plan T4, D15 re-true loop)', () => {
+  const chrono = (updatedAtIso: string): ChronoSummary => ({
+    rifleId: 'r1',
+    lotId: 'l1',
+    shots: 2,
+    avgMps: 820,
+    sdMps: 1,
+    minMps: 819,
+    maxMps: 821,
+    updatedAtIso,
+  });
+
+  it('stale: the chrono is newer than the BC fit', () => {
+    expect(isBcStaleVsChrono('2026-07-30T00:00:00.000Z', chrono('2026-07-31T00:00:00.000Z'))).toBe(true);
+  });
+
+  it('not stale: the BC fit is newer than (or same as) the chrono', () => {
+    expect(isBcStaleVsChrono('2026-07-31T00:00:00.000Z', chrono('2026-07-30T00:00:00.000Z'))).toBe(false);
+    expect(isBcStaleVsChrono('2026-07-31T00:00:00.000Z', chrono('2026-07-31T00:00:00.000Z'))).toBe(false);
+  });
+
+  it('never warns when bcSetAt is unknown (absent)', () => {
+    expect(isBcStaleVsChrono(undefined, chrono('2026-07-31T00:00:00.000Z'))).toBe(false);
+  });
+
+  it('never warns when there is no chrono', () => {
+    expect(isBcStaleVsChrono('2026-07-30T00:00:00.000Z', undefined)).toBe(false);
   });
 });

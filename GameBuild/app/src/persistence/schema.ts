@@ -63,6 +63,13 @@ export interface EffectiveParams {
   bc?: number;
   mvSource: EffectiveSource;
   bcSource: EffectiveSource;
+  /** ISO timestamp of the last BC fit (bc-truing-plan T4, D15's re-true loop).
+   *  Additive-optional, no version bump; absent means "unknown, don't warn" —
+   *  a save from before this field existed, or a BC that's never been trued.
+   *  Compared against the lot's `ChronoSummary.updatedAtIso` to flag a BC fitted
+   *  before the most recent chrono (stale, but never invalidated — D15: last
+   *  write wins). */
+  bcSetAt?: string;
 }
 
 /** A specific rifle the player owns (v2). Truth = map(draws, catalog ranges);
@@ -253,6 +260,8 @@ function validateEffective(e: unknown, ctx: string): void {
     fail(`${ctx}.effective.mvSource must be box|chrono|trued|provisional`);
   if (typeof o.bcSource !== 'string' || !EFFECTIVE_SOURCES.has(o.bcSource))
     fail(`${ctx}.effective.bcSource must be box|chrono|trued|provisional`);
+  if (o.bcSetAt !== undefined && typeof o.bcSetAt !== 'string')
+    fail(`${ctx}.effective.bcSetAt must be a string when present`);
 }
 
 function validateLot(l: unknown, i: number): void {
