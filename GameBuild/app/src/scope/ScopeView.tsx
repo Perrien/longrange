@@ -36,7 +36,6 @@ import {
 } from './perf-hud';
 import { pickAimedPlate, resolveTargetPlate } from './aim-pick';
 
-import { TEST_RANGE_GROUND } from '../range/test-range-config';
 import type { SteelSceneApi } from '../range/steel-scene-api';
 import { WoodedZeroScene } from '../range/WoodedZeroScene';
 import { snapshotWoodedZero } from '../range/wooded-zero-config';
@@ -45,7 +44,7 @@ import { cameraReachFor, getRangeDefinition, shotBudgetFor } from '../range/rang
 import { solveGear, createGearScatter, gearZeroOffset } from '../engine-bridge/gear-solve';
 import { gearSolveContext, type GearSolveContext } from '../game/active-gear';
 import { recommendedZeroM } from '../game/zero-distance';
-import { WIND_MARKERS } from '../range/wind-markers-config';
+import { windMarkersFor } from '../range/wind-markers-config';
 import { initWindMarkers, updateWindMarkers, disposeWindMarkers } from './WindMarkers';
 import { initMirage, renderSceneWithMirage, disposeMirage, MIRAGE_REFERENCE_DISTANCE_M } from './Mirage';
 import {
@@ -410,20 +409,14 @@ export function ScopeView({
     initBulletTrace(scene);
     // Wind flags/socks (task 1.7b): built once at the store's CURRENT style;
     // `updateWindMarkers` rebuilds lazily if the player switches style later.
-    // Every scene keeps only the markers that fit its own lane length (Test
-    // Range Stage 1) — on a short lane the far markers would float mid-forest.
-    // The Test Range itself gets none at all (owner request 2026-07-21): it's
-    // a calm sandbox, so a flag reading zero wind is just clutter.
-    const laneLenM = sightIn
-      ? sightIn.laneLengthM
-      : sceneType === 'test-range'
-        ? TEST_RANGE_GROUND.laneLengthM
-        : RANGE_A_GROUND.laneLengthM;
     // Capability, not scene identity (2026-07-26): whether this range plants
-    // wind flags is a property of the range, not of which builder drew it.
-    const markerSpecs = rangeDefinition.windMarkers
-      ? WIND_MARKERS.filter((m) => m.distanceM <= laneLenM - 10)
-      : [];
+    // wind flags, and which ladder, is a property of the range, not of which
+    // builder drew it (wind-system-btk-port W1: each range now names its own
+    // ladder via `windMarkersFor`, rather than sharing Range A's flat one
+    // filtered by lane length — that filter used to fall through to Range A's
+    // own lane length on the ELR range, planting its markers at `groundYM: 0`
+    // while the ELR terrain rose out from under them; see the plan's P5/P6).
+    const markerSpecs = windMarkersFor(rangeDefinition.windMarkers);
     initWindMarkers(scene, markerSpecs, store().settings.windMarkerStyle);
     // Mirage shimmer (task 1.7c): a post-process pass between this world render
     // and the reticle's separate 2D overlay canvas (untouched by this).

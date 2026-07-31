@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { TEST_RANGE_GONG, TEST_RANGE_GROUND } from './test-range-config';
-import { WIND_MARKERS, MARKER_OFFSET_YARDS } from './wind-markers-config';
+import { RANGE_A_WIND_MARKERS, MARKER_OFFSET_YARDS } from './wind-markers-config';
 import { yardsToMeters, inchesToMeters } from '../units';
 
 describe('Test Range gong', () => {
@@ -23,7 +23,7 @@ describe('Test Range gong', () => {
 
 describe('Test Range ground + wind-marker fit', () => {
   it('keeps exactly the 100-yd wind marker under the lane-length filter', () => {
-    const surviving = WIND_MARKERS.filter((m) => m.distanceM <= TEST_RANGE_GROUND.laneLengthM - 10);
+    const surviving = RANGE_A_WIND_MARKERS.filter((m) => m.distanceM <= TEST_RANGE_GROUND.laneLengthM - 10);
     expect(surviving.map((m) => m.distanceYards)).toEqual([100]);
   });
 

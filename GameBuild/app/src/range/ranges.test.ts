@@ -27,9 +27,9 @@ describe('range registry', () => {
     // calm fundamentals sandbox, and the Wooded Zero Range carries only a token
     // breeze (owner, 2026-07-26 — "there are flags for wind, remove them").
     const flags = (id: string) => getRangeDefinition(id).windMarkers;
-    expect(flags('range-a')).toBe(true);
-    expect(flags('test-range')).toBe(false);
-    expect(flags('wooded-zero')).toBe(false);
+    expect(flags('range-a')).toBe('range-a');
+    expect(flags('test-range')).toBeNull();
+    expect(flags('wooded-zero')).toBeNull();
   });
 
   it('marks the zeroing bay as paper and both non-zero ranges as steel', () => {
@@ -73,7 +73,7 @@ describe('range registry', () => {
       expect(def.sceneType).toBe('elr-range');
       expect(def.targetKind).toBe('steel');
       expect(def.zeroable).toBe(false);
-      expect(def.windMarkers).toBe(true);
+      expect(def.windMarkers).toBe('elr');
     });
 
     it('carries the reach a 2 km world needs', () => {

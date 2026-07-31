@@ -1,4 +1,5 @@
-// Range-type registry (task 2.3a, D1). A small, expandable description of each
+// Range-type registry (task 2.3a, D1; `windMarkers` became a marker-set id
+// wind-system-btk-port W1). A small, expandable description of each
 // range the game offers: its identity, its unit character, which scene builder
 // renders it, whether it is zeroable, and (for sight-in-style bays) its fixed
 // physical stations. Future ranges (2.4 DOPE range, 2.7 Range B, a later field
@@ -10,6 +11,8 @@
 // Range A keeps
 // building its own ladder in `range-a-config.ts` — its `stations` here are empty
 // (it is not a fixed-station bay).
+
+import type { WindMarkerSetId } from './wind-markers-config';
 
 /** Which scene builder renders a range. */
 export type RangeSceneType = 'steel-racks' | 'test-range' | 'wooded-zero' | 'elr-range';
@@ -86,17 +89,22 @@ export interface RangeDefinition {
   /** Whether the zeroing flow (2.3d) is available on this range. */
   zeroable: boolean;
   /**
-   * Whether downrange wind flags/socks are planted.
+   * Which downrange wind-marker ladder is planted here, or `null` for none.
    *
    * A capability rather than another `sceneType` test (the pattern `targetKind`
-   * replaced — see `paper-bay-scene.ts`). Off on ranges that are about
+   * replaced — see `paper-bay-scene.ts`). `null` on ranges that are about
    * fundamentals rather than reading a field: the Test Range is a calm sandbox,
    * and the Wooded Zero Range carries only a token breeze that moves the tree
    * tops and does not meaningfully move the bullet, so a row of flags would
    * advertise a wind-reading problem the player is not being asked to solve
    * (owner, 2026-07-26).
+   *
+   * Was a plain `boolean` (every marked range got Range A's flat ladder) until
+   * wind-system-btk-port W1: the ELR range shared that boolean and so inherited
+   * Range A's `groundYM: 0` markers, planting them buried in its own sloped
+   * hillside. Each range now names its OWN ladder (`wind-markers-config.ts`).
    */
-  windMarkers: boolean;
+  windMarkers: WindMarkerSetId | null;
   /** Fixed stations for a sight-in bay; empty for a steel range (which builds its
    *  own rack ladder). */
   stations: RangeStation[];
@@ -128,7 +136,7 @@ const RANGE_A: RangeDefinition = {
   sceneType: 'steel-racks',
   targetKind: 'steel',
   zeroable: false,
-  windMarkers: true,
+  windMarkers: 'range-a',
   stations: [],
 };
 
@@ -143,7 +151,7 @@ const TEST_RANGE: RangeDefinition = {
   sceneType: 'test-range',
   targetKind: 'steel',
   zeroable: false, // steel sandbox — no paper face to group on
-  windMarkers: false, // calm sandbox: a flag reading zero wind is just clutter
+  windMarkers: null, // calm sandbox: a flag reading zero wind is just clutter
   stations: [],
 };
 
@@ -164,7 +172,7 @@ const WOODED_ZERO: RangeDefinition = {
   sceneType: 'wooded-zero',
   targetKind: 'paper',
   zeroable: true,
-  windMarkers: false, // token breeze only — see the field doc on RangeDefinition
+  windMarkers: null, // token breeze only — see the field doc on RangeDefinition
   stations: [
     { nominalDistance: 25, side: -1, azimuthDeg: -6.0 },
     { nominalDistance: 50, side: -1, azimuthDeg: -2.0 },
@@ -181,7 +189,7 @@ const ELR_RANGE: RangeDefinition = {
   sceneType: 'elr-range',
   targetKind: 'steel',
   zeroable: false,
-  windMarkers: true,
+  windMarkers: 'elr',
   camera: { nearM: 10, farM: 12000 },
   stations: [],
 };
