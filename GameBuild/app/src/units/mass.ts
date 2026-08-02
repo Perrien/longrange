@@ -8,9 +8,15 @@
 // module — never inline in components.
 
 const KG_PER_GRAIN = 0.00006479891;
+// Exact international avoirdupois pound (rifle-ammo-store S9 — the recoil
+// readout's rifle-weight reference table is sourced in lb, ballistic-derivation's
+// recoilVelocityMps wants SI throughout).
+const KG_PER_POUND = 0.45359237;
 
 // --- to kilograms ---
 export const grainsToKg = (gr: number): number => gr * KG_PER_GRAIN;
+export const poundsToKg = (lb: number): number => lb * KG_PER_POUND;
 
 // --- from kilograms ---
 export const kgToGrains = (kg: number): number => kg / KG_PER_GRAIN;
+export const kgToPounds = (kg: number): number => kg / KG_PER_POUND;

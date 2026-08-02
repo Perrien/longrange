@@ -1,54 +1,35 @@
-// Store — acquire rifles + ammo (task 2.2c, D3). MINIMAL HOLDING VERSION
-// (rifle-ammo-store S4 step 7): the real two-step build screen (cartridge list
-// → sliders → Acquire, D17) is S9. This version exists only so the app keeps
-// compiling and stays usable between S4 and S9 — every cartridge gets a single
-// "default build" rifle row (reference barrel, first twist option) and every
-// authored preset (game/spec.ts's PRESETS) gets an ammo row. No sliders, no
-// derived readouts yet.
-//
-// Shows BELIEVED values only (guardrail §4.8 / catalog §0: no hidden truth in
-// player-facing UI), via the units service (guardrail §4.4).
+// Store — step 1 of the two-step build flow (rifle-ammo-store S9, D17). Lists
+// all 10 cartridges (name, class one-liner, presets-only tag for .22 LR);
+// tapping one opens `BuildScreen` (step 2: rifle + ammo sliders, live derived
+// readouts, preset chips, Acquire). Replaces S4's minimal holding version
+// (single reference-barrel rifle row + one row per preset, no sliders).
+import { useState } from 'react';
 import { useGameStore } from '../state/store';
-import { resolveLoadSpec, resolveRifleSpec } from '../game/catalog';
-import { CARTRIDGE_IDS_V2, PRESETS, cartridgeParams, specFromPreset, type RifleSpec } from '../game/spec';
-import { formatSpeedForDisplay } from '../units/display';
+import { CARTRIDGE_IDS_V2, cartridgeParams } from '../game/spec';
+import { BuildScreen } from './BuildScreen';
 
 const PANEL_BG = '#1a222c';
 const FG = '#e8eef4';
 const DIVIDER = '1px solid rgba(232,238,244,0.18)';
 
-const acquireBtnStyle: React.CSSProperties = {
-  fontFamily: 'monospace',
-  fontSize: 14,
-  color: '#fff',
-  background: 'rgba(40,110,170,0.9)',
-  border: '1px solid #e8eef4',
-  borderRadius: 6,
-  padding: '8px 14px',
-  cursor: 'pointer',
-  WebkitUserSelect: 'none',
-  userSelect: 'none',
-  flexShrink: 0,
-};
-
-/** The default (reference-barrel, first-twist-option) build for a cartridge —
- *  the holding screen's stand-in for S9's rifle sliders. */
-function defaultRifleSpec(cartridgeId: string): RifleSpec {
-  const c = cartridgeParams(cartridgeId);
-  return { cartridgeId, barrelLengthIn: c.referenceBarrelIn, twistIn: c.twistOptionsInPerTurn[0] };
-}
-
 export function StoreScreen({ onClose }: { onClose: () => void }) {
-  const unitsPrimary = useGameStore((s) => s.settings.unitsPrimary);
+  const [selectedCartridgeId, setSelectedCartridgeId] = useState<string | null>(null);
   const rifles = useGameStore((s) => s.inventory.rifles);
   const ammoLots = useGameStore((s) => s.inventory.ammoLots);
-  const acquireRifle = useGameStore((s) => s.acquireRifle);
-  const acquireLot = useGameStore((s) => s.acquireLot);
 
-  // Re-keyed off cartridgeId (rifles) / presetId (lots) — S4 step 7: the old
-  // catalogId counters have no equivalent under specs.
-  const ownedRifles = (cartridgeId: string) => rifles.filter((r) => r.spec.cartridgeId === cartridgeId).length;
-  const ownedLots = (presetId: string) => ammoLots.filter((l) => l.spec.presetId === presetId).length;
+  if (selectedCartridgeId) {
+    return (
+      <BuildScreen
+        cartridgeId={selectedCartridgeId}
+        onBack={() => setSelectedCartridgeId(null)}
+        onClose={onClose}
+      />
+    );
+  }
+
+  const ownedCount = (cartridgeId: string) =>
+    rifles.filter((r) => r.spec.cartridgeId === cartridgeId).length +
+    ammoLots.filter((l) => l.spec.cartridgeId === cartridgeId).length;
 
   return (
     <div
@@ -88,74 +69,44 @@ export function StoreScreen({ onClose }: { onClose: () => void }) {
         </div>
 
         <div style={{ fontSize: 12, opacity: 0.55, marginBottom: 8 }}>
-          Holding view — sliders + live readouts land in a later pass. Rifles acquire at
-          their reference-barrel default build; ammo acquires from a named preset.
+          Pick a cartridge, then build your rifle and ammo.
         </div>
 
-        <h2 style={{ fontSize: 16, opacity: 0.8, margin: '8px 0' }}>Rifles</h2>
         {CARTRIDGE_IDS_V2.map((cartridgeId) => {
-          const spec = defaultRifleSpec(cartridgeId);
-          const m = resolveRifleSpec(spec);
-          const owned = ownedRifles(cartridgeId);
+          const c = cartridgeParams(cartridgeId);
+          const owned = ownedCount(cartridgeId);
           return (
-            <div
+            <button
               key={cartridgeId}
+              onClick={() => setSelectedCartridgeId(cartridgeId)}
               style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 gap: 12,
-                padding: '10px 0',
+                width: '100%',
+                padding: '12px 4px',
+                border: 'none',
                 borderTop: DIVIDER,
+                background: 'transparent',
+                color: FG,
+                fontFamily: 'monospace',
+                cursor: 'pointer',
+                textAlign: 'left',
               }}
             >
-              <div style={{ textAlign: 'left' }}>
+              <div>
                 <div style={{ fontSize: 15 }}>
-                  {m.cartridgeName}
+                  {c.name}
                   {owned > 0 && <span style={{ opacity: 0.6 }}> · owned ×{owned}</span>}
                 </div>
                 <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
-                  {m.className} · {m.barrelLengthIn}" · 1:{m.twistIn}
+                  {c.class}
+                  {c.presetsOnly && ' · presets only'}
                 </div>
               </div>
-              <button style={acquireBtnStyle} onClick={() => acquireRifle(spec)}>
-                Acquire
-              </button>
-            </div>
-          );
-        })}
-
-        <h2 style={{ fontSize: 16, opacity: 0.8, margin: '20px 0 8px' }}>Ammo</h2>
-        {PRESETS.map((p) => {
-          const load = resolveLoadSpec(specFromPreset(p.id));
-          const owned = ownedLots(p.id);
-          const mv = formatSpeedForDisplay(load.believedMvMps, unitsPrimary);
-          return (
-            <div
-              key={p.id}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12,
-                padding: '10px 0',
-                borderTop: DIVIDER,
-              }}
-            >
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontSize: 15 }}>
-                  {load.cartridgeName} — {load.grade}
-                  {owned > 0 && <span style={{ opacity: 0.6 }}> · owned ×{owned}</span>}
-                </div>
-                <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
-                  {load.product} · box {mv.value.toFixed(0)} {mv.label} · BC {load.believedBc.toFixed(3)}{' '}
-                  {load.dragModel}
-                </div>
-              </div>
-              <button style={acquireBtnStyle} onClick={() => acquireLot(specFromPreset(p.id))}>
-                Acquire
-              </button>
-            </div>
+              <span style={{ opacity: 0.5, fontSize: 18 }}>›</span>
+            </button>
           );
         })}
       </div>

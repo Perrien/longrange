@@ -324,10 +324,13 @@ export function trueBaseMvForSpec(spec: LoadSpec): number {
  *  `believedLoadForSpec`, but the muzzle velocity is solved at the RIFLE's
  *  actual configured barrel length, not the cartridge's fixed reference
  *  barrel. Deliberately a different number from the box MV `believedLoadForSpec`
- *  returns (same distinction a real barrel-length chart draws): this is what
- *  `engine-bridge/effective-range.ts` solves against, since a shorter/longer
- *  barrel genuinely changes how far the load stays supersonic. An
- *  `mvFpsOverride` preset (D9) is unaffected by barrel length either way. */
+ *  returns (same distinction a real barrel-length chart draws). Two callers:
+ *  `engine-bridge/effective-range.ts`'s supersonic-reach solve (S8, a shorter/
+ *  longer barrel genuinely changes how far the load stays supersonic), and
+ *  `game/store-readouts.ts`'s barrel-aware MV/Sg/recoil readouts (S9, the
+ *  Store's whole point is making the barrel-length slider visibly do
+ *  something). An `mvFpsOverride` preset (D9) is unaffected by barrel length
+ *  either way. */
 export function believedLoadForBuild(rifleSpec: RifleSpec, loadSpec: LoadSpec): Load {
   const r = resolveLoadInternal(loadSpec, rifleSpec.barrelLengthIn);
   return {

@@ -14,10 +14,11 @@ import {
   sectionalDensity,
   type VelocityCurveParams,
 } from './ballistic-derivation';
-import { grainsToKg, fpsToMps, inchesToMeters } from '../units';
+import { grainsToKg, fpsToMps, inchesToMeters, poundsToKg } from '../units';
 import { loadBtkModule } from '../engine-bridge/wasm-module';
 import type { BtkModule } from '../engine-bridge/types';
 import cartridgeData from './cartridges.data.json';
+import { RIFLE_WEIGHT_LB } from './recoil-reference';
 
 // --- §2.1 primitives ---------------------------------------------------------
 
@@ -114,14 +115,15 @@ describe('muzzleVelocityFps — .22 LR barrel-length inversion (D7, asserted dir
 
 // --- §3.5 recoil verification table ------------------------------------------
 
-const LB_TO_KG = 0.45359237;
-
 describe('recoilVelocityMps — §3.5 recoil verification table (D13, within 8%)', () => {
   // Rifle weights (lb) from feature-catalog.md §B's hand-built table — NOT part
   // of cartridges.data.json (the plan's own §3 tables have no weight column;
   // §3.5's intro says these "come from the existing catalog"). Only the 7
   // cartridges feature-catalog §B covers are testable here; 6mm CM/6.5 PRC/.300 PRC
-  // have no sourced rifle weight yet — logged as a gap for S9/S10, not S2's scope.
+  // have no sourced rifle weight yet — logged as a gap (S9's Store recoil readout
+  // and S10's calibrated ScopeView both render "not yet sourced" for these three,
+  // rather than a fabricated figure). `rifleLb` is asserted against the shared
+  // `recoil-reference.ts` table (S9) below, so the two can't silently drift apart.
   const ROWS: { cartridgeId: string; bulletGr: number; mvFps: number; rifleLb: number; catalogVr: number }[] = [
     { cartridgeId: '22lr', bulletGr: 40, mvFps: 1073, rifleLb: 13.5, catalogVr: 0.15 },
     { cartridgeId: '223', bulletGr: 77, mvFps: 2750, rifleLb: 15.0, catalogVr: 0.89 },
@@ -143,10 +145,16 @@ describe('recoilVelocityMps — §3.5 recoil verification table (D13, within 8%)
       grainsToKg(row.bulletGr),
       fpsToMps(row.mvFps),
       grainsToKg(chargeGr),
-      row.rifleLb * LB_TO_KG,
+      poundsToKg(row.rifleLb),
       cartridgeData.recoil.gasVelocityFactor,
     );
     expect(Math.abs(pctDiff(vr, row.catalogVr))).toBeLessThan(8);
+  });
+
+  it('rifleLb matches the shared recoil-reference.ts table (S9) exactly — the two must not drift apart', () => {
+    for (const row of ROWS) {
+      expect(RIFLE_WEIGHT_LB[row.cartridgeId]).toBe(row.rifleLb);
+    }
   });
 
   it('6.5 CM is the calibration point: recoil grows monotonically heavier through the ladder', () => {
@@ -161,7 +169,7 @@ describe('recoilVelocityMps — §3.5 recoil verification table (D13, within 8%)
         grainsToKg(row.bulletGr),
         fpsToMps(row.mvFps),
         grainsToKg(chargeGr),
-        row.rifleLb * LB_TO_KG,
+        poundsToKg(row.rifleLb),
         cartridgeData.recoil.gasVelocityFactor,
       );
     };
