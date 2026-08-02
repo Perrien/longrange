@@ -22,6 +22,8 @@ import {
   cartridgeParams,
   clampLoadSpec,
   clampRifleSpec,
+  defaultLoadSpec,
+  defaultRifleSpec,
   presetsForCartridge,
   specFromPreset,
   type AmmoGrade,
@@ -32,8 +34,8 @@ import {
   fpsToMps,
   formatAngleForDisplay,
   formatDistanceForDisplay,
+  formatMuzzleVelocityForDisplay,
   formatOffsetForDisplay,
-  formatSpeedForDisplay,
   inchesToMeters,
   moaToRad,
   yardsToMeters,
@@ -70,30 +72,6 @@ const acquireBtnStyle: CSSProperties = {
   width: '100%',
   marginTop: 12,
 };
-
-function defaultRifleSpec(cartridgeId: string): RifleSpec {
-  const c = cartridgeParams(cartridgeId);
-  return { cartridgeId, barrelLengthIn: c.referenceBarrelIn, twistIn: c.twistOptionsInPerTurn[0] };
-}
-
-/** Default ammo build for a freshly opened build screen: the first MATCH
- *  preset if this cartridge has one, else the first preset of any grade, else
- *  (no shipped preset — 6mm CM / 6.5 PRC / .300 WM / .300 PRC) a hand-built
- *  load at the velocity curve's own anchor weight (a representative bullet the
- *  cartridge's `k` was fitted against) and the middle of the i7 band. Rimfire
- *  (D8) always has a preset, so the no-preset branch never fires for it. */
-function defaultLoadSpec(cartridgeId: string): LoadSpec {
-  const presets = presetsForCartridge(cartridgeId);
-  const preset = presets.find((p) => p.grade === 'match') ?? presets[0];
-  if (preset) return specFromPreset(preset.id);
-  const c = cartridgeParams(cartridgeId);
-  return {
-    cartridgeId,
-    weightGr: c.velocityCurve.anchorWeightGr,
-    i7: (c.i7Range!.min + c.i7Range!.max) / 2,
-    grade: 'match',
-  };
-}
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -248,16 +226,17 @@ export function BuildScreen({
   }
 
   const mv = (mps: number) => {
-    const f = formatSpeedForDisplay(mps, unitsPrimary);
+    const f = formatMuzzleVelocityForDisplay(mps, unitsPrimary);
     return `${f.value.toFixed(0)} ${f.label}`;
   };
   const dist = (m: number) => {
     const f = formatDistanceForDisplay(m, unitsPrimary);
     return `${f.value.toFixed(0)} ${f.label}`;
   };
-  const ang = (rad: number) => {
-    const f = formatAngleForDisplay(rad, unitsPrimary);
-    return `${f.value.toFixed(2)} ${f.label}`;
+  const angWithSd = (nominalRad: number, sdRad: number) => {
+    const nom = formatAngleForDisplay(nominalRad, unitsPrimary);
+    const sd = formatAngleForDisplay(sdRad, unitsPrimary);
+    return `${nom.value.toFixed(2)} ± ${sd.value.toFixed(2)} ${nom.label}`;
   };
   const offset = (m: number) => {
     const f = formatOffsetForDisplay(m, unitsPrimary);
@@ -319,12 +298,18 @@ export function BuildScreen({
                 onChange={(v) => updateRifle({ barrelLengthIn: v })}
               />
               <Row label="Twist">
-                {c.twistOptionsInPerTurn.map((t) => (
+                <span style={{ fontSize: 11, opacity: 0.5 }}>Slower</span>
+                {[...c.twistOptionsInPerTurn].sort((a, b) => b - a).map((t) => (
                   <Seg key={t} active={rifleSpec.twistIn === t} onClick={() => updateRifle({ twistIn: t })}>
                     1:{t}
                   </Seg>
                 ))}
+                <span style={{ fontSize: 11, opacity: 0.5 }}>Faster</span>
               </Row>
+              <div style={{ fontSize: 11, opacity: 0.55, marginTop: 6, lineHeight: 1.4 }}>
+                Smaller number = faster twist (1:7 out-spins 1:9). Faster twist requires heavier bullets; a
+                slower twist suits lighter ones and is more forgiving — less spin drift, tighter groups.
+              </div>
             </Section>
 
             <Section title="Readouts">
@@ -333,7 +318,8 @@ export function BuildScreen({
               </Row>
               <Row label="Barrel life">{rReadouts.barrelLifeRounds.toLocaleString()} rd</Row>
               <Row label="Precision">
-                {ang(moaToRad(rReadouts.precisionMoa.nominal))} <span style={{ opacity: 0.5 }}>nominal</span>
+                {angWithSd(moaToRad(rReadouts.precisionMoa.nominal), moaToRad(rReadouts.precisionMoa.sd))}{' '}
+                <span style={{ opacity: 0.5 }}>nominal</span>
               </Row>
               <Row label="Recoil" hint="relative to 6.5 CM / 140 gr match">
                 {rReadouts.recoilRelativeToReference != null ? (

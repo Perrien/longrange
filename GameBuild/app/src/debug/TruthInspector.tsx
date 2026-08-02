@@ -36,7 +36,7 @@ import { createScatterSimulator, seedRandom } from '../engine-bridge/match-sim';
 import { loadBtkModule } from '../engine-bridge/wasm-module';
 import type { BtkModule, Dispersion, Load } from '../engine-bridge/types';
 import { useGameStore } from '../state/store';
-import { formatOffsetForDisplay, formatSpeedForDisplay } from '../units/display';
+import { formatOffsetForDisplay, formatMuzzleVelocityForDisplay } from '../units/display';
 import { mpsToFps } from '../units/velocity';
 import { radToMoa } from '../units/angle';
 
@@ -173,8 +173,8 @@ export function TruthInspector() {
   }, [module, cartridgeId, presetId, roll]);
 
   const boxMvMps = resolveLoadSpec(loadSpec).believedMvMps;
-  const boxMv = formatSpeedForDisplay(boxMvMps, unitsPrimary);
-  const mvFmt = (mps: number) => formatSpeedForDisplay(mps, unitsPrimary);
+  const boxMv = formatMuzzleVelocityForDisplay(boxMvMps, unitsPrimary);
+  const mvFmt = (mps: number) => formatMuzzleVelocityForDisplay(mps, unitsPrimary);
   const spreadFmt = (m: number) => formatOffsetForDisplay(m, unitsPrimary);
 
   return (

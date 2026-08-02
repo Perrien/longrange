@@ -13,7 +13,7 @@
 
 import { radToMil, radToMoa } from './angle';
 import { metersToYards, metersToMillimeters, metersToInches } from './length';
-import { mpsToMph } from './velocity';
+import { mpsToMph, mpsToFps } from './velocity';
 
 /** The two angular/unit-system choices, paired per the owner's convention:
  *  MIL travels with metric (m/s, meters, mm); MOA travels with imperial
@@ -38,6 +38,15 @@ export const formatAngleForDisplay = (rad: number, units: DisplayUnits): Formatt
 /** A speed (e.g. wind): m/s under Metric, mph under Imperial. */
 export const formatSpeedForDisplay = (mps: number, units: DisplayUnits): Formatted =>
   units === 'MIL' ? { value: mps, label: 'm/s' } : { value: mpsToMph(mps), label: 'mph' };
+
+/** A muzzle velocity: m/s under Metric, fps (shooting-sports convention —
+ *  matches the DOPE book's own MV chip, not the wind mph readout) under
+ *  Imperial. Deliberately its own formatter, not `formatSpeedForDisplay` —
+ *  MV and wind speed share a unit family (m/s) but not an imperial
+ *  convention: no one calls a load's box velocity "1250 mph" (owner
+ *  2026-08-02). */
+export const formatMuzzleVelocityForDisplay = (mps: number, units: DisplayUnits): Formatted =>
+  units === 'MIL' ? { value: mps, label: 'm/s' } : { value: mpsToFps(mps), label: 'fps' };
 
 /** A range/distance: meters under Metric, yards under Imperial. */
 export const formatDistanceForDisplay = (m: number, units: DisplayUnits): Formatted =>

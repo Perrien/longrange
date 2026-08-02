@@ -23,6 +23,7 @@ import {
   systemLabel,
   formatAngleForDisplay,
   formatSpeedForDisplay,
+  formatMuzzleVelocityForDisplay,
   formatDistanceForDisplay,
   formatOffsetForDisplay,
   formatClockPosition,
@@ -131,6 +132,15 @@ describe('units/display (Met/Imp HUD toggle)', () => {
     expect(imperial.value).toBeCloseTo(10, 9);
     expect(imperial.label).toBe('mph');
     expect(mpsToMph(mphToMps(10))).toBeCloseTo(10, 9); // sanity: round-trip used internally
+  });
+
+  it('formatMuzzleVelocityForDisplay: m/s under Metric, fps (not mph) under Imperial', () => {
+    const metric = formatMuzzleVelocityForDisplay(800, 'MIL');
+    expect(metric.value).toBe(800);
+    expect(metric.label).toBe('m/s');
+    const imperial = formatMuzzleVelocityForDisplay(fpsToMps(2700), 'MOA');
+    expect(imperial.value).toBeCloseTo(2700, 6);
+    expect(imperial.label).toBe('fps');
   });
 
   it('formatDistanceForDisplay: meters under Metric, yards under Imperial', () => {

@@ -10,16 +10,22 @@
 // S9, D17 / task 2.2c, D3) — same cartridge list → BuildScreen drill-down for Store,
 // same owned-rifle/owned-lot select-or-delete rows for Loadout. Believed values only
 // (guardrail §4.8): Loadout has no hidden truth to leak.
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { useGameStore } from '../state/store';
-import { CARTRIDGE_IDS_V2, cartridgeParams } from '../game/spec';
+import { CARTRIDGE_IDS_V2, cartridgeParams, defaultLoadSpec, defaultRifleSpec } from '../game/spec';
 import { resolveLoadSpec, resolveRifleSpec } from '../game/catalog';
-import { formatSpeedForDisplay } from '../units/display';
+import { cartridgeOverviewWords } from '../game/store-overview';
+import { effectiveRangeYdForSpec } from '../engine-bridge/effective-range';
+import { loadBtkModule } from '../engine-bridge/wasm-module';
+import type { BtkModule } from '../engine-bridge/types';
+import { formatDistanceForDisplay, formatMuzzleVelocityForDisplay } from '../units/display';
+import { yardsToMeters } from '../units/length';
 import { BuildScreen } from './BuildScreen';
 import { TabButton } from './TabButton';
 
 const PANEL_BG = '#1a222c';
 const FG = '#e8eef4';
+const GREEN = '#4ade80';
 const DIVIDER = '1px solid rgba(232,238,244,0.18)';
 
 const doneBtnStyle: CSSProperties = {
@@ -75,6 +81,19 @@ export function GearScreen({ onClose, initialTab = 'store' }: { onClose: () => v
   const deleteRifle = useGameStore((s) => s.deleteRifle);
   const deleteLot = useGameStore((s) => s.deleteLot);
 
+  // The Store list's effective-range figure needs the WASM engine (the same
+  // physics solve BuildScreen's readouts and the DOPE book use) — everything
+  // else in the list (name, class, weight/velocity/power words) is sync and
+  // renders immediately; this one field pops in a beat later.
+  const [module, setModule] = useState<BtkModule | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadBtkModule().then((m) => !cancelled && setModule(m));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Drilled into a cartridge's build screen (Store tab, step 2) — full-screen
   // replace, same as the old StoreScreen; back returns to the cartridge list.
   if (selectedCartridgeId) {
@@ -87,9 +106,36 @@ export function GearScreen({ onClose, initialTab = 'store' }: { onClose: () => v
     );
   }
 
-  const ownedCount = (cartridgeId: string) =>
-    rifles.filter((r) => r.spec.cartridgeId === cartridgeId).length +
-    ammoLots.filter((l) => l.spec.cartridgeId === cartridgeId).length;
+  // Rifles only (owner 2026-08-02) — a cartridge's ammo lots aren't "gear you
+  // own" in the sense this badge is meant to convey; it's specifically "you
+  // have a rifle for this".
+  const ownedCount = (cartridgeId: string) => rifles.filter((r) => r.spec.cartridgeId === cartridgeId).length;
+
+  // Upper bound only (owner call, 2026-08-02) — the last station the DEFAULT
+  // build for this cartridge stays supersonic at ICAO sea level, same solve
+  // DopeBookScreen uses. There's no lower-bound concept anywhere in the
+  // engine (a minimum practical range isn't a physics quantity), so this is
+  // deliberately one-sided: it's already short for .22 LR and long for .50
+  // BMG on its own, without inventing a floor.
+  const effectiveRangeYd = (cartridgeId: string): number | null => {
+    if (!module) return null;
+    return effectiveRangeYdForSpec(module, defaultRifleSpec(cartridgeId), defaultLoadSpec(cartridgeId));
+  };
+
+  const effectiveRangeText = (cartridgeId: string): string | null => {
+    const yd = effectiveRangeYd(cartridgeId);
+    if (yd == null) return null;
+    const fmt = formatDistanceForDisplay(yardsToMeters(yd), unitsPrimary);
+    return `effective to ~${fmt.value.toFixed(0)} ${fmt.label}`;
+  };
+
+  // Sorted low → high by effective range once the engine's loaded (owner
+  // 2026-08-02); until then, the catalog's own authored order — it re-sorts
+  // in place the moment `module` lands, same one-time pop-in as the range
+  // figure itself.
+  const sortedCartridgeIds = module
+    ? [...CARTRIDGE_IDS_V2].sort((a, b) => (effectiveRangeYd(a) ?? 0) - (effectiveRangeYd(b) ?? 0))
+    : CARTRIDGE_IDS_V2;
 
   const emptyInventory = rifles.length === 0 && ammoLots.length === 0;
 
@@ -133,9 +179,11 @@ export function GearScreen({ onClose, initialTab = 'store' }: { onClose: () => v
               Pick a cartridge, then build your rifle and ammo.
             </div>
 
-            {CARTRIDGE_IDS_V2.map((cartridgeId) => {
+            {sortedCartridgeIds.map((cartridgeId) => {
               const c = cartridgeParams(cartridgeId);
               const owned = ownedCount(cartridgeId);
+              const overview = cartridgeOverviewWords(cartridgeId);
+              const rangeText = effectiveRangeText(cartridgeId);
               return (
                 <button
                   key={cartridgeId}
@@ -159,11 +207,19 @@ export function GearScreen({ onClose, initialTab = 'store' }: { onClose: () => v
                   <div>
                     <div style={{ fontSize: 15 }}>
                       {c.name}
-                      {owned > 0 && <span style={{ opacity: 0.6 }}> · owned ×{owned}</span>}
+                      {owned > 0 && (
+                        <span style={{ color: GREEN, fontWeight: 700 }}> · owned ×{owned}</span>
+                      )}
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
                       {c.class}
                       {c.presetsOnly && ' · presets only'}
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
+                      {overview.weight} · {overview.velocity}
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
+                      {rangeText ?? 'solving effective range…'}
                     </div>
                   </div>
                   <span style={{ opacity: 0.5, fontSize: 18 }}>›</span>
@@ -222,7 +278,7 @@ export function GearScreen({ onClose, initialTab = 'store' }: { onClose: () => v
             {ammoLots.map((l) => {
               const load = resolveLoadSpec(l.spec);
               const active = l.id === activeLotId;
-              const mv = formatSpeedForDisplay(load.believedMvMps, unitsPrimary);
+              const mv = formatMuzzleVelocityForDisplay(load.believedMvMps, unitsPrimary);
               const rounds = l.roundsRemaining ?? 0;
               const depleted = rounds <= 0;
               return (

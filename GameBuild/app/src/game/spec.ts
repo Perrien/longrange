@@ -173,3 +173,36 @@ export function specFromPreset(presetId: string): LoadSpec {
 function nearest(v: number, options: number[]): number {
   return options.reduce((best, opt) => (Math.abs(opt - v) < Math.abs(best - v) ? opt : best));
 }
+
+// --- Default builds (a representative rifle+load per cartridge) ------------
+//
+// Used to open a freshly-tapped BuildScreen at a sensible starting point, and
+// (rifle-ammo-store S12) to give the Store's cartridge-list overview and its
+// effective-range figure something concrete to solve against before the
+// player has configured anything themselves.
+
+/** Default rifle build for a freshly opened build screen: the cartridge's
+ *  reference barrel length and its first listed twist option. */
+export function defaultRifleSpec(cartridgeId: string): RifleSpec {
+  const c = cartridgeParams(cartridgeId);
+  return { cartridgeId, barrelLengthIn: c.referenceBarrelIn, twistIn: c.twistOptionsInPerTurn[0] };
+}
+
+/** Default ammo build: the first MATCH preset if this cartridge has one, else
+ *  the first preset of any grade, else (no shipped preset — 6mm CM / 6.5 PRC /
+ *  .300 WM / .300 PRC) a hand-built load at the velocity curve's own anchor
+ *  weight (a representative bullet the cartridge's `k` was fitted against) and
+ *  the middle of the i7 band. Rimfire (D8) always has a preset, so the
+ *  no-preset branch never fires for it. */
+export function defaultLoadSpec(cartridgeId: string): LoadSpec {
+  const presets = presetsForCartridge(cartridgeId);
+  const preset = presets.find((p) => p.grade === 'match') ?? presets[0];
+  if (preset) return specFromPreset(preset.id);
+  const c = cartridgeParams(cartridgeId);
+  return {
+    cartridgeId,
+    weightGr: c.velocityCurve.anchorWeightGr,
+    i7: (c.i7Range!.min + c.i7Range!.max) / 2,
+    grade: 'match',
+  };
+}
