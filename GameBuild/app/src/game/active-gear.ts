@@ -12,12 +12,7 @@
 import type { RifleInstance, AmmoLot } from '../persistence';
 import type { RifleTruthRanges, LotTruthRanges } from './hidden-truth';
 import type { DisplayUnits } from '../units/display';
-import {
-  getRifleModel,
-  catalogRifleRanges,
-  catalogLotRanges,
-  believedLoad,
-} from './catalog';
+import { resolveRifleSpec, rifleRangesForSpec, lotRangesForSpec, believedLoadForSpec } from './catalog';
 import { recommendedZeroM } from './zero-distance';
 
 export interface GearSolveContext {
@@ -43,14 +38,14 @@ export function gearSolveContext(
   lot: AmmoLot,
   unitsPrimary: DisplayUnits,
 ): GearSolveContext {
-  const rifleModel = getRifleModel(rifle.catalogId);
+  const rifleModel = resolveRifleSpec(rifle.spec);
   const pz = rifle.playerZero;
-  const load = believedLoad(lot.catalogId);
+  const load = believedLoadForSpec(lot.spec);
   return {
     rifle,
     lot,
-    rifleRanges: catalogRifleRanges(rifle.catalogId),
-    lotRanges: catalogLotRanges(lot.catalogId),
+    rifleRanges: rifleRangesForSpec(rifle.spec),
+    lotRanges: lotRangesForSpec(lot.spec),
     bulletDiameterM: load.diameterM,
     bulletMassKg: load.massKg,
     zeroRangeM: pz?.zeroRangeM ?? recommendedZeroM(rifleModel.cartridgeId, unitsPrimary),

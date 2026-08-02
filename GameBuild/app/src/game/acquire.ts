@@ -8,7 +8,7 @@
 // read in game/hidden-truth.ts — note the lot's `bcError` draw maps through the
 // `bc` range, so it's spelled `bcError` here, not `bc`.
 import type { AmmoLot, RifleInstance } from '../persistence';
-import { CATALOG_VERSION, getAmmoLoad, getRifleModel } from './catalog';
+import { cartridgeParams, CARTRIDGES_CATALOG_VERSION, type LoadSpec, type RifleSpec } from './spec';
 
 /** Rifle hidden-field draw keys (→ deriveRifleTruth). */
 export const RIFLE_DRAW_FIELDS = ['mvOffset', 'zeroH', 'zeroV', 'inherentPrecision'] as const;
@@ -78,26 +78,28 @@ export function lotNumberFromId(id: string, taken: ReadonlySet<string> = EMPTY_L
   return `Z${String(h % 100).padStart(2, '0')}`; // space exhausted (unreachable in practice)
 }
 
-/** Build an owned rifle instance from a catalog model id (validates the id). */
-export function buildRifleInstance(catalogId: string, opts: AcquireOptions): RifleInstance {
-  getRifleModel(catalogId); // throws on an unknown model id
+/** Build an owned rifle instance from a build spec (S4 — replaces the old
+ *  catalog-model-id builder; validates the spec's cartridge id). */
+export function buildRifleInstance(spec: RifleSpec, opts: AcquireOptions): RifleInstance {
+  cartridgeParams(spec.cartridgeId); // throws on an unknown cartridge
   return {
     id: opts.id,
-    catalogId,
-    catalogVersion: opts.catalogVersion ?? CATALOG_VERSION,
+    spec,
+    catalogVersion: opts.catalogVersion ?? CARTRIDGES_CATALOG_VERSION,
     draws: rollDraws(RIFLE_DRAW_FIELDS, opts.rng),
     acquiredAt: opts.acquiredAt ?? 0,
     lifetimeShotCount: 0,
   };
 }
 
-/** Build an owned ammo lot from a catalog load id (validates the id). */
-export function buildAmmoLot(catalogId: string, opts: AcquireOptions): AmmoLot {
-  getAmmoLoad(catalogId); // throws on an unknown load id
+/** Build an owned ammo lot from a build spec (S4 — replaces the old
+ *  catalog-load-id builder; validates the spec's cartridge id). */
+export function buildAmmoLot(spec: LoadSpec, opts: AcquireOptions): AmmoLot {
+  cartridgeParams(spec.cartridgeId); // throws on an unknown cartridge
   return {
     id: opts.id,
-    catalogId,
-    catalogVersion: opts.catalogVersion ?? CATALOG_VERSION,
+    spec,
+    catalogVersion: opts.catalogVersion ?? CARTRIDGES_CATALOG_VERSION,
     draws: rollDraws(LOT_DRAW_FIELDS, opts.rng),
     lotNumber: lotNumberFromId(opts.id, opts.existingLotNumbers),
     roundsRemaining: DEFAULT_LOT_ROUNDS,

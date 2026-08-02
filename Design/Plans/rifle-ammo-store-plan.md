@@ -62,7 +62,7 @@ teaching:
 | **D16** | **Save schema v3.** `RifleInstance.spec` / `AmmoLot.spec` replace `catalogId`. The v2→v3 migration **clears** `rifles`, `ammoLots`, `dopeNodes`, `chronoSummaries` and the active selection; `settings` survive. Owner's explicit choice, confirmed 2026-08-01: **no in-app notice, no warning, no confirmation** — the owner is the only user and has authorised the wipe. Migrate silently. |
 | **D17** | **Store UX: cartridge list → build screen → Acquire.** Sliders with live derived readouts (MV, BC, SD, bullet length, `Sg`, recoil, supersonic reach). Preset chips snap the sliders. |
 | **D18** | **Presets = what we already hold** — the 8 shipped catalog loads plus any oracle-only load. No new research run blocks this plan. |
-| **D19** | **Transition safety:** the new spec API lands **alongside** the old id API (S3); call sites migrate in two batches (S5 solve path, S6 UI); the old API and `catalog.data.json` are deleted last (S7). The app compiles and runs at every task boundary. |
+| **D19** | **Transition safety:** the new spec API lands **alongside** the old id API (S3); the old API and `catalog.data.json` are deleted last (S7). The app compiles and runs at every task boundary. ⚠ **Amended 2026-08-01** — this pattern works at the *module* level and **not** at the *record-type* level; the original two-batch call-site migration (S5, S6) was not achievable and is folded into S4. See §1c. |
 | **D20** | **The `i7` band is per-caliber and constant with weight** — a deliberate simplification. In reality a 40 gr .224 cannot be as sleek as a 90 gr one. Logged as a deferred observation, not built. |
 
 ### 1b. Two conflicts you must know about (do not resolve silently)
@@ -81,6 +81,42 @@ researched." Author it as a single named constant so reverting is a one-line cha
 against a **24″** reference barrel; that advertised figure is generally a **20″** number.
 Anchoring `k` (D6) preserves current in-game behaviour either way, so this does not block —
 but note it in `Wiki/_gaps.md` at S11 rather than quietly "fixing" the barrel length.
+
+### 1c. Amendment 2026-08-01 — S5 and S6 folded into S4
+
+**Raised by the executing agent after S1–S3 were committed; the plan was wrong, not the code.**
+
+The original plan split the identity migration into three tasks: S4 changed
+`RifleInstance.catalogId` → `.spec`, S5 migrated the solve-path readers, S6 the UI readers.
+**That split is not achievable.** A record has exactly one shape, so the moment the field is
+renamed, every reader stops compiling — schema and readers are compile-coupled. S4 could
+never have been independently green, which its own `commit: yes + push` annotation assumed.
+
+Measured blast radius (`grep -rn "\.catalogId" src/`): the rename breaks **three solve-path
+files** (`gear-solve.ts`, `active-gear.ts`, `store.ts`), **five UI files**
+(`DopeBookScreen`, `LoadoutOverlay`, `StoreScreen`, `DopePanel`, `ChronoPanel`) and **two
+test files** (`acquire.test.ts`, `state.test.ts`) — i.e. it spans both S5 *and* S6, not just
+S5. `zero-distance.ts` and `TruthInspector.tsx` are unaffected.
+
+**Root cause.** D19's "land the new API alongside the old" pattern is sound and did its job
+at the *module* level — that is exactly what S3 achieved for `catalog.ts`, and it is why S1–S3
+were clean. The error was assuming the pattern extends to the *record type* in `schema.ts`.
+It cannot: you can have two functions, but not two shapes for one stored object.
+
+**Two fixes were considered:**
+
+| option | verdict |
+|---|---|
+| Dual-write — keep `catalogId` required alongside `spec`, populate both during the transition, drop it at S7 | **Rejected.** Preserves the checkpoints, but only by building throwaway scaffolding plus a preset→legacy-id map we delete two tasks later. It manufactures the *appearance* of independent steps around work that is inherently atomic, and leaves records with two identities — a confusing state to hand a junior dev. |
+| Merge S4+S5+S6 into one task | **Adopted.** A type migration is atomic by nature. Protocol §3 is explicit that the size guidance is a *planning-time* heuristic and that overrunning is not by itself a reason to split — the test is whether the task "has genuinely become two things," and this has not. |
+
+**Mitigation for the larger diff:** S4 now specifies a `tsc --noEmit`-driven method — make
+the type change, let the compiler enumerate every break, work the list down monotonically.
+The one thing genuinely deferred out of S4 is the Store rebuild, which stays in S9.
+
+**Numbering is deliberately unchanged.** S1–S3 are already committed with their labels, and
+`PROGRESS.md` has rows for them. S5 and S6 are recorded `SKIPPED(folded into S4)`; S7–S11
+keep their numbers.
 
 ---
 
@@ -284,8 +320,10 @@ and starts doing work.
 
 ## 4. Tasks
 
-Eleven tasks. Each says what to build, what "done" means, when to stop, and whether the
-owner is pulled in. **Four owner-verification stops** (S7, S8, S9, S10) plus completion.
+**Nine tasks, labelled S1–S11** (S5 and S6 folded into S4 — §1c; numbering kept stable
+because S1–S3 are already committed). Each says what to build, what "done" means, when to
+stop, and whether the owner is pulled in. **Four owner-verification stops** (S7, S8, S9,
+S10) plus completion.
 
 > **Standing rules for every task** (protocol §5): run `npx vitest run` → `npx tsc --noEmit`
 > → `npm run build` from `GameBuild/app/`, all green, before marking anything done. No
@@ -438,28 +476,67 @@ rifle-ammo-store S3: spec types and parametric resolver
 
 ---
 
-### S4 — Save schema v3, migration, and acquisition on specs
-`checkpoint` · commit: **yes + push** *(commit before starting, too — a schema migration is hard to unwind)*
+### S4 — Save schema v3, migration, acquisition, and every reader
+**AMENDED 2026-08-01 — absorbs the original S5 and S6.** See §1c for why.
+`checkpoint` · commit: **yes + push** *(commit S3 before starting — a schema migration is hard to unwind)*
 
 ⚠ **Ask the owner to commit S3 before you begin this task.**
 
-**Files:** `src/persistence/schema.ts`, `src/persistence/migrations.ts`,
-`src/persistence/persistence.test.ts`, `src/game/acquire.ts`, `src/game/acquire.test.ts`.
+**Goal.** Move the owned-record identity from `catalogId` to `spec`, and follow the
+compiler to every reader. This is **one atomic task by nature** — a record has one shape,
+so the type change and its readers cannot land separately (§1c).
+
+**Files (~16).** Schema: `src/persistence/schema.ts`, `migrations.ts`,
+`persistence.test.ts`. Acquisition: `src/game/acquire.ts`, `acquire.test.ts`. Solve path:
+`src/engine-bridge/gear-solve.ts`, `src/game/active-gear.ts`, `src/state/store.ts`,
+`state.test.ts`. UI path: `src/shell/LoadoutOverlay.tsx`, `DopeBookScreen.tsx`,
+`StoreScreen.tsx`, `src/scope/DopePanel.tsx`, `ChronoPanel.tsx`.
+
+> **`zero-distance.ts` is NOT in this list** — it takes a `cartridgeId`, never an instance.
+> `TruthInspector.tsx` is also clean: its `catalogId` references are its own local
+> dropdown state, not owned records.
+
+**Method — let `tsc` drive the migration.** Do not hunt for call sites by hand.
+
+1. Make the type change first (step 1 below).
+2. Run `npx tsc --noEmit`. It will produce an error list — **that list is your checklist**,
+   and it is exhaustive by construction.
+3. Work it top to bottom, one file at a time, re-running `tsc` as you go. The error count
+   should fall monotonically. If it ever *rises*, you have introduced a second problem —
+   stop and read before continuing.
+
+This turns a 16-file diff from something to be brave about into something mechanical.
 
 **Steps**
 
-1. `CURRENT_SCHEMA_VERSION` → **3**. `RifleInstance.spec: RifleSpec` and
-   `AmmoLot.spec: LoadSpec` replace `catalogId`. Keep `catalogVersion` (it now stamps
+1. **Schema.** `CURRENT_SCHEMA_VERSION` → **3**. `RifleInstance.spec: RifleSpec` and
+   `AmmoLot.spec: LoadSpec` replace `catalogId` outright — **not** additive-optional (§1c
+   explains why the usual pattern doesn't apply here). Keep `catalogVersion` (it now stamps
    `cartridges.data.json`'s version).
-2. Structural validators for both spec shapes: cartridge id known, numeric fields finite,
+2. **Validators** for both spec shapes: cartridge id known, numeric fields finite,
    **weight/i7/barrel inside the cartridge's authored band**, twist in the option list.
-3. `migrations[2]`: return the save with `rifles: []`, `ammoLots: []`, `dopeNodes: []`,
-   `chronoSummaries: []`, `activeRifleId: null`, `activeLotId: null`, `settings` untouched
-   (D16). Add a **v2 fixture save** to the migration test corpus per guardrail §4.6.
-   **Silent — no notice, no flag, no confirmation prompt** (D16).
-4. `acquire.ts`: `buildRifleInstance(spec, opts)` / `buildAmmoLot(spec, opts)`. The draw
+3. **Migration.** `migrations[2]`: return the save with `rifles: []`, `ammoLots: []`,
+   `dopeNodes: []`, `chronoSummaries: []`, `activeRifleId: null`, `activeLotId: null`,
+   `settings` untouched (D16). Add a **v2 fixture save** to the migration test corpus per
+   guardrail §4.6. **Silent — no notice, no flag, no confirmation prompt** (D16).
+4. **Acquisition.** `buildRifleInstance(spec, opts)` / `buildAmmoLot(spec, opts)`. The draw
    field lists (`RIFLE_DRAW_FIELDS`, `LOT_DRAW_FIELDS`) are **unchanged** — the hidden-truth
    model is untouched by this plan.
+5. **Solve path.** Swap `believedLoad(lot.catalogId)` → `believedLoadForSpec(lot.spec)`,
+   `catalogTwistM(rifle.catalogId)` → `twistMForSpec(rifle.spec)`, and the two `*Ranges`
+   calls, in `gear-solve.ts` and `active-gear.ts`. In `store.ts`, `acquireRifle` /
+   `acquireLot` / `replenishLot` take specs; `replenishLot`'s carry-forward is unchanged —
+   a new lot of the *same spec* with fresh draws.
+6. **UI path.** Every `getRifleModel(x.catalogId)` / `getAmmoLoad(x.catalogId)` becomes
+   `resolveRifleSpec(x.spec)` / `resolveLoadSpec(x.spec)`. Display names come from the
+   resolver: a preset-built load shows its product name, a hand-built one shows
+   `6.5 CM · 140 gr · i7 0.93 · Match`. Both must read well in the Loadout list and the
+   DOPE book header. `DopeBookScreen`'s cartridge filter reads `l.spec.cartridgeId`. All
+   unit display still goes through the units service (guardrail §4.4).
+7. **`StoreScreen.tsx` gets a minimal holding change only** — list the presets so it
+   compiles and stays usable, and drop its `ownedRifles`/`ownedLots` id counters or
+   re-key them on `presetId`. The real build screen is S9. **Do not start it here** — that
+   is the one way this task genuinely does become two things.
 
 **Done when**
 
@@ -468,75 +545,40 @@ rifle-ammo-store S3: spec types and parametric resolver
 - The validator rejects a spec whose weight is outside its band, with a message naming the
   field.
 - Acquisition rolls the same four rifle draws and four lot draws as before.
+- `grep -rn "\.catalogId" src/` returns nothing outside `catalog.ts` and the old API's own
+  definitions.
+- `gear-solve.test.ts`, `active-gear.test.ts`, `bc-fit.test.ts`, `dope-book.test.ts`,
+  `state.test.ts` and `acquire.test.ts` all green against spec-built records.
 - Gates green.
 
-**Stop if** any additive-optional field that predates v3 (`playerZero`, `zeroRangeM`,
-`effective`, `bcSetAt`) stops validating — the schema's discipline is that those are
-validated only when present and never require a bump.
+**Stop if**
+
+- A solve's numeric output moves for the 6.5 CM match preset. It must not — that load is
+  the golden-vector anchor and D6/D9 exist specifically to hold it fixed.
+- Any additive-optional field predating v3 (`playerZero`, `zeroRangeM`, `effective`,
+  `bcSetAt`) stops validating — the schema's discipline is that those are validated only
+  when present and never require a bump.
+- The `tsc` error count rises rather than falls as you work the list.
+
+**Note the overrun in `PROGRESS.md`** per protocol §3 — this task is roughly double the
+~400-line / ~10-file planning guidance, deliberately and with the reason recorded.
 
 ```
 rifle-ammo-store S4: save schema v3 — specs replace catalog ids
 
 - RifleInstance/AmmoLot now carry a build spec; v2→v3 silently clears inventory,
   DOPE nodes and chrono history, preserving settings.
-- Acquisition builds from a spec; hidden-truth draw fields unchanged.
+- Acquisition, solve path (gear-solve, active-gear, store) and UI readers
+  (Loadout, DOPE book, DOPE panel, chrono) all migrated; Store gets a holding
+  preset list pending its rebuild.
 ```
 
 ---
 
-### S5 — Migrate the solve path
-`checkpoint` · commit: **—** *(lands with S6)*
-
-**Files:** `src/engine-bridge/gear-solve.ts`, `src/game/active-gear.ts`,
-`src/game/zero-distance.ts`, `src/state/store.ts`, plus their tests.
-
-**Steps**
-
-1. Swap `believedLoad(lot.catalogId)` → `believedLoadForSpec(lot.spec)`,
-   `catalogTwistM(rifle.catalogId)` → `twistMForSpec(rifle.spec)`, and the two `*Ranges`
-   calls, in `gear-solve.ts` and `active-gear.ts`.
-2. `zero-distance.ts`: `isRimfireCartridge` now takes `spec.cartridgeId` directly.
-3. `store.ts`: `acquireRifle` / `acquireLot` / `replenishLot` take specs. `replenishLot`'s
-   carry-forward behaviour is unchanged — a new lot of the *same spec* with fresh draws.
-
-**Done when** `gear-solve.test.ts` and `active-gear.test.ts` pass against spec-built
-records; `bc-fit.test.ts` and `dope-book.test.ts` green; gates green.
-
-**Stop if** a solve's numeric output moves for the 6.5 CM match preset. It must not — that
-load is the golden-vector anchor and D6/D9 exist specifically to hold it fixed.
-
----
-
-### S6 — Migrate the UI path
-`checkpoint` · commit: **yes**
-
-**Files:** `src/shell/LoadoutOverlay.tsx`, `src/shell/DopeBookScreen.tsx`,
-`src/shell/StoreScreen.tsx`, `src/scope/DopePanel.tsx`, `src/scope/ChronoPanel.tsx`,
-`src/debug/TruthInspector.tsx`.
-
-**Steps**
-
-1. Every `getRifleModel(x.catalogId)` / `getAmmoLoad(x.catalogId)` becomes
-   `resolveRifleSpec(x.spec)` / `resolveLoadSpec(x.spec)`.
-2. Display names come from the resolver: a preset-built load shows its product name; a
-   hand-built one shows `6.5 CM · 140 gr · i7 0.93 · Match`. Both need to read well in the
-   Loadout list and the DOPE book header.
-3. **`StoreScreen.tsx` gets a minimal holding change only** — list the presets so it
-   compiles and remains usable. The real build screen is S9. Do not start it here.
-4. `DopeBookScreen`'s cartridge filter (`lots.filter(... .cartridgeId === ...)`) reads
-   `l.spec.cartridgeId`.
-5. All unit display still goes through the units service (guardrail §4.4).
-
-**Done when** `grep -rn "\.catalogId" src/` returns nothing outside `catalog.ts` and the
-old API's own definitions; vitest green; gates green.
-
-```
-rifle-ammo-store S5+S6: migrate solve and UI paths onto specs
-
-- gear-solve, active-gear, zero-distance and the inventory store now resolve
-  from a build spec; Loadout, DOPE book, DOPE panel, chrono and the dev
-  inspector follow. Store gets a holding preset list pending its rebuild.
-```
+### S5, S6 — folded into S4
+Absorbed by the 2026-08-01 amendment (§1c). Record them in `PROGRESS.md` as
+`SKIPPED(folded into S4)` so the task numbering downstream stays stable and the history
+stays readable. **S7 onward are unchanged.**
 
 ---
 

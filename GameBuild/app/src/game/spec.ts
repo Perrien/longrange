@@ -92,6 +92,12 @@ const PRESETS_BY_ID = new Map(PRESETS.map((p) => [p.id, p]));
 /** All 10 cartridge ids, in cartridges.data.json's authored order. */
 export const CARTRIDGE_IDS_V2: string[] = Object.keys(CARTRIDGES);
 
+/** cartridges.data.json's own `catalogVersion` (2) — stamps every spec-built
+ *  RifleInstance/AmmoLot's `catalogVersion` field (S4, D2/D10) so a future data
+ *  revision can tell which ranges an instance's draws were rolled under. NOT
+ *  the same counter as the old (soon-deleted) catalog.data.json's `catalogVersion`. */
+export const CARTRIDGES_CATALOG_VERSION: number = cartridgesData.catalogVersion;
+
 export function cartridgeParams(cartridgeId: string): CartridgeParamsV2 {
   const c = CARTRIDGES[cartridgeId];
   if (!c) throw new Error(`spec: unknown cartridge '${cartridgeId}'`);

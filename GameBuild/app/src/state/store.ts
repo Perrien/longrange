@@ -27,6 +27,7 @@ import {
   newId,
   type AcquireOptions,
 } from '../game/acquire';
+import type { RifleSpec, LoadSpec } from '../game/spec';
 import type { FiringPoint } from '../range/elr-range-config';
 
 export type UnitsPrimary = 'MIL' | 'MOA';
@@ -255,7 +256,7 @@ export const defaultScore = (): ScoreState => ({
 /** Owned gear + active loadout (task 2.2b). Persisted in the v2 save (the arrays
  *  ride the schema-v2 `rifles[]`/`ammoLots[]`; the active ids are additive-optional
  *  fields, D10). The catalog + hidden-truth derivation stay OUT of the store —
- *  it holds only the persisted records (id + catalogId + catalogVersion + draws).
+ *  it holds only the persisted records (id + spec + catalogVersion + draws).
  *  In 2.2 the active selection is inert on the live solve (D2); it drives the
  *  solve from 2.3. */
 export interface InventoryState {
@@ -363,13 +364,13 @@ export interface GameStore {
   /** Merge a partial settings patch (used by persistence hydration). */
   applySettings(patch: Partial<SettingsState>): void;
 
-  // Inventory / loadout (task 2.2b)
-  /** Acquire a rifle instance from a catalog model id. Rolls hidden draws (opts.rng
-   *  or platform crypto) and appends a NEW instance — acquiring the same model
+  // Inventory / loadout (task 2.2b; specs since rifle-ammo-store S4)
+  /** Acquire a rifle instance from a build spec. Rolls hidden draws (opts.rng
+   *  or platform crypto) and appends a NEW instance — acquiring the same spec
    *  twice yields two distinct instances. Returns the new instance's id. */
-  acquireRifle(catalogId: string, opts?: Partial<AcquireOptions>): string;
-  /** Acquire an ammo lot from a catalog load id (same semantics as acquireRifle). */
-  acquireLot(catalogId: string, opts?: Partial<AcquireOptions>): string;
+  acquireRifle(spec: RifleSpec, opts?: Partial<AcquireOptions>): string;
+  /** Acquire an ammo lot from a build spec (same semantics as acquireRifle). */
+  acquireLot(spec: LoadSpec, opts?: Partial<AcquireOptions>): string;
   /** Consume one round for a fired shot (P2): +1 to the rifle's `lifetimeShotCount`,
    *  −1 (floored at 0) from the lot's `roundsRemaining`, in one atomic set. Called by
    *  the fire paths on every shot fired with real gear (chrono shots included). No-op
@@ -672,9 +673,9 @@ export const useGameStore = create<GameStore>()((set, get) => ({
 
   applySettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 
-  acquireRifle: (catalogId, opts) => {
+  acquireRifle: (spec, opts) => {
     const id = opts?.id ?? newId('rifle');
-    const instance = buildRifleInstance(catalogId, {
+    const instance = buildRifleInstance(spec, {
       rng: opts?.rng ?? cryptoRng(),
       id,
       catalogVersion: opts?.catalogVersion,
@@ -684,13 +685,13 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     return id;
   },
 
-  acquireLot: (catalogId, opts) => {
+  acquireLot: (spec, opts) => {
     const id = opts?.id ?? newId('lot');
     // Generate the lot's [A-Z][0-9][0-9] code unique against the ones already owned.
     const existingLotNumbers = new Set(
       get().inventory.ammoLots.map((l) => l.lotNumber).filter((n): n is string => typeof n === 'string'),
     );
-    const lot = buildAmmoLot(catalogId, {
+    const lot = buildAmmoLot(spec, {
       rng: opts?.rng ?? cryptoRng(),
       id,
       catalogVersion: opts?.catalogVersion,
@@ -722,7 +723,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       get().inventory.ammoLots.map((l) => l.lotNumber).filter((n): n is string => typeof n === 'string'),
     );
     // A new physical lot: fresh hidden draws (its OWN true MV/BC), new code, full count.
-    const base = buildAmmoLot(src.catalogId, {
+    const base = buildAmmoLot(src.spec, {
       rng: cryptoRng(),
       id,
       catalogVersion: src.catalogVersion,

@@ -17,7 +17,7 @@
 // wind helper); routes through `mpsToFps` + the units toggle, like dope-row.
 
 import { stringStats, findChronoSummary } from '../game/chrono';
-import { getAmmoLoad } from '../game/catalog';
+import { resolveLoadSpec } from '../game/catalog';
 import { mpsToFps } from '../units';
 import { useGameStore } from '../state/store';
 
@@ -44,7 +44,7 @@ export function ChronoPanel() {
   let boxMvMps: number | null = null;
   if (lot) {
     try {
-      boxMvMps = getAmmoLoad(lot.catalogId).believedMvMps;
+      boxMvMps = resolveLoadSpec(lot.spec).believedMvMps;
     } catch {
       boxMvMps = null;
     }

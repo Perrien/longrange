@@ -1,14 +1,16 @@
-// Store — acquire rifles + ammo (task 2.2c, D3). The pre-range acquisition
-// surface, reachable from the range-select landing. Shows BELIEVED box values
-// only (guardrail §4.8 / catalog §0: no hidden truth in player-facing UI) — MV
-// via the units service, BC + display attrs as authored. Everything is freely
-// acquirable in 2.2 (D4); acquiring the same model twice creates two instances.
+// Store — acquire rifles + ammo (task 2.2c, D3). MINIMAL HOLDING VERSION
+// (rifle-ammo-store S4 step 7): the real two-step build screen (cartridge list
+// → sliders → Acquire, D17) is S9. This version exists only so the app keeps
+// compiling and stays usable between S4 and S9 — every cartridge gets a single
+// "default build" rifle row (reference barrel, first twist option) and every
+// authored preset (game/spec.ts's PRESETS) gets an ammo row. No sliders, no
+// derived readouts yet.
 //
-// Guardrail §4.4: MV goes through `formatSpeedForDisplay`; no inline unit math.
-// The imperial display attrs (barrel in, weight lb) are shown as authored (no
-// conversion), flavour for the Store.
+// Shows BELIEVED values only (guardrail §4.8 / catalog §0: no hidden truth in
+// player-facing UI), via the units service (guardrail §4.4).
 import { useGameStore } from '../state/store';
-import { AMMO_LOADS, RIFLE_MODELS } from '../game/catalog';
+import { resolveLoadSpec, resolveRifleSpec } from '../game/catalog';
+import { CARTRIDGE_IDS_V2, PRESETS, cartridgeParams, specFromPreset, type RifleSpec } from '../game/spec';
 import { formatSpeedForDisplay } from '../units/display';
 
 const PANEL_BG = '#1a222c';
@@ -29,6 +31,13 @@ const acquireBtnStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
+/** The default (reference-barrel, first-twist-option) build for a cartridge —
+ *  the holding screen's stand-in for S9's rifle sliders. */
+function defaultRifleSpec(cartridgeId: string): RifleSpec {
+  const c = cartridgeParams(cartridgeId);
+  return { cartridgeId, barrelLengthIn: c.referenceBarrelIn, twistIn: c.twistOptionsInPerTurn[0] };
+}
+
 export function StoreScreen({ onClose }: { onClose: () => void }) {
   const unitsPrimary = useGameStore((s) => s.settings.unitsPrimary);
   const rifles = useGameStore((s) => s.inventory.rifles);
@@ -36,8 +45,10 @@ export function StoreScreen({ onClose }: { onClose: () => void }) {
   const acquireRifle = useGameStore((s) => s.acquireRifle);
   const acquireLot = useGameStore((s) => s.acquireLot);
 
-  const ownedRifles = (catalogId: string) => rifles.filter((r) => r.catalogId === catalogId).length;
-  const ownedLots = (catalogId: string) => ammoLots.filter((l) => l.catalogId === catalogId).length;
+  // Re-keyed off cartridgeId (rifles) / presetId (lots) — S4 step 7: the old
+  // catalogId counters have no equivalent under specs.
+  const ownedRifles = (cartridgeId: string) => rifles.filter((r) => r.spec.cartridgeId === cartridgeId).length;
+  const ownedLots = (presetId: string) => ammoLots.filter((l) => l.spec.presetId === presetId).length;
 
   return (
     <div
@@ -76,12 +87,19 @@ export function StoreScreen({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
+        <div style={{ fontSize: 12, opacity: 0.55, marginBottom: 8 }}>
+          Holding view — sliders + live readouts land in a later pass. Rifles acquire at
+          their reference-barrel default build; ammo acquires from a named preset.
+        </div>
+
         <h2 style={{ fontSize: 16, opacity: 0.8, margin: '8px 0' }}>Rifles</h2>
-        {RIFLE_MODELS.map((m) => {
-          const owned = ownedRifles(m.catalogId);
+        {CARTRIDGE_IDS_V2.map((cartridgeId) => {
+          const spec = defaultRifleSpec(cartridgeId);
+          const m = resolveRifleSpec(spec);
+          const owned = ownedRifles(cartridgeId);
           return (
             <div
-              key={m.catalogId}
+              key={cartridgeId}
               style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -93,14 +111,14 @@ export function StoreScreen({ onClose }: { onClose: () => void }) {
             >
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontSize: 15 }}>
-                  {m.name}
+                  {m.cartridgeName}
                   {owned > 0 && <span style={{ opacity: 0.6 }}> · owned ×{owned}</span>}
                 </div>
                 <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
-                  {m.className} · {m.barrelLengthIn}" · {m.twist} · {m.weightLb} lb
+                  {m.className} · {m.barrelLengthIn}" · 1:{m.twistIn}
                 </div>
               </div>
-              <button style={acquireBtnStyle} onClick={() => acquireRifle(m.catalogId)}>
+              <button style={acquireBtnStyle} onClick={() => acquireRifle(spec)}>
                 Acquire
               </button>
             </div>
@@ -108,12 +126,13 @@ export function StoreScreen({ onClose }: { onClose: () => void }) {
         })}
 
         <h2 style={{ fontSize: 16, opacity: 0.8, margin: '20px 0 8px' }}>Ammo</h2>
-        {AMMO_LOADS.map((a) => {
-          const owned = ownedLots(a.catalogId);
-          const mv = formatSpeedForDisplay(a.believedMvMps, unitsPrimary);
+        {PRESETS.map((p) => {
+          const load = resolveLoadSpec(specFromPreset(p.id));
+          const owned = ownedLots(p.id);
+          const mv = formatSpeedForDisplay(load.believedMvMps, unitsPrimary);
           return (
             <div
-              key={a.catalogId}
+              key={p.id}
               style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -125,15 +144,15 @@ export function StoreScreen({ onClose }: { onClose: () => void }) {
             >
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontSize: 15 }}>
-                  {a.cartridgeName} — {a.grade}
+                  {load.cartridgeName} — {load.grade}
                   {owned > 0 && <span style={{ opacity: 0.6 }}> · owned ×{owned}</span>}
                 </div>
                 <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
-                  {a.product} · box {mv.value.toFixed(0)} {mv.label} · BC {a.believedBc.toFixed(3)}{' '}
-                  {a.dragModel}
+                  {load.product} · box {mv.value.toFixed(0)} {mv.label} · BC {load.believedBc.toFixed(3)}{' '}
+                  {load.dragModel}
                 </div>
               </div>
-              <button style={acquireBtnStyle} onClick={() => acquireLot(a.catalogId)}>
+              <button style={acquireBtnStyle} onClick={() => acquireLot(specFromPreset(p.id))}>
                 Acquire
               </button>
             </div>

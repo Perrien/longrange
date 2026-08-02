@@ -131,21 +131,26 @@ describe('deriveRifleTruth / deriveLotTruth', () => {
 });
 
 describe('resolveTruth seam (task 2.1c — the engine-bridge boundary)', () => {
+  // Opaque test fixtures: RIFLE_RANGES/LOT_RANGES are passed in explicitly below
+  // rather than resolved from the spec, so the spec content itself is arbitrary —
+  // it just needs to type-check as a well-formed RifleSpec/LoadSpec.
+  const TEST_RIFLE_SPEC = { cartridgeId: '65cm', barrelLengthIn: 24, twistIn: 8 };
+  const TEST_LOAD_SPEC = { cartridgeId: '65cm', weightGr: 140, i7: 0.93, grade: 'match' as const };
   const rifleA: RifleInstance = {
     id: 'r-a',
-    catalogId: 'rifle-6.5cm',
+    spec: TEST_RIFLE_SPEC,
     catalogVersion: 1,
     draws: RIFLE_DRAWS_A,
   };
   const rifleB: RifleInstance = {
     id: 'r-b',
-    catalogId: 'rifle-6.5cm',
+    spec: TEST_RIFLE_SPEC,
     catalogVersion: 1,
     draws: RIFLE_DRAWS_B,
   };
   const lot: AmmoLot = {
     id: 'l-a',
-    catalogId: 'lot-match',
+    spec: TEST_LOAD_SPEC,
     catalogVersion: 1,
     draws: LOT_DRAWS_A,
   };

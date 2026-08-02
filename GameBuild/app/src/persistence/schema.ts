@@ -1,13 +1,22 @@
 // Save schema (task 0.8; build-plan §6). v1 persisted settings only. v2
 // (Increment 2, task 2.1a) adds the hidden-truth record arrays — `rifles[]`
 // (instances) and `ammoLots[]` — and carries three durable player settings into
-// persistence (D5). Every bump ships a migration (migrations.ts) + a fixture
-// save in the test corpus (persistence.test.ts), per guardrail §4.6.
+// persistence (D5). v3 (rifle-ammo-store S4, D16) replaces each record's
+// `catalogId` with a build `spec` (RifleSpec/LoadSpec, game/spec.ts) — NOT
+// additive-optional, unlike almost everything else in this file: a record has
+// one shape, so this one genuinely needs the version bump + a (silent, D16)
+// wipe of owned gear, rather than the usual "validated only when present"
+// pattern. See Design/Plans/rifle-ammo-store-plan.md §1c for why the identity
+// migration couldn't land in smaller pieces. Every bump ships a migration
+// (migrations.ts) + a fixture save in the test corpus (persistence.test.ts),
+// per guardrail §4.6.
 //
 // Validation is hand-rolled structural checking (no JSON-Schema dependency —
 // protocol §3): every import is validated BEFORE migration/apply.
+import { cartridgeParams } from '../game/spec';
+import type { RifleSpec, LoadSpec } from '../game/spec';
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export interface SaveSettings {
   /** Which angular unit leads in the UI; both are always shown (catalog §0.6). */
@@ -77,11 +86,13 @@ export interface EffectiveParams {
   bcSetAt?: string;
 }
 
-/** A specific rifle the player owns (v2). Truth = map(draws, catalog ranges);
- *  `catalogVersion` stamps the ranges the draws were rolled under (D2). */
+/** A specific rifle the player owns (v3). Truth = map(draws, catalog ranges);
+ *  `catalogVersion` stamps cartridges.data.json's version the draws were rolled
+ *  under (D2). `spec` (not `catalogId`, v3/D16) is the build that was acquired —
+ *  barrel length + twist, see game/spec.ts's `RifleSpec`. */
 export interface RifleInstance {
   id: string;
-  catalogId: string;
+  spec: RifleSpec;
   catalogVersion: number;
   draws: RifleDraws;
   playerZero?: PlayerZero;
@@ -93,10 +104,11 @@ export interface RifleInstance {
   lifetimeShotCount?: number;
 }
 
-/** A specific ammo lot the player owns (v2). */
+/** A specific ammo lot the player owns (v3). `spec` (not `catalogId`, v3/D16) is
+ *  the build that was acquired — weight/i7/grade, see game/spec.ts's `LoadSpec`. */
 export interface AmmoLot {
   id: string;
-  catalogId: string;
+  spec: LoadSpec;
   catalogVersion: number;
   draws: LotDraws;
   /** Human-facing lot code `[A-Z][0-9][0-9]` (P2), non-sequential. Additive-
@@ -240,12 +252,69 @@ function finiteNumber(v: unknown, ctx: string): void {
   if (typeof v !== 'number' || !Number.isFinite(v)) fail(`${ctx} must be a finite number`);
 }
 
-function validateRifle(r: unknown, i: number): void {
+/** v3/D16: cartridge id known, numeric fields finite, barrel length + twist
+ *  inside the cartridge's authored band/option list. */
+function validateRifleSpec(spec: unknown, ctx: string): void {
+  if (typeof spec !== 'object' || spec === null) fail(`${ctx}.spec not an object`);
+  const o = spec as Record<string, unknown>;
+  if (typeof o.cartridgeId !== 'string') fail(`${ctx}.spec.cartridgeId missing`);
+  const c = (() => {
+    try {
+      return cartridgeParams(o.cartridgeId as string);
+    } catch {
+      fail(`${ctx}.spec.cartridgeId unknown: '${o.cartridgeId}'`);
+    }
+  })();
+  finiteNumber(o.barrelLengthIn, `${ctx}.spec.barrelLengthIn`);
+  finiteNumber(o.twistIn, `${ctx}.spec.twistIn`);
+  const barrelLengthIn = o.barrelLengthIn as number;
+  if (barrelLengthIn < c.barrelBandIn.min || barrelLengthIn > c.barrelBandIn.max)
+    fail(`${ctx}.spec.barrelLengthIn out of band for '${o.cartridgeId}'`);
+  if (!c.twistOptionsInPerTurn.includes(o.twistIn as number))
+    fail(`${ctx}.spec.twistIn is not a valid twist option for '${o.cartridgeId}'`);
+}
+
+/** v3/D16: cartridge id known, numeric fields finite, weight/i7 inside the
+ *  cartridge's authored band (skipped for presets-only/rimfire cartridges,
+ *  which instead require a presetId — D8). */
+function validateLoadSpec(spec: unknown, ctx: string): void {
+  if (typeof spec !== 'object' || spec === null) fail(`${ctx}.spec not an object`);
+  const o = spec as Record<string, unknown>;
+  if (typeof o.cartridgeId !== 'string') fail(`${ctx}.spec.cartridgeId missing`);
+  const c = (() => {
+    try {
+      return cartridgeParams(o.cartridgeId as string);
+    } catch {
+      fail(`${ctx}.spec.cartridgeId unknown: '${o.cartridgeId}'`);
+    }
+  })();
+  finiteNumber(o.weightGr, `${ctx}.spec.weightGr`);
+  finiteNumber(o.i7, `${ctx}.spec.i7`);
+  if (o.grade !== 'match' && o.grade !== 'bulk') fail(`${ctx}.spec.grade must be 'match' | 'bulk'`);
+  if (o.presetId !== undefined && typeof o.presetId !== 'string')
+    fail(`${ctx}.spec.presetId must be a string when present`);
+  if (c.presetsOnly) {
+    if (o.presetId === undefined) fail(`${ctx}.spec.presetId required for rimfire cartridge '${o.cartridgeId}' (D8)`);
+  } else {
+    const weightGr = o.weightGr as number;
+    const i7 = o.i7 as number;
+    if (weightGr < c.weightRangeGr!.min || weightGr > c.weightRangeGr!.max)
+      fail(`${ctx}.spec.weightGr out of band for '${o.cartridgeId}'`);
+    if (i7 < c.i7Range!.min || i7 > c.i7Range!.max) fail(`${ctx}.spec.i7 out of band for '${o.cartridgeId}'`);
+  }
+}
+
+/** `checkSpec` is false for a pre-v3 record (D16): the old `catalogId` shape has
+ *  no meaningful spec to validate and is about to be wiped wholesale by the
+ *  v2→v3 migration, but its `draws`/`catalogVersion`/`playerZero` are still
+ *  worth validating (they're version-stable, so a genuinely corrupt v2 save
+ *  should still fail shape validation before it ever reaches migration). */
+function validateRifle(r: unknown, i: number, checkSpec: boolean): void {
   const ctx = `rifles[${i}]`;
   if (typeof r !== 'object' || r === null) fail(`${ctx} not an object`);
   const o = r as Record<string, unknown>;
   if (typeof o.id !== 'string') fail(`${ctx}.id missing`);
-  if (typeof o.catalogId !== 'string') fail(`${ctx}.catalogId missing`);
+  if (checkSpec) validateRifleSpec(o.spec, ctx);
   if (typeof o.catalogVersion !== 'number' || !Number.isInteger(o.catalogVersion))
     fail(`${ctx}.catalogVersion must be an integer`);
   validateDraws(o.draws, ctx);
@@ -270,12 +339,13 @@ function validateEffective(e: unknown, ctx: string): void {
     fail(`${ctx}.effective.bcSetAt must be a string when present`);
 }
 
-function validateLot(l: unknown, i: number): void {
+/** See `validateRifle`'s `checkSpec` note — same pre-v3/D16 reasoning. */
+function validateLot(l: unknown, i: number, checkSpec: boolean): void {
   const ctx = `ammoLots[${i}]`;
   if (typeof l !== 'object' || l === null) fail(`${ctx} not an object`);
   const o = l as Record<string, unknown>;
   if (typeof o.id !== 'string') fail(`${ctx}.id missing`);
-  if (typeof o.catalogId !== 'string') fail(`${ctx}.catalogId missing`);
+  if (checkSpec) validateLoadSpec(o.spec, ctx);
   if (typeof o.catalogVersion !== 'number' || !Number.isInteger(o.catalogVersion))
     fail(`${ctx}.catalogVersion must be an integer`);
   validateDraws(o.draws, ctx);
@@ -380,13 +450,21 @@ export function validateSaveShape(data: unknown): asserts data is SaveData {
     if (!Array.isArray(d.rifles)) fail('rifles[] missing (required at schema v2)');
     if (!Array.isArray(d.ammoLots)) fail('ammoLots[] missing (required at schema v2)');
   }
+  // v3/D16: `spec` (not `catalogId`) is only a valid record shape from v3 on. A
+  // pre-v3 save's rifles/ammoLots are about to be wiped wholesale by the v2→v3
+  // migration (D16 — no meaningful spec can be reconstructed from the old
+  // tier/grade axes), so the spec-shape check is skipped for them (see
+  // `validateRifle`/`validateLot`'s `checkSpec`) — but draws/catalogVersion/
+  // playerZero are still validated at every version, so a genuinely corrupt v2
+  // save still fails before migration.
+  const specShaped = d.schemaVersion >= 3;
   if (d.rifles !== undefined) {
     if (!Array.isArray(d.rifles)) fail('rifles must be an array when present');
-    d.rifles.forEach((r, i) => validateRifle(r, i));
+    d.rifles.forEach((r, i) => validateRifle(r, i, specShaped));
   }
   if (d.ammoLots !== undefined) {
     if (!Array.isArray(d.ammoLots)) fail('ammoLots must be an array when present');
-    d.ammoLots.forEach((l, i) => validateLot(l, i));
+    d.ammoLots.forEach((l, i) => validateLot(l, i, specShaped));
   }
 
   // Active loadout selection (task 2.2b, D10). Additive-optional: absent on a

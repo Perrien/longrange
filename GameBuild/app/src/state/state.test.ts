@@ -36,6 +36,28 @@ import {
 import type { DopeNode } from '../persistence';
 import type { SaveData } from '../persistence';
 import { DEFAULT_LOT_ROUNDS } from '../game/acquire';
+import { cartridgeParams, presetsForCartridge, specFromPreset, type RifleSpec, type LoadSpec } from '../game/spec';
+
+/** A reference-build RifleSpec for a cartridge — tests don't care about the
+ *  specific barrel/twist, just "a rifle of this cartridge" (S4: tiers are gone). */
+function rifleSpecFor(cartridgeId: string): RifleSpec {
+  const c = cartridgeParams(cartridgeId);
+  return { cartridgeId, barrelLengthIn: c.referenceBarrelIn, twistIn: c.twistOptionsInPerTurn[0] };
+}
+/** The first authored preset matching this cartridge + grade (S4: the old
+ *  `${cartridgeId}-${grade}` catalog id's closest equivalent). */
+function loadSpecFor(cartridgeId: string, grade: 'match' | 'bulk'): LoadSpec {
+  const preset = presetsForCartridge(cartridgeId).find((p) => p.grade === grade);
+  if (!preset) throw new Error(`state.test: no preset for '${cartridgeId}' / '${grade}'`);
+  return specFromPreset(preset.id);
+}
+const RIFLE_65CM = rifleSpecFor('65cm');
+const RIFLE_308 = rifleSpecFor('308');
+const RIFLE_22LR = rifleSpecFor('22lr');
+const LOAD_65CM_MATCH = loadSpecFor('65cm', 'match');
+const LOAD_65CM_BULK = loadSpecFor('65cm', 'bulk');
+const LOAD_308_MATCH = loadSpecFor('308', 'match');
+const LOAD_308_BULK = loadSpecFor('308', 'bulk');
 
 /** Build a minimal ShotResult for scoring tests (impact geometry doesn't matter here).
  *  `zoneId` defaults to the legacy `'plate'`; pass one to exercise `score.zoneHits`. */
@@ -558,20 +580,20 @@ describe('inventory / loadout (task 2.2b)', () => {
 
   it('acquireRifle appends an instance and returns its id; twice → two instances', () => {
     const st = useGameStore.getState();
-    const id1 = st.acquireRifle('65cm-custom', { rng });
-    const id2 = st.acquireRifle('65cm-custom', { rng });
+    const id1 = st.acquireRifle(RIFLE_65CM, { rng });
+    const id2 = st.acquireRifle(RIFLE_65CM, { rng });
     const inv = useGameStore.getState().inventory;
     expect(inv.rifles).toHaveLength(2);
     expect(id1).not.toBe(id2);
     expect(inv.rifles.map((r) => r.id)).toEqual([id1, id2]);
-    expect(inv.rifles[0].catalogId).toBe('65cm-custom');
+    expect(inv.rifles[0].spec.cartridgeId).toBe('65cm');
     expect(inv.rifles[0].draws.mvOffset).toBe(0.5);
   });
 
   it('acquireLot appends a lot; selectRifle/selectLot set the active ids', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('308-factoryMatch', { rng });
-    const lid = st.acquireLot('308-match', { rng });
+    const rid = st.acquireRifle(RIFLE_308, { rng });
+    const lid = st.acquireLot(LOAD_308_MATCH, { rng });
     st.selectRifle(rid);
     st.selectLot(lid);
     const inv = useGameStore.getState().inventory;
@@ -584,15 +606,15 @@ describe('inventory / loadout (task 2.2b)', () => {
 
   it('resetSession leaves inventory alone (gear is not session state)', () => {
     const st = useGameStore.getState();
-    st.acquireRifle('22lr-hunting', { rng });
+    st.acquireRifle(RIFLE_22LR, { rng });
     st.resetSession();
     expect(useGameStore.getState().inventory.rifles).toHaveLength(1);
   });
 
   it('deleteRifle removes the instance and clears the active selection if it was active', () => {
     const st = useGameStore.getState();
-    const keep = st.acquireRifle('65cm-custom', { rng });
-    const drop = st.acquireRifle('65cm-custom', { rng });
+    const keep = st.acquireRifle(RIFLE_65CM, { rng });
+    const drop = st.acquireRifle(RIFLE_65CM, { rng });
     st.selectRifle(drop);
     st.deleteRifle(drop);
     const inv = useGameStore.getState().inventory;
@@ -607,8 +629,8 @@ describe('inventory / loadout (task 2.2b)', () => {
 
   it('deleteLot removes the lot and clears the active selection if it was active', () => {
     const st = useGameStore.getState();
-    const keep = st.acquireLot('65cm-match', { rng });
-    const drop = st.acquireLot('65cm-bulk', { rng });
+    const keep = st.acquireLot(LOAD_65CM_MATCH, { rng });
+    const drop = st.acquireLot(LOAD_65CM_BULK, { rng });
     st.selectLot(drop);
     st.deleteLot(drop);
     const inv = useGameStore.getState().inventory;
@@ -622,7 +644,7 @@ describe('confirmZero (task 2.3d — the re-confirm compose fix)', () => {
 
   it('a fresh rifle: confirm stores the current turret + zeroRangeM and resets the turret', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng });
     st.dialElevationClicks(6); // 0.6 mrad
     st.dialWindageClicks(-3); // −0.3 mrad
     st.confirmZero(rid, 91.44);
@@ -637,7 +659,7 @@ describe('confirmZero (task 2.3d — the re-confirm compose fix)', () => {
 
   it('a rifle with a stored zero: confirm COMPOSES the touch-up dial onto the old zero (never replaces)', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng });
     // Prior zero (e.g. from an earlier session) — the ~0.6 mil the bug dropped.
     st.setPlayerZero(rid, { elevationRad: milToRad(0.6), windageRad: milToRad(-0.2), zeroRangeM: 91.44 });
     // Touch-up: one click each, then re-confirm on the 200 target.
@@ -655,7 +677,7 @@ describe('confirmZero (task 2.3d — the re-confirm compose fix)', () => {
 
   it('subtracts the come-up handoff: pz_new = pz_old + dial − required (fidelity fix)', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng });
     // Zeroed at 100; the player walks to the 200 target: the dial they centre
     // with = a 0.1 mil bore touch-up + the REAL 0.5 mil come-up 100→200. The
     // come-up part belongs to the new trajectory zero, not the angular baseline.
@@ -672,7 +694,7 @@ describe('confirmZero (task 2.3d — the re-confirm compose fix)', () => {
 
   it('re-confirming with no new dial keeps the zero unchanged', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng });
     st.dialElevationClicks(4);
     st.confirmZero(rid, 91.44);
     st.confirmZero(rid, 91.44); // turret is 0/0 now — zero must not move
@@ -683,7 +705,7 @@ describe('confirmZero (task 2.3d — the re-confirm compose fix)', () => {
 
   it('an unknown rifle id is a no-op (turret untouched)', () => {
     const st = useGameStore.getState();
-    st.acquireRifle('65cm-custom', { rng });
+    st.acquireRifle(RIFLE_65CM, { rng });
     st.dialElevationClicks(2);
     st.confirmZero('no-such-rifle', 91.44);
     const state = useGameStore.getState();
@@ -697,8 +719,8 @@ describe('gear persistence (task 2.2b — the DEFAULT_SAVE-wipe fix)', () => {
 
   it('storeToSave carries settings AND inventory (arrays + active ids)', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng });
-    const lid = st.acquireLot('65cm-match', { rng });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng });
     st.selectRifle(rid);
     st.selectLot(lid);
     const save = storeToSave(useGameStore.getState());
@@ -713,7 +735,7 @@ describe('gear persistence (task 2.2b — the DEFAULT_SAVE-wipe fix)', () => {
     const store = new MemorySaveStore();
     const unsub = persistSettingsOnChange(useGameStore, store);
     const st = useGameStore.getState();
-    st.acquireRifle('308-custom', { rng }); // triggers a save with gear
+    st.acquireRifle(RIFLE_308, { rng }); // triggers a save with gear
     st.setUnitsPrimary('MOA'); // a pure settings change — must NOT clear the gear
     await new Promise((r) => setTimeout(r, 0));
     unsub();
@@ -727,9 +749,9 @@ describe('gear persistence (task 2.2b — the DEFAULT_SAVE-wipe fix)', () => {
     const store = new MemorySaveStore();
     const unsub = persistSettingsOnChange(useGameStore, store);
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('308-custom', { rng: () => 0.73 });
+    const rid = st.acquireRifle(RIFLE_308, { rng: () => 0.73 });
     st.selectRifle(rid);
-    st.acquireLot('308-bulk', { rng: () => 0.4 });
+    st.acquireLot(LOAD_308_BULK, { rng: () => 0.4 });
     await new Promise((r) => setTimeout(r, 0));
     unsub();
 
@@ -767,7 +789,7 @@ describe('DOPE nodes (task 2.4a)', () => {
 
   it('deleteRifle cascades: its nodes are pruned in the same update', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng });
     st.confirmNode(dopeNode({ rifleId: rid, distanceM: yardsToMeters(300) }));
     st.confirmNode(dopeNode({ rifleId: 'other-rifle', distanceM: yardsToMeters(300) }));
     st.deleteRifle(rid);
@@ -778,7 +800,7 @@ describe('DOPE nodes (task 2.4a)', () => {
 
   it('deleteLot cascades: its nodes are pruned in the same update', () => {
     const st = useGameStore.getState();
-    const lid = st.acquireLot('65cm-match', { rng });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng });
     st.confirmNode(dopeNode({ lotId: lid }));
     st.confirmNode(dopeNode({ lotId: 'other-lot', distanceM: yardsToMeters(500) }));
     st.deleteLot(lid);
@@ -864,8 +886,8 @@ describe('chronograph (task 2.4e)', () => {
 
   it('committing a chrono string writes the lot effective MV (chrono → MV, D15 lever 1)', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng: () => 0.5 });
-    const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng: () => 0.5 });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng: () => 0.5 });
     st.logChronoReading(rid, lid, 800);
     st.logChronoReading(rid, lid, 810);
     st.commitChronoString('2026-07-27T00:00:00.000Z');
@@ -877,8 +899,8 @@ describe('chronograph (task 2.4e)', () => {
 
   it('a gear switch mid-string commits it AND writes the prior lot effective MV', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng: () => 0.5 });
-    const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng: () => 0.5 });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng: () => 0.5 });
     st.logChronoReading(rid, lid, 790);
     st.logChronoReading(rid, lid, 800);
     st.logChronoReading('other-rifle', 'other-lot', 900); // switch → auto-commit rid/lid
@@ -889,8 +911,8 @@ describe('chronograph (task 2.4e)', () => {
 
   it('deleteRifle / deleteLot cascade-prune chrono summaries', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng });
-    const lid = st.acquireLot('65cm-match', { rng });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng });
     st.logChronoReading(rid, lid, 820);
     st.logChronoReading('other', 'other', 900);
     st.commitChronoString('iso'); // commits the CURRENT string ('other'/'other')
@@ -942,8 +964,8 @@ describe('chronograph (task 2.4e)', () => {
 describe('setLotEffectiveBc (bc-truing-plan T2/T4, D15 lever 2)', () => {
   it('writes bc + source, leaving mvMps/mvSource byte-identical', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng: () => 0.5 });
-    const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng: () => 0.5 });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng: () => 0.5 });
     st.logChronoReading(rid, lid, 800);
     st.logChronoReading(rid, lid, 810);
     st.commitChronoString('2026-07-31T00:00:00.000Z'); // effective.mvMps = 805, mvSource: 'chrono'
@@ -960,7 +982,7 @@ describe('setLotEffectiveBc (bc-truing-plan T2/T4, D15 lever 2)', () => {
 
   it('creates the effective object on a lot that has none, with mvSource: box', () => {
     const st = useGameStore.getState();
-    const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng: () => 0.5 });
     expect(useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!.effective).toBeUndefined();
 
     st.setLotEffectiveBc(lid, 0.243, 'provisional', '2026-07-31T01:00:00.000Z');
@@ -980,7 +1002,7 @@ describe('setLotEffectiveBc (bc-truing-plan T2/T4, D15 lever 2)', () => {
 
   it('stamps bcSetAt (T4, D15 re-true signal)', () => {
     const st = useGameStore.getState();
-    const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng: () => 0.5 });
     st.setLotEffectiveBc(lid, 0.251, 'provisional', '2026-07-31T01:00:00.000Z');
     const lot = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!;
     expect(lot.effective?.bcSetAt).toBe('2026-07-31T01:00:00.000Z');
@@ -990,7 +1012,7 @@ describe('setLotEffectiveBc (bc-truing-plan T2/T4, D15 lever 2)', () => {
     const store = new MemorySaveStore();
     const unsub = persistSettingsOnChange(useGameStore, store);
     const st = useGameStore.getState();
-    const lid = st.acquireLot('65cm-match', { rng: () => 0.5 });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng: () => 0.5 });
     st.setLotEffectiveBc(lid, 0.257, 'provisional', '2026-07-31T01:00:00.000Z'); // inventory change → persist
     await new Promise((r) => setTimeout(r, 0));
     unsub();
@@ -1006,14 +1028,18 @@ describe('setLotEffectiveBc (bc-truing-plan T2/T4, D15 lever 2)', () => {
 });
 
 describe('saveToInventory P2 backfill (pre-P2 records get the new fields)', () => {
+  // saveToInventory runs AFTER migration (schema.ts/migrations.ts), on
+  // already-spec-shaped v3 records — it only backfills the additive-optional P2
+  // fields (acquiredAt, lifetimeShotCount, lotNumber, roundsRemaining), so this
+  // fixture is v3-shaped; schemaVersion itself is inert to this function.
   const preP2Save = (): SaveData => ({
-    schemaVersion: 2,
+    schemaVersion: 3,
     updatedAt: new Date(0).toISOString(),
     settings: { unitsPrimary: 'MIL' },
-    rifles: [{ id: 'r1', catalogId: '65cm-custom', catalogVersion: 1, draws: { mvOffset: 0.5, zeroH: 0.5, zeroV: 0.5, inherentPrecision: 0.5 } }],
+    rifles: [{ id: 'r1', spec: RIFLE_65CM, catalogVersion: 1, draws: { mvOffset: 0.5, zeroH: 0.5, zeroV: 0.5, inherentPrecision: 0.5 } }],
     ammoLots: [
-      { id: 'l1', catalogId: '65cm-match', catalogVersion: 1, draws: { meanMvShift: 0.5, mvSd: 0.5, bcError: 0.5, bcSd: 0.5 } },
-      { id: 'l2', catalogId: '65cm-bulk', catalogVersion: 1, draws: { meanMvShift: 0.5, mvSd: 0.5, bcError: 0.5, bcSd: 0.5 } },
+      { id: 'l1', spec: LOAD_65CM_MATCH, catalogVersion: 1, draws: { meanMvShift: 0.5, mvSd: 0.5, bcError: 0.5, bcSd: 0.5 } },
+      { id: 'l2', spec: LOAD_65CM_BULK, catalogVersion: 1, draws: { meanMvShift: 0.5, mvSd: 0.5, bcError: 0.5, bcSd: 0.5 } },
     ],
   });
 
@@ -1055,8 +1081,8 @@ describe('consumeRound (P2b — shot count + round depletion)', () => {
 
   it('increments the rifle lifetime count and decrements the lot rounds', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng });
-    const lid = st.acquireLot('65cm-match', { rng });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng });
     const lot0 = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!;
     const start = lot0.roundsRemaining!;
     st.consumeRound(rid, lid);
@@ -1067,8 +1093,8 @@ describe('consumeRound (P2b — shot count + round depletion)', () => {
 
   it('floors rounds at 0 (never negative) while the lifetime count keeps climbing', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng });
-    const lid = st.acquireLot('65cm-match', { rng });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng });
     const start = useGameStore.getState().inventory.ammoLots.find((l) => l.id === lid)!.roundsRemaining!;
     for (let i = 0; i < start + 5; i++) st.consumeRound(rid, lid);
     const inv = useGameStore.getState().inventory;
@@ -1078,8 +1104,8 @@ describe('consumeRound (P2b — shot count + round depletion)', () => {
 
   it('is a no-op for unknown ids', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng });
-    const lid = st.acquireLot('65cm-match', { rng });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng });
     const before = useGameStore.getState().inventory;
     st.consumeRound('nope-rifle', 'nope-lot');
     const after = useGameStore.getState().inventory;
@@ -1093,13 +1119,13 @@ describe('replenishLot (P4)', () => {
 
   it('appends a fresh lot of the same ammo: new id + code, full rounds, no effective on a blank replenish', () => {
     const st = useGameStore.getState();
-    const lid = st.acquireLot('65cm-match', { rng });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng });
     const freshId = st.replenishLot(lid, false)!;
     const inv = useGameStore.getState().inventory;
     expect(inv.ammoLots).toHaveLength(2);
     const fresh = inv.ammoLots.find((l) => l.id === freshId)!;
     const src = inv.ammoLots.find((l) => l.id === lid)!;
-    expect(fresh.catalogId).toBe(src.catalogId);
+    expect(fresh.spec).toEqual(src.spec);
     expect(fresh.id).not.toBe(src.id);
     expect(fresh.lotNumber).not.toBe(src.lotNumber);
     expect(fresh.lotNumber).toMatch(/^[A-Z]\d{2}$/);
@@ -1109,8 +1135,8 @@ describe('replenishLot (P4)', () => {
 
   it('carries a discovered (chrono) MV forward as provisional', () => {
     const st = useGameStore.getState();
-    const rid = st.acquireRifle('65cm-custom', { rng });
-    const lid = st.acquireLot('65cm-match', { rng });
+    const rid = st.acquireRifle(RIFLE_65CM, { rng });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng });
     st.logChronoReading(rid, lid, 800);
     st.logChronoReading(rid, lid, 810);
     st.commitChronoString('2026-07-27T00:00:00.000Z');
@@ -1123,14 +1149,14 @@ describe('replenishLot (P4)', () => {
 
   it('carryForward with nothing discovered yields a plain box lot (no effective)', () => {
     const st = useGameStore.getState();
-    const lid = st.acquireLot('65cm-match', { rng });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng });
     const freshId = st.replenishLot(lid, true)!;
     expect(useGameStore.getState().inventory.ammoLots.find((l) => l.id === freshId)!.effective).toBeUndefined();
   });
 
   it('makes the new lot active when the source lot was active (seamless continue)', () => {
     const st = useGameStore.getState();
-    const lid = st.acquireLot('65cm-match', { rng });
+    const lid = st.acquireLot(LOAD_65CM_MATCH, { rng });
     st.selectLot(lid);
     const freshId = st.replenishLot(lid, false)!;
     expect(useGameStore.getState().inventory.activeLotId).toBe(freshId);
@@ -1138,8 +1164,8 @@ describe('replenishLot (P4)', () => {
 
   it('leaves the active selection alone if a different lot was active', () => {
     const st = useGameStore.getState();
-    const a = st.acquireLot('65cm-match', { rng });
-    const b = st.acquireLot('65cm-bulk', { rng });
+    const a = st.acquireLot(LOAD_65CM_MATCH, { rng });
+    const b = st.acquireLot(LOAD_65CM_BULK, { rng });
     st.selectLot(b);
     st.replenishLot(a, false);
     expect(useGameStore.getState().inventory.activeLotId).toBe(b);

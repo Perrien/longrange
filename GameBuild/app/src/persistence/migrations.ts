@@ -34,6 +34,27 @@ const migrations: Record<number, Migration> = {
         save.settings.windMarkerStyle ?? DEFAULT_SAVE.settings.windMarkerStyle,
     },
   }),
+
+  // v2 → v3 (rifle-ammo-store S4, D16): RifleInstance.spec/AmmoLot.spec replace
+  // catalogId — NOT additive-optional (a record has one shape), so unlike every
+  // other bump in this file this one can't just default a missing field. Owned
+  // gear built under the old id catalog has no meaningful spec to construct (the
+  // rifle-tier/ammo-grade axes it was built from no longer exist), so per D16
+  // (owner's explicit, confirmed 2026-08-01 choice — single-user project, no
+  // in-app notice/warning/confirmation) the wipe is silent: every owned-gear
+  // array clears, along with DOPE nodes, chrono history and the active
+  // selection, which all reference rifle/lot ids that no longer exist.
+  // `settings` is untouched — it carries no gear-shaped data.
+  2: (save) => ({
+    ...save,
+    schemaVersion: 3,
+    rifles: [],
+    ammoLots: [],
+    dopeNodes: [],
+    chronoSummaries: [],
+    activeRifleId: null,
+    activeLotId: null,
+  }),
 };
 
 export function migrateSave(save: SaveData): SaveData {

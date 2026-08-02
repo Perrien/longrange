@@ -27,13 +27,13 @@ import { assembleComeUp, nearestRow, type ComeUpDisplayRow } from '../game/dope-
 import { comeUpStationsM, believedVerticalSdRad } from '../game/dope-book';
 import { findChronoSummary, isBcStaleVsChrono, type ChronoSummary } from '../game/chrono';
 import {
-  getRifleModel,
-  getAmmoLoad,
+  resolveRifleSpec,
+  resolveLoadSpec,
   isRimfireCartridge,
   catalogEffectiveRangeYd,
-  catalogRifleRanges,
-  catalogLotRanges,
-  type RifleModel,
+  rifleRangesForSpec,
+  lotRangesForSpec,
+  type RifleModelForSpec,
 } from '../game/catalog';
 import { SIGHT_HEIGHT_M } from '../game/loads';
 import { mpsToFps, asMilMoa, subtensionMmInch, yardsToMeters } from '../units';
@@ -69,8 +69,8 @@ export function DopeBookScreen({ onClose }: { onClose: () => void }) {
 
   const rifle = inventory.rifles.find((r) => r.id === inventory.activeRifleId);
   const lot = inventory.ammoLots.find((l) => l.id === inventory.activeLotId);
-  const rifleModel = rifle ? getRifleModel(rifle.catalogId) : null;
-  const ammoLoad = lot ? getAmmoLoad(lot.catalogId) : null;
+  const rifleModel = rifle ? resolveRifleSpec(rifle.spec) : null;
+  const ammoLoad = lot ? resolveLoadSpec(lot.spec) : null;
   const chrono =
     rifle && lot ? findChronoSummary(chronoSummaries, rifle.id, lot.id) : undefined;
 
@@ -231,7 +231,7 @@ export function DopeBookScreen({ onClose }: { onClose: () => void }) {
               <RifleAmmoOverview
                 rifle={rifle}
                 rifleModel={rifleModel}
-                lots={inventory.ammoLots.filter((l) => getAmmoLoad(l.catalogId).cartridgeId === rifleModel.cartridgeId)}
+                lots={inventory.ammoLots.filter((l) => l.spec.cartridgeId === rifleModel.cartridgeId)}
                 chronoSummaries={chronoSummaries}
                 isMetric={isMetric}
               />
@@ -349,17 +349,17 @@ function fmtDate(epochMs: number): string {
  *  once the lot is chronographed. */
 function verticalSpread(
   rifle: RifleInstance,
-  rifleModel: RifleModel,
+  rifleModel: RifleModelForSpec,
   lot: AmmoLot,
   chrono: ChronoSummary | undefined,
   isMetric: boolean,
 ): string {
   const effYd = catalogEffectiveRangeYd(rifleModel.cartridgeId);
   const rangeM = yardsToMeters(effYd);
-  const load = getAmmoLoad(lot.catalogId);
+  const load = resolveLoadSpec(lot.spec);
   const mv = chrono?.avgMps ?? load.believedMvMps;
-  const mvSd = chrono?.sdMps ?? catalogLotRanges(lot.catalogId).mvSd.nominal;
-  const inherent = catalogRifleRanges(rifle.catalogId).inherentPrecision.nominal;
+  const mvSd = chrono?.sdMps ?? lotRangesForSpec(lot.spec).mvSd.nominal;
+  const inherent = rifleRangesForSpec(rifle.spec).inherentPrecision.nominal;
   const sdRad = believedVerticalSdRad(rangeM, mv, mvSd, inherent);
   const ang = asMilMoa(sdRad);
   const lin = subtensionMmInch(sdRad, rangeM);
@@ -377,7 +377,7 @@ function RifleAmmoOverview({
   isMetric,
 }: {
   rifle: RifleInstance;
-  rifleModel: RifleModel;
+  rifleModel: RifleModelForSpec;
   lots: AmmoLot[];
   chronoSummaries: ChronoSummary[];
   isMetric: boolean;
@@ -408,7 +408,7 @@ function RifleAmmoOverview({
           {rifleModel.cartridgeName} · {rifleModel.className}
         </span>
         <span style={label}>Twist</span>
-        <span>{rifleModel.twist}</span>
+        <span>1:{rifleModel.twistIn}</span>
         <span style={label}>Zero</span>
         <span>
           {zeroDistM == null
@@ -427,7 +427,7 @@ function RifleAmmoOverview({
       <div style={{ fontSize: 13, opacity: 0.6, marginBottom: 6 }}>Ammo — {rifleModel.cartridgeName}</div>
       {lots.length === 0 && <div style={{ opacity: 0.6, fontSize: 13 }}>no lots for this cartridge</div>}
       {lots.map((lot) => {
-        const load = getAmmoLoad(lot.catalogId);
+        const load = resolveLoadSpec(lot.spec);
         const chrono = findChronoSummary(chronoSummaries, rifle.id, lot.id);
         const rounds = lot.roundsRemaining ?? 0;
         const depleted = rounds <= 0;

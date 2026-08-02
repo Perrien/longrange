@@ -21,7 +21,7 @@ import {
   type LotTruthRanges,
   type TrueBallistics,
 } from '../game/hidden-truth';
-import { believedLoad, lotTrueBaseMvMps, catalogTwistM } from '../game/catalog';
+import { believedLoadForSpec, trueBaseMvForSpec, twistMForSpec } from '../game/catalog';
 import { solveTrajectory, spinRateFromTwist } from './index';
 import { createScatterSimulator, type ScatterSimulator } from './match-sim';
 import type { AtmosphereInput, BtkModule, Dispersion, Load, TrajectoryTable, WindVec } from './types';
@@ -66,9 +66,9 @@ function trueLoadOf(
   lotRanges: LotTruthRanges,
 ): { load: Load; truth: TrueBallistics; twistM: number } {
   const truth = resolveTruth(rifle, rifleRanges, lot, lotRanges);
-  const believed = believedLoad(lot.catalogId);
-  const twistM = catalogTwistM(rifle.catalogId);
-  const trueMvMps = lotTrueBaseMvMps(lot.catalogId) + truth.totalMvOffsetMps;
+  const believed = believedLoadForSpec(lot.spec);
+  const twistM = twistMForSpec(rifle.spec);
+  const trueMvMps = trueBaseMvForSpec(lot.spec) + truth.totalMvOffsetMps;
   const load: Load = {
     massKg: believed.massKg,
     diameterM: believed.diameterM,
@@ -100,7 +100,7 @@ export function solveGear(module: BtkModule, input: GearSolveInput): GearSolveRe
   // params (D15): a chronograph sets effective MV, a confirmed hold sets effective
   // BC (later); Replenish may carry them forward as provisional. Whichever are
   // present override box here so the player's DOPE reflects what they've measured.
-  const believed = believedLoad(input.lot.catalogId);
+  const believed = believedLoadForSpec(input.lot.spec);
   const eff = input.lot.effective;
   const believedMv = eff?.mvMps ?? believed.muzzleVelocityMps;
   const believedBc = eff?.bc ?? believed.bc;

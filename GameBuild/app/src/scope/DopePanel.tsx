@@ -31,7 +31,7 @@ import { windToVec } from '../game/firing-solution';
 import { assembleComeUp, nearestRow, type ComeUpDisplayRow } from '../game/dope-row';
 import { comeUpStationsM } from '../game/dope-book';
 import { findChronoSummary, isBcStaleVsChrono } from '../game/chrono';
-import { getRifleModel, isRimfireCartridge, catalogEffectiveRangeYd, catalogTwistM, believedLoad } from '../game/catalog';
+import { isRimfireCartridge, catalogEffectiveRangeYd, twistMForSpec, believedLoadForSpec } from '../game/catalog';
 import { getGameLoad, DEFAULT_GAME_LOAD_ID, DEFAULT_GAME_LOAD_CARTRIDGE_ID, SIGHT_HEIGHT_M } from '../game/loads';
 import { recommendedZeroM } from '../game/zero-distance';
 import { formatDistanceForDisplay } from '../units';
@@ -152,8 +152,8 @@ export function DopePanel({ onOpenBook }: { onOpenBook?: () => void } = {}) {
     setBcFitResult(null);
     const timer = setTimeout(() => {
       try {
-        const twistM = catalogTwistM(activeRifle.catalogId);
-        const box = believedLoad(activeLot.catalogId);
+        const twistM = twistMForSpec(activeRifle.spec);
+        const box = believedLoadForSpec(activeLot.spec);
         const fitLoad: Load = { ...box, muzzleVelocityMps: activeLot.effective?.mvMps ?? box.muzzleVelocityMps };
         const { bcMin, bcMax } = plausibleBcBand(box.bc);
         const windVec = windToVec(wind.speedMps, wind.directionDeg);
@@ -226,7 +226,7 @@ export function DopePanel({ onOpenBook }: { onOpenBook?: () => void } = {}) {
       // the DopeBookScreen uses: in-range centuries / rimfire set, continued past
       // effective range to the transonic→subsonic wall (over-generated to 2×
       // effective range; assembleComeUp trims at the first subsonic row).
-      const cartridgeId = ctx ? getRifleModel(ctx.rifle.catalogId).cartridgeId : DEFAULT_GAME_LOAD_CARTRIDGE_ID;
+      const cartridgeId = ctx ? ctx.rifle.spec.cartridgeId : DEFAULT_GAME_LOAD_CARTRIDGE_ID;
       const effRangeYd = catalogEffectiveRangeYd(cartridgeId);
       const stations = comeUpStationsM(isRimfireCartridge(cartridgeId), unitsPrimary, effRangeYd, effRangeYd * 2);
       if (stations.length === 0) {
@@ -309,7 +309,7 @@ export function DopePanel({ onOpenBook }: { onOpenBook?: () => void } = {}) {
         >
           <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Update BC?</div>
           {(() => {
-            const box = believedLoad(activeLot.catalogId);
+            const box = believedLoadForSpec(activeLot.spec);
             const currentBc = activeLot.effective?.bc ?? box.bc;
             const dist = formatDistanceForDisplay(currentTarget.distanceM, unitsPrimary);
             return (

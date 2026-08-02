@@ -9,12 +9,13 @@ import { seedRandom } from './match-sim';
 import { solveTrajectory, spinRateFromTwist } from './index';
 import type { AtmosphereInput, BtkModule, WindVec } from './types';
 import {
-  catalogRifleRanges,
-  catalogLotRanges,
-  believedLoad,
-  lotTrueBaseMvMps,
-  catalogTwistM,
+  rifleRangesForSpec,
+  lotRangesForSpec,
+  believedLoadForSpec,
+  trueBaseMvForSpec,
+  twistMForSpec,
 } from '../game/catalog';
+import { cartridgeParams, specFromPreset, type RifleSpec, type LoadSpec } from '../game/spec';
 import { resolveTruth } from '../game/hidden-truth';
 import { yardsToMeters } from '../units/length';
 import type { RifleInstance, AmmoLot } from '../persistence';
@@ -22,25 +23,26 @@ import type { RifleInstance, AmmoLot } from '../persistence';
 const ISA: AtmosphereInput = { temperatureK: 288.15, altitudeM: 0, humidity: 0.5, pressurePa: 0 };
 const CALM: WindVec = { x: 0, y: 0, z: 0 };
 
-const RIFLE_CATALOG_ID = '65cm-custom';
-const LOT_CATALOG_ID = '65cm-match';
+const c65 = cartridgeParams('65cm');
+const RIFLE_SPEC: RifleSpec = { cartridgeId: '65cm', barrelLengthIn: c65.referenceBarrelIn, twistIn: c65.twistOptionsInPerTurn[0] };
+const LOT_SPEC: LoadSpec = specFromPreset('65cm-match');
 
 // Known, non-0.5 draws so mvOffset + the zero offset are non-trivial.
 const rifle: RifleInstance = {
   id: 'rifle-t',
-  catalogId: RIFLE_CATALOG_ID,
+  spec: RIFLE_SPEC,
   catalogVersion: 1,
   draws: { mvOffset: 0.8, zeroH: 0.7, zeroV: 0.3, inherentPrecision: 0.5 },
 };
 const lot: AmmoLot = {
   id: 'lot-t',
-  catalogId: LOT_CATALOG_ID,
+  spec: LOT_SPEC,
   catalogVersion: 1,
   draws: { meanMvShift: 0.6, mvSd: 0.5, bcError: 0.4, bcSd: 0.5 },
 };
 
-const rifleRanges = catalogRifleRanges(RIFLE_CATALOG_ID);
-const lotRanges = catalogLotRanges(LOT_CATALOG_ID);
+const rifleRanges = rifleRangesForSpec(RIFLE_SPEC);
+const lotRanges = lotRangesForSpec(LOT_SPEC);
 const opts = {
   zeroRangeM: yardsToMeters(100),
   maxRangeM: yardsToMeters(500),
@@ -55,9 +57,9 @@ describe('engine-bridge/gear-solve/solveGear', () => {
 
   it('true table = an independently-built solve at MV=(base+offsets) & BC=trueBc', () => {
     const truth = resolveTruth(rifle, rifleRanges, lot, lotRanges);
-    const trueMv = lotTrueBaseMvMps(LOT_CATALOG_ID) + truth.totalMvOffsetMps;
-    const twistM = catalogTwistM(RIFLE_CATALOG_ID);
-    const believed = believedLoad(LOT_CATALOG_ID);
+    const trueMv = trueBaseMvForSpec(LOT_SPEC) + truth.totalMvOffsetMps;
+    const twistM = twistMForSpec(RIFLE_SPEC);
+    const believed = believedLoadForSpec(LOT_SPEC);
 
     const expectedTrue = solveTrajectory(
       module,
@@ -88,7 +90,7 @@ describe('engine-bridge/gear-solve/solveGear', () => {
     expect(res.believedTable).toEqual(expectedBelieved);
     expect(res.zeroOffsetRad).toEqual(truth.rifle.zeroOffsetRad);
     // Sanity: the true MV really is the base plus the summed hidden offset.
-    expect(trueMv).toBeCloseTo(lotTrueBaseMvMps(LOT_CATALOG_ID) + truth.totalMvOffsetMps, 9);
+    expect(trueMv).toBeCloseTo(trueBaseMvForSpec(LOT_SPEC) + truth.totalMvOffsetMps, 9);
   });
 
   it('believed ≠ true (box optimism): the drop differs meaningfully downrange', () => {
@@ -104,7 +106,7 @@ describe('engine-bridge/gear-solve/solveGear', () => {
   });
 
   it('a lot effective MV (chrono, D15 lever 1) overrides box in the BELIEVED come-up only', () => {
-    const boxMv = believedLoad(LOT_CATALOG_ID).muzzleVelocityMps;
+    const boxMv = believedLoadForSpec(LOT_SPEC).muzzleVelocityMps;
     const base = { rifle, lot, rifleRanges, lotRanges, atmosphere: ISA, wind: CALM, ...opts };
     const boxRes = solveGear(module, base);
     const slower: AmmoLot = { ...lot, effective: { mvMps: boxMv - 30, mvSource: 'chrono', bcSource: 'box' } };
@@ -166,13 +168,14 @@ describe('engine-bridge/gear-solve/solveGear', () => {
   });
 
   it('createGearScatter yields finite dispersed impacts and a tighter group for match vs bulk (task 2.3d)', () => {
-    const bulkLot: AmmoLot = { ...lot, id: 'lot-bulk', catalogId: '65cm-bulk' };
+    const bulkSpec: LoadSpec = specFromPreset('65cm-bulk');
+    const bulkLot: AmmoLot = { ...lot, id: 'lot-bulk', spec: bulkSpec };
     const matchSim = createGearScatter(module, { rifle, lot, rifleRanges, lotRanges, atmosphere: ISA, targetRangeM: 91.44 });
     const bulkSim = createGearScatter(module, {
       rifle,
       lot: bulkLot,
       rifleRanges,
-      lotRanges: catalogLotRanges('65cm-bulk'),
+      lotRanges: lotRangesForSpec(bulkSpec),
       atmosphere: ISA,
       targetRangeM: 91.44,
     });

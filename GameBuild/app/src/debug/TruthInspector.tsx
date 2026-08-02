@@ -17,13 +17,21 @@ import { useEffect, useState } from 'react';
 import {
   AMMO_LOADS,
   RIFLE_MODELS,
-  believedLoad,
-  catalogLotRanges,
-  catalogRifleRanges,
   getAmmoLoad,
   getRifleModel,
-  lotTrueBaseMvMps,
+  resolveLoadSpec,
+  rifleRangesForSpec,
+  lotRangesForSpec,
+  trueBaseMvForSpec,
+  twistMForSpec,
 } from '../game/catalog';
+import {
+  cartridgeParams,
+  presetsForCartridge,
+  specFromPreset,
+  type RifleSpec,
+  type LoadSpec,
+} from '../game/spec';
 import { buildAmmoLot, buildRifleInstance, cryptoRng, newId } from '../game/acquire';
 import { resolveLotTruth, resolveRifleTruth } from '../game/hidden-truth';
 import { type AtmosphereInput } from '../engine-bridge';
@@ -32,7 +40,6 @@ import { loadBtkModule } from '../engine-bridge/wasm-module';
 import type { BtkModule, Dispersion, Load } from '../engine-bridge/types';
 import { useGameStore } from '../state/store';
 import { formatOffsetForDisplay, formatSpeedForDisplay } from '../units/display';
-import { inchesToMeters } from '../units/length';
 import { mpsToFps } from '../units/velocity';
 import { radToMoa } from '../units/angle';
 
@@ -41,10 +48,20 @@ const SPREAD_RANGES_YD = [100, 400, 800];
 const YARD_M = 0.9144;
 const N_SHOTS = 120;
 
-/** Parse a "1:8.0" twist string → metres per turn (needed for the sim's spin). */
-function twistMFromString(twist: string): number {
-  const inches = Number(twist.split(':')[1]);
-  return inchesToMeters(Number.isFinite(inches) && inches > 0 ? inches : 10);
+/** Default (reference-barrel, first-twist-option) spec for a cartridge — this
+ *  dev tool doesn't have its own barrel/twist sliders, so it inspects truth
+ *  for the same default build the Store's holding view acquires (S4 step 7). */
+function defaultRifleSpecFor(cartridgeId: string): RifleSpec {
+  const c = cartridgeParams(cartridgeId);
+  return { cartridgeId, barrelLengthIn: c.referenceBarrelIn, twistIn: c.twistOptionsInPerTurn[0] };
+}
+
+/** First authored preset matching this cartridge + grade — the closest S4
+ *  equivalent of the old catalog's one-load-per-cartridge-per-grade shape. */
+function presetLoadSpecFor(cartridgeId: string, grade: 'match' | 'bulk'): LoadSpec {
+  const preset = presetsForCartridge(cartridgeId).find((p) => p.grade === grade);
+  if (!preset) throw new Error(`TruthInspector: no preset for '${cartridgeId}' / '${grade}'`);
+  return specFromPreset(preset.id);
 }
 
 /** 1σ of the vertical (y) impacts from a seeded volley — the honest vertical
@@ -80,17 +97,17 @@ interface CopyReadout {
 
 function computeCopy(
   module: BtkModule,
-  rifleCatalogId: string,
-  lotCatalogId: string,
+  rifleSpec: RifleSpec,
+  loadSpec: LoadSpec,
   rng: () => number,
 ): CopyReadout {
-  const rifle = buildRifleInstance(rifleCatalogId, { rng, id: newId('dev-rifle') });
-  const lot = buildAmmoLot(lotCatalogId, { rng, id: newId('dev-lot') });
-  const rt = resolveRifleTruth(rifle, catalogRifleRanges(rifleCatalogId));
-  const lt = resolveLotTruth(lot, catalogLotRanges(lotCatalogId));
+  const rifle = buildRifleInstance(rifleSpec, { rng, id: newId('dev-rifle') });
+  const lot = buildAmmoLot(loadSpec, { rng, id: newId('dev-lot') });
+  const rt = resolveRifleTruth(rifle, rifleRangesForSpec(rifleSpec));
+  const lt = resolveLotTruth(lot, lotRangesForSpec(loadSpec));
 
-  const geom = believedLoad(lotCatalogId); // mass/diameter/length/drag are believed==true
-  const effectiveMeanMvMps = lotTrueBaseMvMps(lotCatalogId) + rt.mvOffsetMps + lt.meanMvShiftMps;
+  const geom = resolveLoadSpec(loadSpec); // mass/diameter/length/drag are believed==true
+  const effectiveMeanMvMps = trueBaseMvForSpec(loadSpec) + rt.mvOffsetMps + lt.meanMvShiftMps;
   const trueLoad: Load = {
     massKg: geom.massKg,
     diameterM: geom.diameterM,
@@ -99,7 +116,7 @@ function computeCopy(
     dragModel: geom.dragModel,
     muzzleVelocityMps: effectiveMeanMvMps,
   };
-  const twistM = twistMFromString(getRifleModel(rifleCatalogId).twist);
+  const twistM = twistMForSpec(rifleSpec);
 
   const zero = { scopeCantRad: 0, windSpeedSdMps: 0, headwindSdMps: 0, updraftSdMps: 0 };
   const dispTotal: Dispersion = {
@@ -153,9 +170,16 @@ export function TruthInspector() {
     if (!module) return;
     try {
       const rng = cryptoRng();
+      // Dropdowns are keyed on the old catalog ids (RIFLE_MODELS/AMMO_LOADS,
+      // still valid until S7) purely for their curated cartridge×grade list;
+      // computeCopy itself works in specs (S4), so translate at the boundary.
+      const rifleModel = getRifleModel(rifleId);
+      const ammoLoad = getAmmoLoad(lotId);
+      const rifleSpec = defaultRifleSpecFor(rifleModel.cartridgeId);
+      const loadSpec = presetLoadSpecFor(ammoLoad.cartridgeId, ammoLoad.grade);
       setCopies([
-        computeCopy(module, rifleId, lotId, rng),
-        computeCopy(module, rifleId, lotId, rng),
+        computeCopy(module, rifleSpec, loadSpec, rng),
+        computeCopy(module, rifleSpec, loadSpec, rng),
       ]);
     } catch (e) {
       setError(String(e));

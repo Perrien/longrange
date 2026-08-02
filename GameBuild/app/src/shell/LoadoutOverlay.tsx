@@ -7,7 +7,7 @@
 // 2.2 scope (D2): the active selection is inert on the live solve — it drives the
 // solve from 2.3. Here it just records the choice (persisted via the 2.2b glue).
 import { useGameStore } from '../state/store';
-import { getAmmoLoad, getRifleModel } from '../game/catalog';
+import { resolveLoadSpec, resolveRifleSpec } from '../game/catalog';
 import { formatSpeedForDisplay } from '../units/display';
 
 const PANEL_BG = '#1a222c';
@@ -98,7 +98,7 @@ export function LoadoutOverlay({ onClose }: { onClose: () => void }) {
 
         {rifles.length > 0 && <h2 style={{ fontSize: 16, opacity: 0.8, margin: '12px 0 0', borderTop: DIVIDER, paddingTop: 12 }}>Rifle</h2>}
         {rifles.map((r) => {
-          const model = getRifleModel(r.catalogId);
+          const model = resolveRifleSpec(r.spec);
           const active = r.id === activeRifleId;
           return (
             <div key={r.id} style={rowStyle(active)} onClick={() => selectRifle(active ? null : r.id)}>
@@ -129,7 +129,7 @@ export function LoadoutOverlay({ onClose }: { onClose: () => void }) {
 
         {ammoLots.length > 0 && <h2 style={{ fontSize: 16, opacity: 0.8, margin: '16px 0 0', borderTop: DIVIDER, paddingTop: 12 }}>Ammo</h2>}
         {ammoLots.map((l) => {
-          const load = getAmmoLoad(l.catalogId);
+          const load = resolveLoadSpec(l.spec);
           const active = l.id === activeLotId;
           const mv = formatSpeedForDisplay(load.believedMvMps, unitsPrimary);
           const rounds = l.roundsRemaining ?? 0;

@@ -12,8 +12,14 @@ import {
   newId,
   rollDraws,
 } from './acquire';
-import { CATALOG_VERSION, catalogRifleRanges } from './catalog';
+import { rifleRangesForSpec } from './catalog';
+import { CARTRIDGES_CATALOG_VERSION, cartridgeParams, specFromPreset, type RifleSpec } from './spec';
 import { deriveRifleTruth } from './hidden-truth';
+
+const c65 = cartridgeParams('65cm');
+const RIFLE_65CM: RifleSpec = { cartridgeId: '65cm', barrelLengthIn: c65.referenceBarrelIn, twistIn: c65.twistOptionsInPerTurn[0] };
+const c308 = cartridgeParams('308');
+const RIFLE_308: RifleSpec = { cartridgeId: '308', barrelLengthIn: c308.referenceBarrelIn, twistIn: c308.twistOptionsInPerTurn[0] };
 
 /** Deterministic rng cycling through a fixed sequence (for reproducible draws). */
 function seqRng(values: number[]): () => number {
@@ -46,33 +52,36 @@ describe('rollDraws', () => {
 
 describe('buildRifleInstance / buildAmmoLot', () => {
   it('builds a valid record stamped with the catalog version', () => {
-    const r = buildRifleInstance('65cm-custom', { rng: seqRng([0.5]), id: 'r1' });
+    const r = buildRifleInstance(RIFLE_65CM, { rng: seqRng([0.5]), id: 'r1' });
     expect(r).toEqual({
       id: 'r1',
-      catalogId: '65cm-custom',
-      catalogVersion: CATALOG_VERSION,
+      spec: RIFLE_65CM,
+      catalogVersion: CARTRIDGES_CATALOG_VERSION,
       draws: { mvOffset: 0.5, zeroH: 0.5, zeroV: 0.5, inherentPrecision: 0.5 },
       acquiredAt: 0,
       lifetimeShotCount: 0,
     });
-    const l = buildAmmoLot('65cm-match', { rng: seqRng([0.5]), id: 'l1' });
+    const matchSpec = specFromPreset('65cm-match');
+    const l = buildAmmoLot(matchSpec, { rng: seqRng([0.5]), id: 'l1' });
     expect(Object.keys(l.draws).sort()).toEqual([...LOT_DRAW_FIELDS].sort());
-    expect(l.catalogId).toBe('65cm-match');
+    expect(l.spec).toEqual(matchSpec);
     // P2: a lot ships with a code, a full round count, and an acquisition stamp.
     expect(l.lotNumber).toMatch(/^[A-Z]\d{2}$/);
     expect(l.roundsRemaining).toBe(DEFAULT_LOT_ROUNDS);
     expect(l.acquiredAt).toBe(0);
   });
 
-  it('rejects an unknown catalog id', () => {
-    expect(() => buildRifleInstance('nope', { rng: seqRng([0.5]), id: 'x' })).toThrow();
-    expect(() => buildAmmoLot('nope', { rng: seqRng([0.5]), id: 'x' })).toThrow();
+  it('rejects an unknown cartridge id', () => {
+    const badRifle: RifleSpec = { cartridgeId: 'nope', barrelLengthIn: 24, twistIn: 8 };
+    const badLoad = { ...specFromPreset('65cm-match'), cartridgeId: 'nope' };
+    expect(() => buildRifleInstance(badRifle, { rng: seqRng([0.5]), id: 'x' })).toThrow();
+    expect(() => buildAmmoLot(badLoad, { rng: seqRng([0.5]), id: 'x' })).toThrow();
   });
 
   it('two copies of the same model get different draws → different resolved truth', () => {
-    const ranges = catalogRifleRanges('308-factoryMatch');
-    const a = buildRifleInstance('308-factoryMatch', { rng: seqRng([0.2, 0.5, 0.5, 0.5]), id: 'a' });
-    const b = buildRifleInstance('308-factoryMatch', { rng: seqRng([0.8, 0.5, 0.5, 0.5]), id: 'b' });
+    const ranges = rifleRangesForSpec(RIFLE_308);
+    const a = buildRifleInstance(RIFLE_308, { rng: seqRng([0.2, 0.5, 0.5, 0.5]), id: 'a' });
+    const b = buildRifleInstance(RIFLE_308, { rng: seqRng([0.8, 0.5, 0.5, 0.5]), id: 'b' });
     const ta = deriveRifleTruth(ranges, a.draws);
     const tb = deriveRifleTruth(ranges, b.draws);
     expect(ta.mvOffsetMps).not.toBe(tb.mvOffsetMps);
