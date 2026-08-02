@@ -16,7 +16,7 @@
 // are unit-tested; the async load/subscribe wiring is thin glue for the app shell.
 
 import { DEFAULT_SAVE, type SaveData, type SaveStore } from '../persistence';
-import { DEFAULT_LOT_ROUNDS, lotNumberFromId } from '../game/acquire';
+import { LOT_ROUNDS_BY_GRADE, lotNumberFromId } from '../game/acquire';
 import type { GameStore, InventoryState, SettingsState, DopeState, ChronoState } from './store';
 
 /** Project the store's settings onto a SaveData (the schema-v2 persisted fields). */
@@ -47,6 +47,7 @@ export function storeToSave(
     ammoLots: state.inventory.ammoLots,
     activeRifleId: state.inventory.activeRifleId,
     activeLotId: state.inventory.activeLotId,
+    lastLotIdByCartridge: state.inventory.lastLotIdByCartridge,
     dopeNodes: state.dope.nodes,
     chronoSummaries: state.chrono.summaries,
   };
@@ -93,7 +94,7 @@ export function saveToInventory(save: SaveData): InventoryState {
     return {
       ...l,
       lotNumber,
-      roundsRemaining: l.roundsRemaining ?? DEFAULT_LOT_ROUNDS,
+      roundsRemaining: l.roundsRemaining ?? LOT_ROUNDS_BY_GRADE[l.spec.grade],
       acquiredAt: l.acquiredAt ?? 0,
     };
   });
@@ -102,6 +103,7 @@ export function saveToInventory(save: SaveData): InventoryState {
     ammoLots,
     activeRifleId: save.activeRifleId ?? null,
     activeLotId: save.activeLotId ?? null,
+    lastLotIdByCartridge: save.lastLotIdByCartridge ?? {},
   };
 }
 

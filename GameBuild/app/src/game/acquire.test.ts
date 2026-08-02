@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   LOT_DRAW_FIELDS,
   RIFLE_DRAW_FIELDS,
-  DEFAULT_LOT_ROUNDS,
+  LOT_ROUNDS_BY_GRADE,
   buildAmmoLot,
   buildRifleInstance,
   lotNumberFromId,
@@ -67,8 +67,16 @@ describe('buildRifleInstance / buildAmmoLot', () => {
     expect(l.spec).toEqual(matchSpec);
     // P2: a lot ships with a code, a full round count, and an acquisition stamp.
     expect(l.lotNumber).toMatch(/^[A-Z]\d{2}$/);
-    expect(l.roundsRemaining).toBe(DEFAULT_LOT_ROUNDS);
+    expect(l.roundsRemaining).toBe(LOT_ROUNDS_BY_GRADE.match);
     expect(l.acquiredAt).toBe(0);
+  });
+
+  it('lot size is by grade (owner 2026-08-02) — match 200, bulk 500', () => {
+    const bulkSpec = specFromPreset('65cm-bulk');
+    const l = buildAmmoLot(bulkSpec, { rng: seqRng([0.5]), id: 'l2' });
+    expect(l.roundsRemaining).toBe(500);
+    expect(LOT_ROUNDS_BY_GRADE.match).toBe(200);
+    expect(LOT_ROUNDS_BY_GRADE.bulk).toBe(500);
   });
 
   it('rejects an unknown cartridge id', () => {

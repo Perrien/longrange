@@ -13,6 +13,7 @@ import { moaToRad } from '../units/angle';
 import {
   CATALOG_VERSION,
   believedLoadForSpec,
+  effectiveMvForLot,
   isUnlocked,
   lotRangesForSpec,
   PRESETS,
@@ -24,7 +25,12 @@ import {
 } from './catalog';
 import { deriveLotTruth, deriveRifleTruth, type FieldRange } from './hidden-truth';
 import { cartridgeParams, specFromPreset, CARTRIDGE_IDS_V2, type RifleSpec } from './spec';
+import type { AmmoLot } from '../persistence';
 import oracle from '../../../validation/loads.json';
+
+function lotFor(spec: ReturnType<typeof specFromPreset>, effective?: AmmoLot['effective']): AmmoLot {
+  return { id: 'test-lot', spec, catalogVersion: CATALOG_VERSION, draws: {}, effective };
+}
 
 /** Default (reference-barrel, first-twist-option) spec for a cartridge — used
  *  throughout where the test just needs "a rifle of this cartridge", not a
@@ -227,6 +233,24 @@ describe('resolveLoadSpec (S3) — G7 preset shape', () => {
     expect(load.presetId).toBeUndefined();
     expect(load.product).toContain('130 gr');
     expect(load.product).toContain('i7 1.000');
+  });
+});
+
+describe('effectiveMvForLot (Loadout tab MV tag, owner 2026-08-02)', () => {
+  it('falls back to the box MV, tagged "box", when the lot has no effective value', () => {
+    const spec = specFromPreset('308-match');
+    const load = resolveLoadSpec(spec);
+    const mv = effectiveMvForLot(lotFor(spec), load);
+    expect(mv.mps).toBe(load.believedMvMps);
+    expect(mv.source).toBe('box');
+  });
+
+  it('prefers the lot\'s effective MV + source once measured (chrono/trued/provisional)', () => {
+    const spec = specFromPreset('308-match');
+    const load = resolveLoadSpec(spec);
+    const mv = effectiveMvForLot(lotFor(spec, { mvMps: 820, mvSource: 'chrono', bcSource: 'box' }), load);
+    expect(mv.mps).toBe(820);
+    expect(mv.source).toBe('chrono');
   });
 });
 

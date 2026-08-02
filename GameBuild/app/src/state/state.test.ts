@@ -35,7 +35,7 @@ import {
 } from './index';
 import type { DopeNode } from '../persistence';
 import type { SaveData } from '../persistence';
-import { DEFAULT_LOT_ROUNDS } from '../game/acquire';
+import { LOT_ROUNDS_BY_GRADE } from '../game/acquire';
 import { cartridgeParams, presetsForCartridge, specFromPreset, type RifleSpec, type LoadSpec } from '../game/spec';
 
 /** A reference-build RifleSpec for a cartridge — tests don't care about the
@@ -604,6 +604,63 @@ describe('inventory / loadout (task 2.2b)', () => {
     expect(useGameStore.getState().inventory.activeRifleId).toBeNull();
   });
 
+  it('selectRifle clears a mismatched active lot (owner 2026-08-02 — Loadout cross-cartridge guard)', () => {
+    const st = useGameStore.getState();
+    const rifle308 = st.acquireRifle(RIFLE_308, { rng });
+    const rifle65 = st.acquireRifle(RIFLE_65CM, { rng });
+    const lot308 = st.acquireLot(LOAD_308_MATCH, { rng });
+    st.selectRifle(rifle308);
+    st.selectLot(lot308);
+    expect(useGameStore.getState().inventory.activeLotId).toBe(lot308);
+
+    // Switching to a rifle in a different cartridge drops the now-mismatched lot.
+    st.selectRifle(rifle65);
+    expect(useGameStore.getState().inventory.activeLotId).toBeNull();
+
+    // Switching back to a same-cartridge rifle leaves a compatible lot alone.
+    st.selectLot(lot308);
+    st.selectRifle(rifle308);
+    st.selectRifle(rifle308);
+    expect(useGameStore.getState().inventory.activeLotId).toBe(lot308);
+
+    // Deselecting the rifle entirely (null) doesn't touch the active lot.
+    st.selectRifle(null);
+    expect(useGameStore.getState().inventory.activeLotId).toBe(lot308);
+  });
+
+  it('selectRifle auto-selects the rifle\'s only compatible lot (owner 2026-08-02)', () => {
+    const st = useGameStore.getState();
+    const rifle308 = st.acquireRifle(RIFLE_308, { rng });
+    const lot308 = st.acquireLot(LOAD_308_MATCH, { rng });
+    // No selectLot call at all — selecting the rifle alone should pick it up.
+    st.selectRifle(rifle308);
+    expect(useGameStore.getState().inventory.activeLotId).toBe(lot308);
+  });
+
+  it('selectRifle re-suggests the last lot actively picked for that cartridge, not just any compatible one', () => {
+    const st = useGameStore.getState();
+    const rifle308 = st.acquireRifle(RIFLE_308, { rng });
+    const rifle65 = st.acquireRifle(RIFLE_65CM, { rng });
+    const lotA = st.acquireLot(LOAD_308_MATCH, { rng });
+    const lotB = st.acquireLot(LOAD_308_BULK, { rng });
+
+    // No memory yet — selecting the rifle with two compatible lots falls back
+    // to the first one owned (lotA).
+    st.selectRifle(rifle308);
+    expect(useGameStore.getState().inventory.activeLotId).toBe(lotA);
+
+    // The player explicitly overrides to the second lot.
+    st.selectLot(lotB);
+    expect(useGameStore.getState().inventory.activeLotId).toBe(lotB);
+
+    // Switch away (drops the .308 lot — no 6.5 CM ammo owned) and back.
+    st.selectRifle(rifle65);
+    expect(useGameStore.getState().inventory.activeLotId).toBeNull();
+    st.selectRifle(rifle308);
+    // Remembers lotB, not lotA (which would be the naive "first compatible" pick).
+    expect(useGameStore.getState().inventory.activeLotId).toBe(lotB);
+  });
+
   it('resetSession leaves inventory alone (gear is not session state)', () => {
     const st = useGameStore.getState();
     st.acquireRifle(RIFLE_22LR, { rng });
@@ -717,7 +774,7 @@ describe('confirmZero (task 2.3d — the re-confirm compose fix)', () => {
 describe('gear persistence (task 2.2b — the DEFAULT_SAVE-wipe fix)', () => {
   const rng = () => 0.5;
 
-  it('storeToSave carries settings AND inventory (arrays + active ids)', () => {
+  it('storeToSave carries settings AND inventory (arrays + active ids + last-lot memory)', () => {
     const st = useGameStore.getState();
     const rid = st.acquireRifle(RIFLE_65CM, { rng });
     const lid = st.acquireLot(LOAD_65CM_MATCH, { rng });
@@ -728,6 +785,7 @@ describe('gear persistence (task 2.2b — the DEFAULT_SAVE-wipe fix)', () => {
     expect(save.ammoLots).toHaveLength(1);
     expect(save.activeRifleId).toBe(rid);
     expect(save.activeLotId).toBe(lid);
+    expect(save.lastLotIdByCartridge).toEqual({ '65cm': lid });
     expect(save.settings.unitsPrimary).toBe('MIL');
   });
 
@@ -1049,10 +1107,15 @@ describe('saveToInventory P2 backfill (pre-P2 records get the new fields)', () =
     expect(inv.rifles[0].lifetimeShotCount).toBe(0);
   });
 
-  it('backfills lot roundsRemaining/acquiredAt and assigns a unique [A-Z][0-9][0-9] code', () => {
+  it('backfills lastLotIdByCartridge to {} when absent (owner 2026-08-02)', () => {
+    const inv = saveToInventory(preP2Save());
+    expect(inv.lastLotIdByCartridge).toEqual({});
+  });
+
+  it('backfills lot roundsRemaining (by grade — match 200 / bulk 500), acquiredAt, and assigns a unique [A-Z][0-9][0-9] code', () => {
     const inv = saveToInventory(preP2Save());
     for (const l of inv.ammoLots) {
-      expect(l.roundsRemaining).toBe(DEFAULT_LOT_ROUNDS);
+      expect(l.roundsRemaining).toBe(LOT_ROUNDS_BY_GRADE[l.spec.grade]);
       expect(l.acquiredAt).toBe(0);
       expect(l.lotNumber).toMatch(/^[A-Z]\d{2}$/);
     }
@@ -1129,7 +1192,7 @@ describe('replenishLot (P4)', () => {
     expect(fresh.id).not.toBe(src.id);
     expect(fresh.lotNumber).not.toBe(src.lotNumber);
     expect(fresh.lotNumber).toMatch(/^[A-Z]\d{2}$/);
-    expect(fresh.roundsRemaining).toBe(DEFAULT_LOT_ROUNDS);
+    expect(fresh.roundsRemaining).toBe(LOT_ROUNDS_BY_GRADE.match);
     expect(fresh.effective).toBeUndefined();
   });
 

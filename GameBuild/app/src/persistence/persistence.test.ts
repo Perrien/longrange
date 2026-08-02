@@ -99,6 +99,10 @@ describe('import validation (untrusted input)', () => {
     expect(() =>
       parseSave(JSON.stringify({ ...validSave, settings: { unitsPrimary: 'FURLONGS' } })),
     ).toThrow(/unitsPrimary/));
+  it('rejects a non-string value in lastLotIdByCartridge', () =>
+    expect(() =>
+      parseSave(JSON.stringify({ ...validSave, lastLotIdByCartridge: { '308': 42 } })),
+    ).toThrow(/lastLotIdByCartridge/));
 });
 
 describe('migration v1 → v2 (task 2.1a)', () => {

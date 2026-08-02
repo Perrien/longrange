@@ -19,6 +19,7 @@
 // engine-bridge / the dev inspector call — the Store UI never does.
 import type { Load } from '../engine-bridge/types';
 import type { LotTruthRanges, RifleTruthRanges } from './hidden-truth';
+import type { AmmoLot, EffectiveSource } from '../persistence';
 import { moaToRad } from '../units/angle';
 import { inchesToMeters } from '../units/length';
 import { fpsToMps } from '../units/velocity';
@@ -271,6 +272,16 @@ export function resolveLoadSpec(spec: LoadSpec): AmmoLoadForSpec {
     weightGr: spec.weightGr,
     i7: c.presetsOnly ? undefined : spec.i7,
   };
+}
+
+/** The effective MV (m/s) driving this lot's believed DOPE, and where it came
+ *  from — chrono/trued/provisional if the lot has been measured (P2's
+ *  `AmmoLot.effective`), else the catalog box value. Same fallback
+ *  `DopeBookScreen`'s MV chip uses, pulled out here so the Loadout list's
+ *  per-lot MV tag can't drift from it. */
+export function effectiveMvForLot(lot: AmmoLot, load: AmmoLoadForSpec): { mps: number; source: EffectiveSource } {
+  if (lot.effective?.mvMps != null) return { mps: lot.effective.mvMps, source: lot.effective.mvSource };
+  return { mps: load.believedMvMps, source: 'box' };
 }
 
 /** Hidden ranges for a rifle spec (D16's raw zero offset, per-cartridge

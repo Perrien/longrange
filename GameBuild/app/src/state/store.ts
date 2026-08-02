@@ -264,6 +264,10 @@ export interface InventoryState {
   ammoLots: AmmoLot[];
   activeRifleId: string | null;
   activeLotId: string | null;
+  /** Per-cartridge memory of the last ammo lot actively selected (owner
+   *  2026-08-02) — `selectRifle` consults this to auto-pick that cartridge's
+   *  ammo when the player switches to a rifle of it. Keyed by cartridge id. */
+  lastLotIdByCartridge: Record<string, string>;
 }
 
 export const defaultInventory = (): InventoryState => ({
@@ -271,6 +275,7 @@ export const defaultInventory = (): InventoryState => ({
   ammoLots: [],
   activeRifleId: null,
   activeLotId: null,
+  lastLotIdByCartridge: {},
 });
 
 /** Confirmed DOPE nodes (task 2.4a). A dedicated slice (not folded into
@@ -754,10 +759,44 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     return id;
   },
 
+  // Switching rifles auto-selects that cartridge's ammo (owner 2026-08-02) —
+  // preferring the lot remembered in `lastLotIdByCartridge` (last one the
+  // player actively picked for this cartridge), falling back to any owned lot
+  // in the cartridge, else null. Also the guard against a mismatched pair: if
+  // the CURRENT active lot already matches the new rifle's cartridge, it's
+  // left alone rather than re-picked out from under the player.
   selectRifle: (instanceId) =>
-    set((s) => ({ inventory: { ...s.inventory, activeRifleId: instanceId } })),
+    set((s) => {
+      const rifle = instanceId ? s.inventory.rifles.find((r) => r.id === instanceId) : undefined;
+      if (!rifle) return { inventory: { ...s.inventory, activeRifleId: instanceId } };
 
-  selectLot: (lotId) => set((s) => ({ inventory: { ...s.inventory, activeLotId: lotId } })),
+      const activeLot = s.inventory.ammoLots.find((l) => l.id === s.inventory.activeLotId);
+      if (activeLot?.spec.cartridgeId === rifle.spec.cartridgeId) {
+        return { inventory: { ...s.inventory, activeRifleId: instanceId } };
+      }
+
+      const rememberedId = s.inventory.lastLotIdByCartridge[rifle.spec.cartridgeId];
+      const remembered = rememberedId ? s.inventory.ammoLots.find((l) => l.id === rememberedId) : undefined;
+      const fallback = s.inventory.ammoLots.find((l) => l.spec.cartridgeId === rifle.spec.cartridgeId);
+      return {
+        inventory: {
+          ...s.inventory,
+          activeRifleId: instanceId,
+          activeLotId: remembered?.id ?? fallback?.id ?? null,
+        },
+      };
+    }),
+
+  // Records which lot was actively picked for its cartridge, so a later
+  // rifle switch back into that cartridge (above) re-suggests it.
+  selectLot: (lotId) =>
+    set((s) => {
+      const lot = lotId ? s.inventory.ammoLots.find((l) => l.id === lotId) : undefined;
+      const lastLotIdByCartridge = lot
+        ? { ...s.inventory.lastLotIdByCartridge, [lot.spec.cartridgeId]: lot.id }
+        : s.inventory.lastLotIdByCartridge;
+      return { inventory: { ...s.inventory, activeLotId: lotId, lastLotIdByCartridge } };
+    }),
 
   deleteRifle: (instanceId) =>
     set((s) => ({

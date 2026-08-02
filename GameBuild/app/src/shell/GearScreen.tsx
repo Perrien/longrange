@@ -13,7 +13,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useGameStore } from '../state/store';
 import { CARTRIDGE_IDS_V2, cartridgeParams, defaultLoadSpec, defaultRifleSpec } from '../game/spec';
-import { resolveLoadSpec, resolveRifleSpec } from '../game/catalog';
+import { effectiveMvForLot, resolveLoadSpec, resolveRifleSpec } from '../game/catalog';
 import { cartridgeOverviewWords } from '../game/store-overview';
 import { effectiveRangeYdForSpec } from '../engine-bridge/effective-range';
 import { loadBtkModule } from '../engine-bridge/wasm-module';
@@ -51,6 +51,21 @@ const deleteBtnStyle: CSSProperties = {
   flexShrink: 0,
 };
 
+// Same neutral look as DopeBookScreen's `smallBtn` — kept as its own constant
+// here since GearScreen's rows run a bit larger (12/13px) than that screen's
+// compact lot cards.
+const replenishBtnStyle: CSSProperties = {
+  fontFamily: 'monospace',
+  fontSize: 12,
+  color: FG,
+  background: 'rgba(232,238,244,0.1)',
+  border: '1px solid rgba(232,238,244,0.35)',
+  borderRadius: 5,
+  padding: '5px 9px',
+  cursor: 'pointer',
+  flexShrink: 0,
+};
+
 function rowStyle(active: boolean): CSSProperties {
   return {
     display: 'flex',
@@ -73,6 +88,9 @@ type GearTab = 'store' | 'loadout';
 export function GearScreen({ onClose, initialTab = 'store' }: { onClose: () => void; initialTab?: GearTab }) {
   const [tab, setTab] = useState<GearTab>(initialTab);
   const [selectedCartridgeId, setSelectedCartridgeId] = useState<string | null>(null);
+  // Which lot's carry-forward disclosure (Replenish) is open — at most one at
+  // a time, same pattern as DopeBookScreen's RifleAmmoOverview.
+  const [replenishFor, setReplenishFor] = useState<string | null>(null);
 
   const unitsPrimary = useGameStore((s) => s.settings.unitsPrimary);
   const { rifles, ammoLots, activeRifleId, activeLotId } = useGameStore((s) => s.inventory);
@@ -80,6 +98,7 @@ export function GearScreen({ onClose, initialTab = 'store' }: { onClose: () => v
   const selectLot = useGameStore((s) => s.selectLot);
   const deleteRifle = useGameStore((s) => s.deleteRifle);
   const deleteLot = useGameStore((s) => s.deleteLot);
+  const replenishLot = useGameStore((s) => s.replenishLot);
 
   // The Store list's effective-range figure needs the WASM engine (the same
   // physics solve BuildScreen's readouts and the DOPE book use) — everything
@@ -138,6 +157,22 @@ export function GearScreen({ onClose, initialTab = 'store' }: { onClose: () => v
     : CARTRIDGE_IDS_V2;
 
   const emptyInventory = rifles.length === 0 && ammoLots.length === 0;
+
+  // Loadout tab (owner 2026-08-02): ammo is scoped to the ACTIVE rifle's
+  // cartridge — you can't pair a .223 rifle with 6.5 CM ammo, because the
+  // list of selectable lots never offers the mismatch in the first place
+  // (selectRifle's own cross-clear in state/store.ts backs this up if a
+  // stale mismatched pair ever existed).
+  const activeRifle = rifles.find((r) => r.id === activeRifleId) ?? null;
+  const compatibleLots = activeRifle
+    ? ammoLots.filter((l) => l.spec.cartridgeId === activeRifle.spec.cartridgeId)
+    : [];
+
+  const zeroText = (zeroed: boolean, zeroRangeM: number | undefined): string => {
+    if (!zeroed) return '⚠ not zeroed';
+    const fmt = formatDistanceForDisplay(zeroRangeM ?? 0, unitsPrimary);
+    return `zeroed @ ${fmt.value.toFixed(0)} ${fmt.label}`;
+  };
 
   return (
     <div
@@ -243,16 +278,21 @@ export function GearScreen({ onClose, initialTab = 'store' }: { onClose: () => v
             {rifles.map((r) => {
               const model = resolveRifleSpec(r.spec);
               const active = r.id === activeRifleId;
+              const zeroed = !!r.playerZero;
               return (
                 <div key={r.id} style={rowStyle(active)} onClick={() => selectRifle(active ? null : r.id)}>
                   <div style={{ textAlign: 'left' }}>
                     <div style={{ fontSize: 15 }}>{model.name}</div>
                     <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>{model.className}</div>
+                    <div style={{ fontSize: 12, marginTop: 2, opacity: zeroed ? 0.6 : 0.9, color: zeroed ? undefined : '#e8c95a' }}>
+                      {zeroText(zeroed, r.playerZero?.zeroRangeM)}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 13, opacity: active ? 1 : 0.4 }}>{active ? '✓ active' : 'select'}</span>
                     <button
                       style={deleteBtnStyle}
+                      aria-label="Delete"
+                      title="Delete"
                       onClick={(e) => {
                         // Don't let the row's select toggle fire on a delete tap.
                         e.stopPropagation();
@@ -263,52 +303,118 @@ export function GearScreen({ onClose, initialTab = 'store' }: { onClose: () => v
                         }
                       }}
                     >
-                      Delete
+                      🗑
                     </button>
                   </div>
                 </div>
               );
             })}
 
-            {ammoLots.length > 0 && (
+            {activeRifle && compatibleLots.length > 0 && (
               <h2 style={{ fontSize: 16, opacity: 0.8, margin: '16px 0 0', borderTop: DIVIDER, paddingTop: 12 }}>
                 Ammo
               </h2>
             )}
-            {ammoLots.map((l) => {
+            {activeRifle && compatibleLots.length === 0 && (
+              <p style={{ opacity: 0.6, fontSize: 13, marginTop: 16, borderTop: DIVIDER, paddingTop: 12 }}>
+                No {cartridgeParams(activeRifle.spec.cartridgeId).name} ammo yet — acquire some from the Store
+                tab.
+              </p>
+            )}
+            {!activeRifle && rifles.length > 0 && (
+              <p style={{ opacity: 0.6, fontSize: 13, marginTop: 16, borderTop: DIVIDER, paddingTop: 12 }}>
+                Select a rifle above to see its ammo.
+              </p>
+            )}
+            {compatibleLots.map((l) => {
               const load = resolveLoadSpec(l.spec);
               const active = l.id === activeLotId;
-              const mv = formatMuzzleVelocityForDisplay(load.believedMvMps, unitsPrimary);
+              const mv = effectiveMvForLot(l, load);
+              const mvFmt = formatMuzzleVelocityForDisplay(mv.mps, unitsPrimary);
               const rounds = l.roundsRemaining ?? 0;
               const depleted = rounds <= 0;
+              // Replenish (P4): a new lot of the same ammo. A lot with a
+              // chrono/trued MV or BC gets a choice — carry those numbers
+              // forward as provisional on the new (physically different) lot,
+              // or start it as a plain box lot; nothing discovered means
+              // there's nothing to ask, so it just replenishes fresh.
+              const hasDiscovered = !!(l.effective && (l.effective.mvMps != null || l.effective.bc != null));
               return (
-                <div key={l.id} style={rowStyle(active)} onClick={() => selectLot(active ? null : l.id)}>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 15 }}>
-                      {load.cartridgeName} — {load.grade}
-                      {l.lotNumber && <span style={{ opacity: 0.7 }}> · {l.lotNumber}</span>}
+                <div key={l.id}>
+                  <div style={rowStyle(active)} onClick={() => selectLot(active ? null : l.id)}>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: 15 }}>
+                        {load.cartridgeName} — {load.grade}
+                        {l.lotNumber && <span style={{ opacity: 0.7 }}> · {l.lotNumber}</span>}
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
+                        {load.weightGr} gr · {mvFmt.value.toFixed(0)} {mvFmt.label} ({mv.source}) ·{' '}
+                        <span style={{ color: depleted ? '#e88' : undefined }}>{rounds} rds</span>
+                      </div>
                     </div>
-                    <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
-                      {load.product} · box {mv.value.toFixed(0)} {mv.label}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <button
+                        style={replenishBtnStyle}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (hasDiscovered) {
+                            setReplenishFor(replenishFor === l.id ? null : l.id);
+                          } else {
+                            replenishLot(l.id, false);
+                          }
+                        }}
+                      >
+                        Replenish
+                      </button>
+                      <button
+                        style={deleteBtnStyle}
+                        aria-label="Delete"
+                        title="Delete"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`Delete this ${load.cartridgeName} ${load.grade} lot? Its lot characteristics are lost permanently.`)) {
+                            deleteLot(l.id);
+                          }
+                        }}
+                      >
+                        🗑
+                      </button>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 13, color: depleted ? '#e88' : FG, opacity: depleted ? 1 : 0.85 }}>
-                      {rounds} rds
-                    </span>
-                    <span style={{ fontSize: 13, opacity: active ? 1 : 0.4 }}>{active ? '✓ active' : 'select'}</span>
-                    <button
-                      style={deleteBtnStyle}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (window.confirm(`Delete this ${load.cartridgeName} ${load.grade} lot? Its lot characteristics are lost permanently.`)) {
-                          deleteLot(l.id);
-                        }
+                  {replenishFor === l.id && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 6,
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        padding: '6px 12px 0',
                       }}
                     >
-                      Delete
-                    </button>
-                  </div>
+                      <span style={{ fontSize: 11, opacity: 0.7 }}>Carry this lot's discovered MV/BC forward?</span>
+                      <button
+                        style={replenishBtnStyle}
+                        onClick={() => {
+                          replenishLot(l.id, true);
+                          setReplenishFor(null);
+                        }}
+                      >
+                        Carry (provisional)
+                      </button>
+                      <button
+                        style={replenishBtnStyle}
+                        onClick={() => {
+                          replenishLot(l.id, false);
+                          setReplenishFor(null);
+                        }}
+                      >
+                        Fresh (box)
+                      </button>
+                      <button style={replenishBtnStyle} onClick={() => setReplenishFor(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

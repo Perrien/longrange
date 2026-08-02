@@ -191,6 +191,14 @@ export interface SaveData {
    *  bump (2.1 D6 pattern); validated when present, defaulted to null on load. */
   activeRifleId?: string | null;
   activeLotId?: string | null;
+  /** Per-cartridge memory of the last ammo lot the player actively selected
+   *  (owner 2026-08-02) — so re-selecting a rifle in that cartridge re-suggests
+   *  the same lot rather than defaulting to whichever comes first every time.
+   *  Additive-optional, no version bump; validated when present, defaulted to
+   *  `{}` on load. Stale entries (a since-deleted lot) are harmless — the
+   *  selectRifle lookup that consumes this falls back to any remaining
+   *  compatible lot if the remembered id no longer resolves. */
+  lastLotIdByCartridge?: Record<string, string>;
   /** Confirmed DOPE nodes (task 2.4a) — additive-optional, no version bump;
    *  validated when present, defaulted to `[]` on load. */
   dopeNodes?: DopeNode[];
@@ -214,6 +222,7 @@ export const DEFAULT_SAVE: SaveData = {
   ammoLots: [],
   activeRifleId: null,
   activeLotId: null,
+  lastLotIdByCartridge: {},
   dopeNodes: [],
   chronoSummaries: [],
 };
@@ -473,6 +482,18 @@ export function validateSaveShape(data: unknown): asserts data is SaveData {
     fail('activeRifleId must be a string or null when present');
   if (d.activeLotId !== undefined && d.activeLotId !== null && typeof d.activeLotId !== 'string')
     fail('activeLotId must be a string or null when present');
+
+  // Per-cartridge last-selected-lot memory (owner 2026-08-02). Additive-optional:
+  // absent on a pre-existing save; when present, every key/value must be strings
+  // (cartridge id -> lot id) — stale entries pointing at a since-deleted lot are
+  // NOT an error here, `selectRifle` handles that at read time.
+  if (d.lastLotIdByCartridge !== undefined) {
+    if (typeof d.lastLotIdByCartridge !== 'object' || d.lastLotIdByCartridge === null)
+      fail('lastLotIdByCartridge must be an object when present');
+    for (const [k, v] of Object.entries(d.lastLotIdByCartridge as Record<string, unknown>)) {
+      if (typeof v !== 'string') fail(`lastLotIdByCartridge.${k} must be a string`);
+    }
+  }
 
   // Confirmed DOPE nodes (task 2.4a). Additive-optional: absent on a pre-2.4a
   // save; validated element-wise whenever present. Never *required* (no version

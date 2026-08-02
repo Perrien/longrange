@@ -8,7 +8,7 @@
 // read in game/hidden-truth.ts — note the lot's `bcError` draw maps through the
 // `bc` range, so it's spelled `bcError` here, not `bc`.
 import type { AmmoLot, RifleInstance } from '../persistence';
-import { cartridgeParams, CARTRIDGES_CATALOG_VERSION, type LoadSpec, type RifleSpec } from './spec';
+import { cartridgeParams, CARTRIDGES_CATALOG_VERSION, type AmmoGrade, type LoadSpec, type RifleSpec } from './spec';
 
 /** Rifle hidden-field draw keys (→ deriveRifleTruth). */
 export const RIFLE_DRAW_FIELDS = ['mvOffset', 'zeroH', 'zeroV', 'inherentPrecision'] as const;
@@ -41,15 +41,14 @@ export interface AcquireOptions {
   existingLotNumbers?: ReadonlySet<string>;
 }
 
-/** Rounds in a freshly-acquired lot (P2). A TESTING value — real lot sizes will
- *  scale to a few hundred / up to ~1000; this becomes per-catalog later.
- *
- *  Raised 20 → 100 (owner, 2026-07-29): 20 rounds does not survive building a
- *  come-up table across an 18-station range, and replenishing mid-session is
- *  friction with no teaching value at this stage. A real box is 20 and a real
- *  case is 500–1000, so 100 stays inside the plausible range while it lasts a
- *  full DOPE session. */
-export const DEFAULT_LOT_ROUNDS = 100;
+/** Rounds in a freshly-acquired lot (P2), by grade (owner 2026-08-02) — a real
+ *  match-ammo case runs about 200 rounds; bulk/practice ammo ships in bigger
+ *  ~500-round cases. Replaces the old single flat `DEFAULT_LOT_ROUNDS = 100`
+ *  test value now that the grade axis is what actually decides case size. */
+export const LOT_ROUNDS_BY_GRADE: Record<AmmoGrade, number> = {
+  match: 200,
+  bulk: 500,
+};
 
 const EMPTY_LOT_NUMBERS: ReadonlySet<string> = new Set();
 
@@ -102,7 +101,7 @@ export function buildAmmoLot(spec: LoadSpec, opts: AcquireOptions): AmmoLot {
     catalogVersion: opts.catalogVersion ?? CARTRIDGES_CATALOG_VERSION,
     draws: rollDraws(LOT_DRAW_FIELDS, opts.rng),
     lotNumber: lotNumberFromId(opts.id, opts.existingLotNumbers),
-    roundsRemaining: DEFAULT_LOT_ROUNDS,
+    roundsRemaining: LOT_ROUNDS_BY_GRADE[spec.grade],
     acquiredAt: opts.acquiredAt ?? 0,
   };
 }
