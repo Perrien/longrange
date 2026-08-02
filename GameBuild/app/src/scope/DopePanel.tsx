@@ -31,7 +31,8 @@ import { windToVec } from '../game/firing-solution';
 import { assembleComeUp, nearestRow, type ComeUpDisplayRow } from '../game/dope-row';
 import { comeUpStationsM } from '../game/dope-book';
 import { findChronoSummary, isBcStaleVsChrono } from '../game/chrono';
-import { isRimfireCartridge, catalogEffectiveRangeYd, twistMForSpec, believedLoadForSpec } from '../game/catalog';
+import { isRimfireCartridge, twistMForSpec, believedLoadForSpec } from '../game/catalog';
+import { effectiveRangeYdForSpec, effectiveRangeYdForLoad } from '../engine-bridge/effective-range';
 import { getGameLoad, DEFAULT_GAME_LOAD_ID, DEFAULT_GAME_LOAD_CARTRIDGE_ID, SIGHT_HEIGHT_M } from '../game/loads';
 import { recommendedZeroM } from '../game/zero-distance';
 import { formatDistanceForDisplay } from '../units';
@@ -227,7 +228,13 @@ export function DopePanel({ onOpenBook }: { onOpenBook?: () => void } = {}) {
       // effective range to the transonic→subsonic wall (over-generated to 2×
       // effective range; assembleComeUp trims at the first subsonic row).
       const cartridgeId = ctx ? ctx.rifle.spec.cartridgeId : DEFAULT_GAME_LOAD_CARTRIDGE_ID;
-      const effRangeYd = catalogEffectiveRangeYd(cartridgeId);
+      // No active gear: fall back to the box-true default GameLoad (Increment-1
+      // behaviour) — this path predates specs, so effective range is solved
+      // directly off its raw Load + twist rather than a (RifleSpec, LoadSpec).
+      const gameLoad = ctx ? undefined : getGameLoad(DEFAULT_GAME_LOAD_ID);
+      const effRangeYd = ctx
+        ? effectiveRangeYdForSpec(module, ctx.rifle.spec, ctx.lot.spec)
+        : effectiveRangeYdForLoad(module, gameLoad!.load, gameLoad!.twistM, isRimfireCartridge(cartridgeId));
       const stations = comeUpStationsM(isRimfireCartridge(cartridgeId), unitsPrimary, effRangeYd, effRangeYd * 2);
       if (stations.length === 0) {
         setRows([]);
@@ -250,10 +257,9 @@ export function DopePanel({ onOpenBook }: { onOpenBook?: () => void } = {}) {
           sightHeightM: SIGHT_HEIGHT_M,
         }).believedTable;
       } else {
-        const gameLoad = getGameLoad(DEFAULT_GAME_LOAD_ID);
         const load = {
-          ...gameLoad.load,
-          spinRateRadPerSec: spinRateFromTwist(gameLoad.load.muzzleVelocityMps, gameLoad.twistM),
+          ...gameLoad!.load,
+          spinRateRadPerSec: spinRateFromTwist(gameLoad!.load.muzzleVelocityMps, gameLoad!.twistM),
         };
         table = solveTrajectory(module, load, ISA_ATMOSPHERE, windVec, {
           zeroRangeM: recommendedZeroM(cartridgeId, unitsPrimary),

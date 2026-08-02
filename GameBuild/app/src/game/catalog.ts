@@ -1,8 +1,9 @@
 // Gear catalog (task 2.2a; S7 rifle-ammo-store: the enumerated id API is
-// removed — see below). Two small survivors of the pre-parametric catalog
-// (`isRimfireCartridge`, `catalogEffectiveRangeYd`) plus the S3 spec-based
-// resolver, which is now the ONLY way the game turns a build (rifle spec /
-// load spec) into believed values, geometry, or hidden-truth ranges.
+// removed; S8 removes the last reader of the old `catalog.data.json`, so the
+// file itself is deleted too). `isRimfireCartridge` plus the S3 spec-based
+// resolver are now the ONLY way the game turns a build (rifle spec / load
+// spec) into believed values, geometry, or hidden-truth ranges; effective
+// range is a per-(rifle, load) physics solve — `engine-bridge/effective-range.ts`.
 //
 // Believed vs. true (D6): `believedMvMps`/`believedBc` are the advertised box
 // values the player sees; the true base MV (`trueBaseMvForSpec`) + the hidden
@@ -22,14 +23,6 @@ import { moaToRad } from '../units/angle';
 import { inchesToMeters } from '../units/length';
 import { fpsToMps } from '../units/velocity';
 import { grainsToKg } from '../units/mass';
-// S7 (D2): `catalog.data.json` is DELETED for every purpose except
-// `catalogEffectiveRangeYd` — that function's `effectiveRangeYd` field has no
-// equivalent yet in `cartridges.data.json` (it only covers the original 4
-// cartridges' authored constant; S8 replaces it with a per-load physics solve
-// across all 10 and removes this import). Left wired deliberately, per S7's own
-// plan text: "leave it for S8 and say so in PROGRESS.md" — NOT a silent
-// deviation, the plan anticipates this exact carve-out.
-import catalogData from './catalog.data.json';
 import {
   bc7FromI7,
   bulletLengthIn,
@@ -56,19 +49,6 @@ export const CATALOG_VERSION = CARTRIDGES_CATALOG_VERSION;
 
 export type AmmoGrade = 'match' | 'bulk';
 
-type RawOldCartridge = (typeof catalogData.cartridges)['65cm'];
-
-/** S7: the ONLY remaining reader of `catalog.data.json` — `catalogEffectiveRangeYd`
- *  below. Throws for any of the 6 cartridges this plan added that the old,
- *  4-cartridge file never covered; that gap is real and is exactly what S8's
- *  per-load derived solve exists to close (see the import comment above). */
-function rawOldCartridge(cartridgeId: string): RawOldCartridge {
-  const all = catalogData.cartridges as Record<string, RawOldCartridge>;
-  const c = all[cartridgeId];
-  if (!c) throw new Error(`catalog: unknown cartridge '${cartridgeId}' (pending S8 — see catalogEffectiveRangeYd)`);
-  return c;
-}
-
 /** Future progression seam (D4): everything is freely acquirable in 2.2. */
 export function isUnlocked(_catalogId: string): boolean {
   return true;
@@ -80,19 +60,6 @@ export function isUnlocked(_catalogId: string): boolean {
  *  S7: reads `cartridges.data.json` (via `cartridgeParams`), covers all 10. */
 export function isRimfireCartridge(cartridgeId: string): boolean {
   return cartridgeParams(cartridgeId).class.toLowerCase().includes('rimfire');
-}
-
-/** The cartridge's design-set effective range in YARDS (task 2.4a, D7) — the
- *  cap on the DOPE-ladder's stations (`game/dope-book.ts` `ladderStationsM`).
- *  Authored in yd (D7 provisional: .22 LR 200, .223 600, .308 1000, 6.5 CM 1200);
- *  the ladder converts to the active display unit. Truth-neutral.
- *
- *  S7 (deferred to S8 per the plan's own carve-out): still reads the deleted-
- *  everywhere-else `catalog.data.json`, so it only covers the original 4
- *  cartridges. S8 replaces this with `effectiveRangeYdForSpec` — a per-(rifle,
- *  load) physics solve that covers all 10 and needs no authored table. */
-export function catalogEffectiveRangeYd(cartridgeId: string): number {
-  return rawOldCartridge(cartridgeId).effectiveRangeYd;
 }
 
 // --- Adapters to the 2.1b hidden-truth model --------------------------------
@@ -206,12 +173,24 @@ interface ResolvedLoadV2 {
   presetId?: string;
 }
 
-function resolveLoadInternal(spec: LoadSpec): ResolvedLoadV2 {
+/**
+ * `barrelInOverride` (S8): the velocity curve is a function of barrel length,
+ * but `resolveLoadSpec`/`believedLoadForSpec` (the "box" values every player-
+ * facing readout uses) intentionally always solve it at the CARTRIDGE's
+ * reference barrel — same convention as a real ammo box, which prints MV from
+ * a fixed test barrel, not from whatever rifle the round eventually fires in.
+ * `believedLoadForBuild` (below) is the one caller that passes the ACTUAL
+ * configured rifle's barrel length instead, for `effective-range.ts`'s solve —
+ * a deliberately different, barrel-SPECIFIC concept from the box figure. An
+ * `mvFpsOverride` preset (D9's oracle-pinned/outlier loads) ignores this
+ * entirely either way — it's pinned regardless of barrel, by design. */
+function resolveLoadInternal(spec: LoadSpec, barrelInOverride?: number): ResolvedLoadV2 {
   const c = cartridgeParams(spec.cartridgeId);
   const grade = gradeParams(spec.grade);
   const preset = spec.presetId ? findPreset(spec.presetId) : undefined;
   const curve = velocityCurveParamsFor(c);
   const diameterM = inchesToMeters(c.dIn);
+  const barrelIn = barrelInOverride ?? c.referenceBarrelIn;
 
   if (c.presetsOnly) {
     // .22 LR (D8): G1, no SD/i7 apparatus — a presetId carrying an authored
@@ -225,7 +204,7 @@ function resolveLoadInternal(spec: LoadSpec): ResolvedLoadV2 {
     const believedMvMps =
       preset.mvFpsOverride != null
         ? fpsToMps(preset.mvFpsOverride)
-        : fpsToMps(muzzleVelocityFps(curve, preset.weightGr, c.referenceBarrelIn));
+        : fpsToMps(muzzleVelocityFps(curve, preset.weightGr, barrelIn));
     const trueBaseMvMps = believedMvMps / (1 + grade.mvOptimism);
     const trueBc = preset.trueBc;
     const believedBc = trueBc * (1 + grade.bcOptimism);
@@ -255,7 +234,7 @@ function resolveLoadInternal(spec: LoadSpec): ResolvedLoadV2 {
   const believedMvMps =
     preset?.mvFpsOverride != null
       ? fpsToMps(preset.mvFpsOverride)
-      : fpsToMps(muzzleVelocityFps(curve, weightGr, c.referenceBarrelIn));
+      : fpsToMps(muzzleVelocityFps(curve, weightGr, barrelIn));
   const trueBaseMvMps = believedMvMps / (1 + grade.mvOptimism);
   const believedBc = trueBc * (1 + grade.bcOptimism);
   const product = preset ? preset.name : `${c.name} · ${weightGr} gr · i7 ${i7.toFixed(3)} · ${spec.grade}`;
@@ -339,6 +318,26 @@ export function believedLoadForSpec(spec: LoadSpec): Load {
  *  draws). Truth-side: engine-bridge / dev inspector only. */
 export function trueBaseMvForSpec(spec: LoadSpec): number {
   return resolveLoadInternal(spec).trueBaseMvMps;
+}
+
+/** The believed solve Load for a configured BUILD (S8) — like
+ *  `believedLoadForSpec`, but the muzzle velocity is solved at the RIFLE's
+ *  actual configured barrel length, not the cartridge's fixed reference
+ *  barrel. Deliberately a different number from the box MV `believedLoadForSpec`
+ *  returns (same distinction a real barrel-length chart draws): this is what
+ *  `engine-bridge/effective-range.ts` solves against, since a shorter/longer
+ *  barrel genuinely changes how far the load stays supersonic. An
+ *  `mvFpsOverride` preset (D9) is unaffected by barrel length either way. */
+export function believedLoadForBuild(rifleSpec: RifleSpec, loadSpec: LoadSpec): Load {
+  const r = resolveLoadInternal(loadSpec, rifleSpec.barrelLengthIn);
+  return {
+    massKg: r.massKg,
+    diameterM: r.diameterM,
+    lengthM: r.lengthM,
+    bc: r.believedBc,
+    dragModel: r.dragModel,
+    muzzleVelocityMps: r.believedMvMps,
+  };
 }
 
 /** Barrel twist as meters/turn — `RifleSpec.twistIn` is already a plain

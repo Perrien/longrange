@@ -21,6 +21,7 @@ import { loadBtkModule } from '../engine-bridge/wasm-module';
 import { speedOfSound, type AtmosphereInput } from '../engine-bridge';
 import type { BtkModule } from '../engine-bridge/types';
 import { solveGear } from '../engine-bridge/gear-solve';
+import { effectiveRangeYdForSpec } from '../engine-bridge/effective-range';
 import { gearSolveContext } from '../game/active-gear';
 import { windToVec } from '../game/firing-solution';
 import { assembleComeUp, nearestRow, type ComeUpDisplayRow } from '../game/dope-row';
@@ -30,7 +31,6 @@ import {
   resolveRifleSpec,
   resolveLoadSpec,
   isRimfireCartridge,
-  catalogEffectiveRangeYd,
   rifleRangesForSpec,
   lotRangesForSpec,
   type RifleModelForSpec,
@@ -97,7 +97,7 @@ export function DopeBookScreen({ onClose }: { onClose: () => void }) {
     if (!module || !rifle || !lot || !rifleModel) return;
     try {
       const ctx = gearSolveContext(rifle, lot, unitsPrimary);
-      const effRangeYd = catalogEffectiveRangeYd(rifleModel.cartridgeId);
+      const effRangeYd = effectiveRangeYdForSpec(module, rifle.spec, lot.spec);
       const stations = comeUpStationsM(
         isRimfireCartridge(rifleModel.cartridgeId),
         unitsPrimary,
@@ -234,6 +234,7 @@ export function DopeBookScreen({ onClose }: { onClose: () => void }) {
                 lots={inventory.ammoLots.filter((l) => l.spec.cartridgeId === rifleModel.cartridgeId)}
                 chronoSummaries={chronoSummaries}
                 isMetric={isMetric}
+                module={module}
               />
             )}
 
@@ -348,13 +349,14 @@ function fmtDate(epochMs: number): string {
  *  nominal inherent precision — all catalog-believed (no hidden truth). Tightens
  *  once the lot is chronographed. */
 function verticalSpread(
+  module: BtkModule | null,
   rifle: RifleInstance,
-  rifleModel: RifleModelForSpec,
   lot: AmmoLot,
   chrono: ChronoSummary | undefined,
   isMetric: boolean,
 ): string {
-  const effYd = catalogEffectiveRangeYd(rifleModel.cartridgeId);
+  if (!module) return '…';
+  const effYd = effectiveRangeYdForSpec(module, rifle.spec, lot.spec);
   const rangeM = yardsToMeters(effYd);
   const load = resolveLoadSpec(lot.spec);
   const mv = chrono?.avgMps ?? load.believedMvMps;
@@ -375,12 +377,14 @@ function RifleAmmoOverview({
   lots,
   chronoSummaries,
   isMetric,
+  module,
 }: {
   rifle: RifleInstance;
   rifleModel: RifleModelForSpec;
   lots: AmmoLot[];
   chronoSummaries: ChronoSummary[];
   isMetric: boolean;
+  module: BtkModule | null;
 }) {
   const replenishLot = useGameStore((s) => s.replenishLot);
   const [replenishFor, setReplenishFor] = useState<string | null>(null);
@@ -462,7 +466,7 @@ function RifleAmmoOverview({
               <span style={label}>BC (discovered)</span>
               <span>{discoveredBc != null ? discoveredBc.toFixed(3) : '—'}</span>
               <span style={label}>Vert. spread</span>
-              <span>{verticalSpread(rifle, rifleModel, lot, chrono, isMetric)}</span>
+              <span>{verticalSpread(module, rifle, lot, chrono, isMetric)}</span>
             </div>
             {/* Replenish (P4): a new lot of the same ammo. If this lot has discovered
                 MV/BC, offer to carry them forward as provisional; else just a fresh box lot. */}

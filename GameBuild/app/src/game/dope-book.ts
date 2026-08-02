@@ -131,8 +131,10 @@ export function pruneNodesForLot(nodes: DopeNode[], lotId: string): DopeNode[] {
   return nodes.filter((n) => n.lotId !== lotId);
 }
 
-/** Rimfire ladder steps (D7) — finer than centrefire's centuries. */
-const RIMFIRE_STEPS = [25, 50, 75, 100, 125, 150, 200];
+/** Rimfire ladder steps (D7) — finer than centrefire's centuries. Exported for
+ *  `engine-bridge/effective-range.ts` (S8), which rounds a solved effective
+ *  range DOWN to this same cadence rather than re-declaring it. */
+export const RIMFIRE_STEPS = [25, 50, 75, 100, 125, 150, 200];
 
 /**
  * The DOPE-range ladder for a cartridge, as SI distances (D7). Steps are read in
