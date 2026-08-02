@@ -5,7 +5,8 @@ import { loadBtkModule } from './wasm-module';
 import { solveTrajectory, spinRateFromTwist } from './index';
 import { fitBc, type BcFitInput } from './bc-fit';
 import { requiredCorrectionRad } from '../game/firing-solution';
-import { believedLoad, catalogTwistM } from '../game/catalog';
+import { believedLoadForSpec, twistMForSpec } from '../game/catalog';
+import { cartridgeParams, specFromPreset, type RifleSpec } from '../game/spec';
 import { milToRad } from '../units/angle';
 import { yardsToMeters } from '../units/length';
 import type { AtmosphereInput, BtkModule, Load, WindVec } from './types';
@@ -13,8 +14,9 @@ import type { AtmosphereInput, BtkModule, Load, WindVec } from './types';
 const ISA: AtmosphereInput = { temperatureK: 288.15, altitudeM: 0, humidity: 0.5, pressurePa: 0 };
 const CALM: WindVec = { x: 0, y: 0, z: 0 };
 
-const RIFLE_CATALOG_ID = '65cm-custom';
-const LOT_CATALOG_ID = '65cm-match';
+const c65 = cartridgeParams('65cm');
+const RIFLE_SPEC: RifleSpec = { cartridgeId: '65cm', barrelLengthIn: c65.referenceBarrelIn, twistIn: c65.twistOptionsInPerTurn[0] };
+const LOT_SPEC = specFromPreset('65cm-match');
 const ZERO_RANGE_M = yardsToMeters(100);
 const DISTANCE_M = 800;
 
@@ -28,8 +30,8 @@ describe('engine-bridge/bc-fit/fitBc', () => {
 
   beforeAll(async () => {
     module = await loadBtkModule();
-    boxLoad = believedLoad(LOT_CATALOG_ID);
-    twistM = catalogTwistM(RIFLE_CATALOG_ID);
+    boxLoad = believedLoadForSpec(LOT_SPEC);
+    twistM = twistMForSpec(RIFLE_SPEC);
     bcMin = boxLoad.bc * 0.5;
     bcMax = boxLoad.bc * 2.0;
     baseInput = {

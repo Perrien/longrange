@@ -1,30 +1,34 @@
-// Gear catalog (task 2.2a). Typed loader over catalog.data.json + the two
-// adapters that turn catalog entries into the 2.1b hidden-truth ranges, plus the
-// believed (box) Load the player's DOPE is built from.
-//
-// Scope (D2): the catalog is ADDITIVE and, in Increment 2.2, consumed only by the
-// dev TruthInspector — it does NOT change how the live shot loop solves. Wiring
-// the selected instance's true ballistics into the solve, and the zeroing flow,
-// land in 2.3.
+// Gear catalog (task 2.2a; S7 rifle-ammo-store: the enumerated id API is
+// removed — see below). Two small survivors of the pre-parametric catalog
+// (`isRimfireCartridge`, `catalogEffectiveRangeYd`) plus the S3 spec-based
+// resolver, which is now the ONLY way the game turns a build (rifle spec /
+// load spec) into believed values, geometry, or hidden-truth ranges.
 //
 // Believed vs. true (D6): `believedMvMps`/`believedBc` are the advertised box
-// values the player sees; the true base MV (`lotTrueBaseMvMps`) + the hidden
+// values the player sees; the true base MV (`trueBaseMvForSpec`) + the hidden
 // ranges (rifle mvOffset / lot meanMvShift / trueBc spread) are what the engine
 // eventually solves. `believedBc` is authored in the load's OWN drag model
 // (advertised BC in that model if published, else = trueBc so the optimism lives
 // in MV only) — never a G1 number fed into a G7 solve.
 //
 // Encapsulation: this file (in game/) legitimately holds both believed and true
-// data. The player-facing `AmmoLoad`/`RifleModel` types expose ONLY believed +
-// geometry + display attrs; true values are reachable solely through
-// `catalogLotRanges` / `lotTrueBaseMvMps`, which engine-bridge / the dev inspector
-// call — the Store UI never does.
+// data. The player-facing `AmmoLoadForSpec`/`RifleModelForSpec` types expose
+// ONLY believed + geometry + display attrs; true values are reachable solely
+// through `rifleRangesForSpec`/`lotRangesForSpec`/`trueBaseMvForSpec`, which
+// engine-bridge / the dev inspector call — the Store UI never does.
 import type { Load } from '../engine-bridge/types';
 import type { LotTruthRanges, RifleTruthRanges } from './hidden-truth';
 import { moaToRad } from '../units/angle';
 import { inchesToMeters } from '../units/length';
 import { fpsToMps } from '../units/velocity';
 import { grainsToKg } from '../units/mass';
+// S7 (D2): `catalog.data.json` is DELETED for every purpose except
+// `catalogEffectiveRangeYd` — that function's `effectiveRangeYd` field has no
+// equivalent yet in `cartridges.data.json` (it only covers the original 4
+// cartridges' authored constant; S8 replaces it with a per-load physics solve
+// across all 10 and removes this import). Left wired deliberately, per S7's own
+// plan text: "leave it for S8 and say so in PROGRESS.md" — NOT a silent
+// deviation, the plan anticipates this exact carve-out.
 import catalogData from './catalog.data.json';
 import {
   bc7FromI7,
@@ -40,125 +44,29 @@ import {
   lengthClassCFor,
   LOT_SHIFT_REFERENCE,
   PRESETS,
+  CARTRIDGES_CATALOG_VERSION,
   type CartridgeParamsV2,
   type LoadSpec,
   type RifleSpec,
 } from './spec';
 
-/** The catalog version every acquired record is stamped with (D10). */
-export const CATALOG_VERSION = catalogData.catalogVersion;
+/** The catalog version every acquired record is stamped with (D10) — S7: now
+ *  reads `cartridges.data.json` (via spec.ts), not the deleted id catalog. */
+export const CATALOG_VERSION = CARTRIDGES_CATALOG_VERSION;
 
-export type RifleTier = 'hunting' | 'factoryMatch' | 'custom';
 export type AmmoGrade = 'match' | 'bulk';
 
-const TIER_LABEL: Record<RifleTier, string> = {
-  hunting: 'Hunting',
-  factoryMatch: 'Factory Match',
-  custom: 'Custom',
-};
+type RawOldCartridge = (typeof catalogData.cartridges)['65cm'];
 
-/** Player-facing rifle model (one per cartridge × tier). No hidden truth. */
-export interface RifleModel {
-  catalogId: string; // e.g. "65cm-custom"
-  cartridgeId: string; // "65cm"
-  cartridgeName: string; // "6.5 Creedmoor"
-  tier: RifleTier;
-  name: string; // "6.5 Creedmoor — Custom"
-  className: string;
-  twist: string;
-  twistGating: string; // display only (D7 — not enforced)
-  barrelLengthIn: number;
-  weightLb: number;
-  recoilFtLb: number;
-  barrelLifeRounds: number;
-}
-
-/** Player-facing ammo load (one per cartridge × grade). Believed values + the
- *  geometry/drag needed to build a solve Load — NO hidden true MV/BC. */
-export interface AmmoLoad {
-  catalogId: string; // e.g. "65cm-match"
-  cartridgeId: string;
-  cartridgeName: string;
-  grade: AmmoGrade;
-  product: string;
-  dragModel: 'G1' | 'G7';
-  massKg: number;
-  diameterM: number;
-  lengthM: number;
-  believedMvMps: number;
-  believedBc: number;
-}
-
-type RawCartridge = (typeof catalogData.cartridges)['65cm'];
-
-function rawCartridge(cartridgeId: string): RawCartridge {
-  const all = catalogData.cartridges as Record<string, RawCartridge>;
+/** S7: the ONLY remaining reader of `catalog.data.json` — `catalogEffectiveRangeYd`
+ *  below. Throws for any of the 6 cartridges this plan added that the old,
+ *  4-cartridge file never covered; that gap is real and is exactly what S8's
+ *  per-load derived solve exists to close (see the import comment above). */
+function rawOldCartridge(cartridgeId: string): RawOldCartridge {
+  const all = catalogData.cartridges as Record<string, RawOldCartridge>;
   const c = all[cartridgeId];
-  if (!c) throw new Error(`catalog: unknown cartridge '${cartridgeId}'`);
+  if (!c) throw new Error(`catalog: unknown cartridge '${cartridgeId}' (pending S8 — see catalogEffectiveRangeYd)`);
   return c;
-}
-
-function asDragModel(v: string): 'G1' | 'G7' {
-  if (v !== 'G1' && v !== 'G7') throw new Error(`catalog: unsupported drag model '${v}'`);
-  return v;
-}
-
-const RIFLE_TIERS = catalogData.rifleTiers as RifleTier[];
-const GRADES = catalogData.grades as AmmoGrade[];
-
-/** All acquirable rifles (4 cartridges × 3 tiers = 12) and ammo (4 × 2 = 8). */
-export const RIFLE_MODELS: RifleModel[] = [];
-export const AMMO_LOADS: AmmoLoad[] = [];
-
-for (const cartridgeId of Object.keys(catalogData.cartridges)) {
-  const c = rawCartridge(cartridgeId);
-  for (const tier of RIFLE_TIERS) {
-    RIFLE_MODELS.push({
-      catalogId: `${cartridgeId}-${tier}`,
-      cartridgeId,
-      cartridgeName: c.name,
-      tier,
-      name: `${c.name} — ${TIER_LABEL[tier]}`,
-      className: c.class,
-      twist: c.twist,
-      twistGating: c.twistGating,
-      barrelLengthIn: c.rifle.barrelLengthIn,
-      weightLb: c.rifle.weightLb,
-      recoilFtLb: c.rifle.recoilFtLb,
-      barrelLifeRounds: c.rifle.barrelLifeRounds,
-    });
-  }
-  for (const grade of GRADES) {
-    const l = c.loads[grade];
-    AMMO_LOADS.push({
-      catalogId: `${cartridgeId}-${grade}`,
-      cartridgeId,
-      cartridgeName: c.name,
-      grade,
-      product: l.product,
-      dragModel: asDragModel(l.dragModel),
-      massKg: l.massKg,
-      diameterM: c.caliberDiameterM,
-      lengthM: l.lengthM,
-      believedMvMps: l.boxMvMps,
-      believedBc: l.believedBc,
-    });
-  }
-}
-
-const RIFLE_BY_ID = new Map(RIFLE_MODELS.map((m) => [m.catalogId, m]));
-const AMMO_BY_ID = new Map(AMMO_LOADS.map((a) => [a.catalogId, a]));
-
-export function getRifleModel(catalogId: string): RifleModel {
-  const m = RIFLE_BY_ID.get(catalogId);
-  if (!m) throw new Error(`catalog: unknown rifle model '${catalogId}'`);
-  return m;
-}
-
-export function getAmmoLoad(catalogId: string): AmmoLoad {
-  const a = AMMO_BY_ID.get(catalogId);
-  if (!a) throw new Error(`catalog: unknown ammo load '${catalogId}'`);
-  return a;
 }
 
 /** Future progression seam (D4): everything is freely acquirable in 2.2. */
@@ -168,30 +76,23 @@ export function isUnlocked(_catalogId: string): boolean {
 
 /** Whether a cartridge is rimfire — drives the recommended zero distance
  *  (task 2.3, D8: rimfire zeroes at 50, centrefire at 100). Derived from the
- *  catalog class string so a future rimfire cartridge is covered automatically. */
+ *  catalog class string so a future rimfire cartridge is covered automatically.
+ *  S7: reads `cartridges.data.json` (via `cartridgeParams`), covers all 10. */
 export function isRimfireCartridge(cartridgeId: string): boolean {
-  return rawCartridge(cartridgeId).class.toLowerCase().includes('rimfire');
+  return cartridgeParams(cartridgeId).class.toLowerCase().includes('rimfire');
 }
 
 /** The cartridge's design-set effective range in YARDS (task 2.4a, D7) — the
  *  cap on the DOPE-ladder's stations (`game/dope-book.ts` `ladderStationsM`).
  *  Authored in yd (D7 provisional: .22 LR 200, .223 600, .308 1000, 6.5 CM 1200);
- *  the ladder converts to the active display unit. Truth-neutral. */
+ *  the ladder converts to the active display unit. Truth-neutral.
+ *
+ *  S7 (deferred to S8 per the plan's own carve-out): still reads the deleted-
+ *  everywhere-else `catalog.data.json`, so it only covers the original 4
+ *  cartridges. S8 replaces this with `effectiveRangeYdForSpec` — a per-(rifle,
+ *  load) physics solve that covers all 10 and needs no authored table. */
 export function catalogEffectiveRangeYd(cartridgeId: string): number {
-  return rawCartridge(cartridgeId).effectiveRangeYd;
-}
-
-/** Barrel twist as a rate in meters/turn, parsed from the rifle's twist string
- *  (e.g. "1:8.0" → one turn per 8 inches → inchesToMeters(8)). Drives spin drift
- *  in the solve + the hit-sim's spin (task 2.3b). Truth-neutral geometry, not a
- *  hidden value. */
-export function catalogTwistM(rifleCatalogId: string): number {
-  const m = getRifleModel(rifleCatalogId);
-  const parts = m.twist.split(':').map((s) => Number(s.trim()));
-  const [turns, inches] = parts;
-  if (parts.length !== 2 || !Number.isFinite(turns) || !Number.isFinite(inches) || turns === 0)
-    throw new Error(`catalog: cannot parse twist '${m.twist}' for '${rifleCatalogId}'`);
-  return inchesToMeters(inches / turns);
+  return rawOldCartridge(cartridgeId).effectiveRangeYd;
 }
 
 // --- Adapters to the 2.1b hidden-truth model --------------------------------
@@ -202,74 +103,19 @@ export function catalogTwistM(rifleCatalogId: string): number {
  * Deliberately large: 5 MOA is ~1.3″ at 25 yd, 35 MOA is ~9.2″ at 25 yd and ~37″
  * at 100 — off a normal target entirely, which is exactly WHY zeroing starts at
  * 25. The floor of 5 MOA means a fresh rifle is never accidentally usable.
- *
- * This supersedes the previous `designSet.zeroOffsetSdMrad` (~1 MOA SD, drawn
- * independently per axis). That value is left in the catalog data for provenance
- * but is no longer read.
  */
 export const RAW_ZERO_OFFSET_RANGE = { minRad: moaToRad(5), maxRad: moaToRad(35) };
 
-/** Hidden ranges for a rifle model (the tier's precision band + the D16 raw zero
- *  offset). `mvOffset` is a signed delta centred on 0. */
-export function catalogRifleRanges(rifleCatalogId: string): RifleTruthRanges {
-  const m = getRifleModel(rifleCatalogId);
-  const c = rawCartridge(m.cartridgeId);
-  const prec = c.rifle.inherentPrecisionMoa[m.tier];
-  // Zero offset is the D16 raw off-the-shelf pointing error (RAW_ZERO_OFFSET_RANGE,
-  // 5–35 MOA polar) — no longer the old per-axis `designSet.zeroOffsetSdMrad` normal
-  // draw (that field stays in the catalog data for provenance but is not read here).
-  return {
-    mvOffset: { nominal: 0, sd: c.rifle.barrelToBarrelMvSpreadMps },
-    zeroOffset: RAW_ZERO_OFFSET_RANGE,
-    inherentPrecision: { nominal: moaToRad(prec.nom), sd: moaToRad(prec.sd) },
-  };
-}
-
-/** Hidden ranges for an ammo lot. `meanMvShift` is a signed delta centred on 0;
- *  `bc` is centred on the true BC with a lot-to-lot spread; `bcSd` (per-shot BC
- *  scatter) is a fixed design value. */
-export function catalogLotRanges(ammoCatalogId: string): LotTruthRanges {
-  const a = getAmmoLoad(ammoCatalogId);
-  const raw = rawCartridge(a.cartridgeId).loads[a.grade];
-  return {
-    meanMvShift: { nominal: 0, sd: raw.lotMeanShiftSdMps },
-    mvSd: { nominal: raw.perShotMvSd.nom, sd: raw.perShotMvSd.sd },
-    bc: { nominal: raw.trueBc, sd: (raw.trueBc * raw.lotBcVarPct) / 100 },
-    bcSd: { nominal: catalogData.designSet.perShotBcSdFraction[a.grade], sd: 0 },
-  };
-}
-
-/** The honest base MV (measured average) before per-instance/lot draws — the
- *  base onto which rifle `mvOffset` + lot `meanMvShift` are added to get the true
- *  MV. Truth-side: used by engine-bridge / the dev inspector, never the Store. */
-export function lotTrueBaseMvMps(ammoCatalogId: string): number {
-  const a = getAmmoLoad(ammoCatalogId);
-  return rawCartridge(a.cartridgeId).loads[a.grade].trueBaseMvMps;
-}
-
-/** The believed (box) solve Load — advertised MV + BC in the load's drag model.
- *  This is what the player's DOPE is built from. */
-export function believedLoad(ammoCatalogId: string): Load {
-  const a = getAmmoLoad(ammoCatalogId);
-  return {
-    massKg: a.massKg,
-    diameterM: a.diameterM,
-    lengthM: a.lengthM,
-    bc: a.believedBc,
-    dragModel: a.dragModel,
-    muzzleVelocityMps: a.believedMvMps,
-  };
-}
-
 // =============================================================================
-// rifle-ammo-store S3 — spec-based resolver (ADDITIVE, D19). Everything below
-// is new: it reads cartridges.data.json via game/spec.ts and turns a
-// RifleSpec/LoadSpec into the same kinds of shapes the id-API functions above
-// produce. Nothing above this line is touched; no existing call site changes
-// until S5/S6. The old id API and catalog.data.json are deleted last (S7).
+// rifle-ammo-store S3/S4/S7 — spec-based resolver. Originally landed additively
+// alongside the old id API (S3, D19); as of S4 it's what every solve/UI reader
+// in the app actually calls, and as of S7 it's the ONLY gear resolver left —
+// the id API above (`RifleModel`/`AmmoLoad`/`getRifleModel`/`getAmmoLoad`/
+// `believedLoad`/`lotTrueBaseMvMps`/`catalogTwistM`/`catalogRifleRanges`/
+// `catalogLotRanges`/`RifleTier`) is deleted (D2 — rifle tiers are gone).
 //
-// Encapsulation (unchanged from the id API, re-affirmed here): resolveRifleSpec
-// /resolveLoadSpec expose ONLY believed values + display-neutral geometry. True
+// Encapsulation (unchanged from the old id API): resolveRifleSpec/
+// resolveLoadSpec expose ONLY believed values + display-neutral geometry. True
 // values are reachable solely through rifleRangesForSpec/lotRangesForSpec/
 // trueBaseMvForSpec, which engine-bridge and the dev inspector call — the Store
 // must never import those.
@@ -448,8 +294,8 @@ export function resolveLoadSpec(spec: LoadSpec): AmmoLoadForSpec {
   };
 }
 
-/** Hidden ranges for a rifle spec (mirrors `catalogRifleRanges`, D16's raw zero
- *  offset unchanged). */
+/** Hidden ranges for a rifle spec (D16's raw zero offset, per-cartridge
+ *  barrel-to-barrel MV spread + inherent precision from `cartridges.data.json`). */
 export function rifleRangesForSpec(spec: RifleSpec): RifleTruthRanges {
   const c = cartridgeParams(spec.cartridgeId);
   return {
@@ -459,10 +305,9 @@ export function rifleRangesForSpec(spec: RifleSpec): RifleTruthRanges {
   };
 }
 
-/** Hidden ranges for a load spec (mirrors `catalogLotRanges`). D11: lot-to-lot
- *  MV shift scales with case capacity relative to the 65 CM reference (52.5 gr
- *  H2O) the base constants were fitted at. `bc.nominal` is the TRUE bc (matches
- *  the id-API's own convention — see `catalogLotRanges` above), not believed. */
+/** Hidden ranges for a load spec. D11: lot-to-lot MV shift scales with case
+ *  capacity relative to the 65 CM reference (52.5 gr H2O) the base constants
+ *  were fitted at. `bc.nominal` is the TRUE bc, not believed. */
 export function lotRangesForSpec(spec: LoadSpec): LotTruthRanges {
   const c = cartridgeParams(spec.cartridgeId);
   const grade = gradeParams(spec.grade);
@@ -476,7 +321,8 @@ export function lotRangesForSpec(spec: LoadSpec): LotTruthRanges {
   };
 }
 
-/** The believed (box) solve Load for a spec — mirrors `believedLoad`. */
+/** The believed (box) solve Load for a spec — advertised MV + BC in the load's
+ *  drag model. This is what the player's DOPE is built from. */
 export function believedLoadForSpec(spec: LoadSpec): Load {
   const r = resolveLoadInternal(spec);
   return {
@@ -489,14 +335,14 @@ export function believedLoadForSpec(spec: LoadSpec): Load {
   };
 }
 
-/** The honest base MV for a spec (before rifle/lot hidden draws) — mirrors
- *  `lotTrueBaseMvMps`. Truth-side: engine-bridge / dev inspector only. */
+/** The honest base MV for a spec (measured average, before rifle/lot hidden
+ *  draws). Truth-side: engine-bridge / dev inspector only. */
 export function trueBaseMvForSpec(spec: LoadSpec): number {
   return resolveLoadInternal(spec).trueBaseMvMps;
 }
 
-/** Barrel twist as meters/turn — mirrors `catalogTwistM`, but with nothing to
- *  parse: `RifleSpec.twistIn` is already a plain number. */
+/** Barrel twist as meters/turn — `RifleSpec.twistIn` is already a plain
+ *  inches-per-turn number, nothing to parse. */
 export function twistMForSpec(spec: RifleSpec): number {
   return inchesToMeters(spec.twistIn);
 }

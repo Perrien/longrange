@@ -12,10 +12,13 @@
 //     reason the leftover per-range differences are pure trajectory (the DOPE).
 import { describe, expect, it } from 'vitest';
 import { deriveRifleTruth, deriveZeroOffsetRad, type RifleTruthRanges } from './hidden-truth';
-import { RAW_ZERO_OFFSET_RANGE, catalogRifleRanges } from './catalog';
+import { RAW_ZERO_OFFSET_RANGE, rifleRangesForSpec } from './catalog';
+import { cartridgeParams, type RifleSpec } from './spec';
 import { moaToRad } from '../units/angle';
 
-const RANGES: RifleTruthRanges = catalogRifleRanges('65cm-custom');
+const c65 = cartridgeParams('65cm');
+const RIFLE_SPEC_65CM: RifleSpec = { cartridgeId: '65cm', barrelLengthIn: c65.referenceBarrelIn, twistIn: c65.twistOptionsInPerTurn[0] };
+const RANGES: RifleTruthRanges = rifleRangesForSpec(RIFLE_SPEC_65CM);
 const MOA = moaToRad(1);
 
 /** Sweep the two normalized draws over the unit square. */

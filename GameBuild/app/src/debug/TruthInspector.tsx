@@ -15,10 +15,6 @@
 // the active instance into the live shot loop.
 import { useEffect, useState } from 'react';
 import {
-  AMMO_LOADS,
-  RIFLE_MODELS,
-  getAmmoLoad,
-  getRifleModel,
   resolveLoadSpec,
   rifleRangesForSpec,
   lotRangesForSpec,
@@ -27,8 +23,9 @@ import {
 } from '../game/catalog';
 import {
   cartridgeParams,
-  presetsForCartridge,
   specFromPreset,
+  CARTRIDGE_IDS_V2,
+  PRESETS,
   type RifleSpec,
   type LoadSpec,
 } from '../game/spec';
@@ -54,14 +51,6 @@ const N_SHOTS = 120;
 function defaultRifleSpecFor(cartridgeId: string): RifleSpec {
   const c = cartridgeParams(cartridgeId);
   return { cartridgeId, barrelLengthIn: c.referenceBarrelIn, twistIn: c.twistOptionsInPerTurn[0] };
-}
-
-/** First authored preset matching this cartridge + grade — the closest S4
- *  equivalent of the old catalog's one-load-per-cartridge-per-grade shape. */
-function presetLoadSpecFor(cartridgeId: string, grade: 'match' | 'bulk'): LoadSpec {
-  const preset = presetsForCartridge(cartridgeId).find((p) => p.grade === grade);
-  if (!preset) throw new Error(`TruthInspector: no preset for '${cartridgeId}' / '${grade}'`);
-  return specFromPreset(preset.id);
 }
 
 /** 1σ of the vertical (y) impacts from a seeded volley — the honest vertical
@@ -149,8 +138,8 @@ const cell: React.CSSProperties = { padding: '2px 8px', textAlign: 'right' };
 export function TruthInspector() {
   const unitsPrimary = useGameStore((s) => s.settings.unitsPrimary);
   const [module, setModule] = useState<BtkModule | null>(null);
-  const [rifleId, setRifleId] = useState(RIFLE_MODELS[0].catalogId);
-  const [lotId, setLotId] = useState(AMMO_LOADS[0].catalogId);
+  const [cartridgeId, setCartridgeId] = useState(CARTRIDGE_IDS_V2[0]);
+  const [presetId, setPresetId] = useState(PRESETS[0].id);
   const [roll, setRoll] = useState(0);
   const [copies, setCopies] = useState<CopyReadout[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -166,17 +155,13 @@ export function TruthInspector() {
     };
   }, []);
 
+  const rifleSpec = defaultRifleSpecFor(cartridgeId);
+  const loadSpec = specFromPreset(presetId);
+
   useEffect(() => {
     if (!module) return;
     try {
       const rng = cryptoRng();
-      // Dropdowns are keyed on the old catalog ids (RIFLE_MODELS/AMMO_LOADS,
-      // still valid until S7) purely for their curated cartridge×grade list;
-      // computeCopy itself works in specs (S4), so translate at the boundary.
-      const rifleModel = getRifleModel(rifleId);
-      const ammoLoad = getAmmoLoad(lotId);
-      const rifleSpec = defaultRifleSpecFor(rifleModel.cartridgeId);
-      const loadSpec = presetLoadSpecFor(ammoLoad.cartridgeId, ammoLoad.grade);
       setCopies([
         computeCopy(module, rifleSpec, loadSpec, rng),
         computeCopy(module, rifleSpec, loadSpec, rng),
@@ -184,9 +169,10 @@ export function TruthInspector() {
     } catch (e) {
       setError(String(e));
     }
-  }, [module, rifleId, lotId, roll]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [module, cartridgeId, presetId, roll]);
 
-  const boxMvMps = getAmmoLoad(lotId).believedMvMps;
+  const boxMvMps = resolveLoadSpec(loadSpec).believedMvMps;
   const boxMv = formatSpeedForDisplay(boxMvMps, unitsPrimary);
   const mvFmt = (mps: number) => formatSpeedForDisplay(mps, unitsPrimary);
   const spreadFmt = (m: number) => formatOffsetForDisplay(m, unitsPrimary);
@@ -202,20 +188,20 @@ export function TruthInspector() {
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
         <label>
           Rifle{' '}
-          <select value={rifleId} onChange={(e) => setRifleId(e.target.value)}>
-            {RIFLE_MODELS.map((m) => (
-              <option key={m.catalogId} value={m.catalogId}>
-                {m.name}
+          <select value={cartridgeId} onChange={(e) => setCartridgeId(e.target.value)}>
+            {CARTRIDGE_IDS_V2.map((id) => (
+              <option key={id} value={id}>
+                {cartridgeParams(id).name}
               </option>
             ))}
           </select>
         </label>
         <label>
           Ammo{' '}
-          <select value={lotId} onChange={(e) => setLotId(e.target.value)}>
-            {AMMO_LOADS.map((a) => (
-              <option key={a.catalogId} value={a.catalogId}>
-                {a.cartridgeName} — {a.grade}
+          <select value={presetId} onChange={(e) => setPresetId(e.target.value)}>
+            {PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
               </option>
             ))}
           </select>

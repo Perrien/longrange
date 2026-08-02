@@ -17,8 +17,14 @@ import {
   TOL_RAD,
   type DopeNode,
 } from './dope-book';
-import { catalogLotRanges, catalogRifleRanges, believedLoad } from './catalog';
+import { lotRangesForSpec, rifleRangesForSpec, believedLoadForSpec } from './catalog';
+import { cartridgeParams, specFromPreset, type RifleSpec } from './spec';
 import { yardsToMeters } from '../units';
+
+const c65 = cartridgeParams('65cm');
+const RIFLE_SPEC_65CM: RifleSpec = { cartridgeId: '65cm', barrelLengthIn: c65.referenceBarrelIn, twistIn: c65.twistOptionsInPerTurn[0] };
+const LOAD_SPEC_65CM_MATCH = specFromPreset('65cm-match');
+const LOAD_SPEC_65CM_BULK = specFromPreset('65cm-bulk');
 
 /** Build a DopeNode with sensible defaults; override what a test cares about. */
 const node = (partial: Partial<DopeNode> = {}): DopeNode => ({
@@ -99,13 +105,13 @@ describe('requiredShots (N rule, D3)', () => {
 });
 
 describe('match < bulk at every range (catalog-believed values)', () => {
-  const matchMv = believedLoad('65cm-match').muzzleVelocityMps;
-  const bulkMv = believedLoad('65cm-bulk').muzzleVelocityMps;
-  const matchSd = catalogLotRanges('65cm-match').mvSd.nominal;
-  const bulkSd = catalogLotRanges('65cm-bulk').mvSd.nominal;
+  const matchMv = believedLoadForSpec(LOAD_SPEC_65CM_MATCH).muzzleVelocityMps;
+  const bulkMv = believedLoadForSpec(LOAD_SPEC_65CM_BULK).muzzleVelocityMps;
+  const matchSd = lotRangesForSpec(LOAD_SPEC_65CM_MATCH).mvSd.nominal;
+  const bulkSd = lotRangesForSpec(LOAD_SPEC_65CM_BULK).mvSd.nominal;
   // Hold the rifle's inherent precision equal so the comparison isolates the
   // ammo grade's per-shot MV SD (the honest "match vs bulk" axis).
-  const inherent = catalogRifleRanges('65cm-custom').inherentPrecision.nominal;
+  const inherent = rifleRangesForSpec(RIFLE_SPEC_65CM).inherentPrecision.nominal;
 
   it('match σ_v < bulk σ_v and N_match ≤ N_bulk across the ladder', () => {
     for (const R of [100, 300, 500, 800, 1000]) {
