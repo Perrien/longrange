@@ -18,6 +18,8 @@ import {
   mpsToFps,
   mphToMps,
   mpsToMph,
+  grainsToKg,
+  kgToGrains,
   systemLabel,
   formatAngleForDisplay,
   formatSpeedForDisplay,
@@ -91,6 +93,18 @@ describe('units/velocity', () => {
 
   it('mph anchor (10 mph full-value wind)', () => {
     expect(mphToMps(10)).toBeCloseTo(4.4704, 9);
+  });
+});
+
+describe('units/mass', () => {
+  it('round-trips grains ↔ kg', () => {
+    expect(kgToGrains(grainsToKg(140))).toBeCloseTo(140, 9);
+  });
+
+  it('reproduces the golden-vector fixture massKg exactly (rifle-ammo-store S2)', () => {
+    // GameBuild/validation/loads.json's own comment: "1 gr = 0.00006479891 kg".
+    expect(grainsToKg(140)).toBeCloseTo(0.0090718474, 10); // 65cm-140-match
+    expect(grainsToKg(77)).toBeCloseTo(0.0049895161, 10); // 223-77-match
   });
 });
 

@@ -111,7 +111,53 @@ on drag. Feeds the hidden-truth ammo model (§D) and interacts with weather (§E
 
 ## B. The firing-solution shot loop (the heart)
 
-*(no open items — both features currently planned for this category are built; see the Built section.)*
+#### Cartridge-scaled recoil (and self-spotting)
+
+Today recoil is a **single hardcoded constant** — `RECOIL_PITCH_VEL = 0.05` in `ScopeView.tsx`,
+"~3 mrad peak" — so a .22 LR and a .50 BMG kick **identically**. `recoilFtLb` exists in the
+catalog for every cartridge and is **read by nothing**; `weightLb` is Store display text only.
+
+**Scale by recoil velocity, not energy.** Muzzle-rise angular velocity goes as linear momentum
+over moment of inertia, and both scale with rifle mass, so the right variable is
+`V_r = √(2E / m_rifle)`. This also tames the range: recoil *energy* spans 2000:1 across the
+ladder, recoil *velocity* only about 30:1 — a usable range for a visual effect.
+
+| cartridge | E (ft-lb) | rifle (lb) | V_r (m/s) | rel. kick | peak rise | self-spot |
+|---|---|---|---|---|---|---|
+| .22 LR | 0.05 | 13.5 | 0.15 | 0.13× | 0.4 mrad | easy |
+| .223 | 2.00 | 15.0 | 0.89 | 0.81× | 2.4 mrad | easy |
+| 6.5 CM | 4.27 | 21.0 | 1.10 | 1.00× | 3.0 mrad | easy |
+| .308 | 8.68 | 16.0 | 1.80 | 1.63× | 4.9 mrad | marginal |
+| .300 WM | 14.09 | 18.0 | 2.16 | 1.96× | 5.9 mrad | hard |
+| .338 LM | 22.45 | 22.0 | 2.47 | 2.24× | 6.7 mrad | hard |
+| .50 BMG | 101.77 | 32.0 | 4.36 | 3.95× | 11.9 mrad | no chance |
+
+*(peak rise holds 6.5 CM at today's 3.0 mrad as the calibration point.)*
+
+**The real payoff is self-spotting, not the visual.** Whether you keep the sight picture through
+the shot and watch your own impact is the single biggest practical consequence of recoil, and it
+is exactly why 6 mm and 6.5 mm dominate PRS. Under a scaled model it emerges for free: a .22 or
+6.5 CM barely moves, a .338 loses the target, a .50 is somewhere else entirely. It also gives the
+**spotter cam** (§D) a reason to exist that isn't just distance.
+
+> ⚠ **Recoil must NOT move the point of impact.** The bullet exits in roughly 1–1.5 ms, before the
+> rifle has meaningfully rotated — shot placement is set by hold, wobble and breath, all already
+> modelled. `ScopeView` already samples aim *before* applying the recoil kick, and that must stay.
+> Making recoil throw the shot would be arcade and factually wrong. Flinch/anticipation is a
+> *shooter* effect, not a physics one; deliberately omitted rather than modelled as an automatic
+> penalty.
+
+**Recoil should be computed, not looked up.** Under the parametric ammo model
+(`bullet-catalog/catalog-expansion-v2.md`) recoil momentum is
+`m_bullet · v_muzzle + m_charge · v_gas`, so a heavier bullet kicks harder — surfacing the real
+cost of the heavy high-BC choice, and making rifle weight a meaningful configuration axis for the
+first time. The **case-capacity figures requested in research run R1** serve double duty here:
+they place cartridges on the velocity curve *and* give the charge mass needed to compute recoil
+for an arbitrary load.
+
+**Not built** — logged 2026-08-01 (owner). Cheap: the per-cartridge data already exists, two dead
+fields get wired, and the change is confined to `ScopeView`'s recoil constants plus a small pure
+helper. Self-spotting and follow-up-shot recovery are the larger follow-ons.
 
 ---
 

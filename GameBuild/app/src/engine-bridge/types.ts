@@ -164,6 +164,20 @@ export interface EBullet extends EmbindHandle {
   getTotalVelocity(): number;
   getElevationAngle(): number;
   getAzimuthAngle(): number;
+  /** Bound in bindings.cpp but unused until rifle-ammo-store S2, which
+   *  cross-checks game/ballistic-derivation.ts's pure `millerSg` against this —
+   *  the same function `Simulator::computeLaunchStability()` calls internally
+   *  (there is no separate SG getter on the simulator). Base Miller SG (no
+   *  velocity/atmosphere correction). */
+  computeMillerStabilityFactor(twistInPerTurn: number): number;
+  /** Miller SG corrected to actual muzzle velocity + atmosphere (Applied
+   *  Ballistics definition): SG = SG_base · (V/2800)^(1/3) · (T_R/519) · (29.92/P_inHg). */
+  computeMillerStabilityFactorCorrected(
+    twistInPerTurn: number,
+    velocityMps: number,
+    temperatureK: number,
+    pressurePa: number,
+  ): number;
 }
 
 export interface ETrajectoryPoint extends EmbindHandle {

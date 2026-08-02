@@ -23,6 +23,16 @@ catalog. These are *starting* values, not final truth.
 `Teaching-ladder cartridges (v1):` .22 LR · .223 Rem / 5.56 NATO · 6.5 Creedmoor · .308
 Win · .300 Win Mag · .338 Lapua Mag · .50 BMG.
 
+> **Ladder v2 + parametric model (2026-08-01) — see [`catalog-expansion-v2.md`](./catalog-expansion-v2.md).**
+> The ladder grew to **10 cartridges** (adding **6mm Creedmoor**, **6.5 PRC**, **.300 PRC**), and
+> the discrete per-load catalog was **replaced by a parametric model**: the player configures
+> bullet weight, profile and quality, and MV / BC / bullet length are *derived*. Named factory
+> loads survive as presets.
+>
+> **Prompts A–D below are historical.** A and B produced `catalog-seed.json` and their data is
+> still used. **Prompt D is superseded** — derived bullet length removes the geometry blocker
+> entirely. The live research plan is the four runs **P1–P4** in `catalog-expansion-v2.md` §5.
+
 `Model mapping:`
 - **Prompt A → ammo *lot* truth:** box MV (nominal), lot-to-lot mean-MV shift, per-shot MV
   SD, true BC + BC SD, temperature sensitivity, drag model.
@@ -181,7 +191,17 @@ parallel or after.
 
 ---
 
-## Prompt D — Bullet geometry for the three magnum/ELR cartridges  ⛔ BLOCKING
+## Prompt D — Bullet geometry for the three magnum/ELR cartridges  ⚠ SUPERSEDED 2026-08-01
+
+> **⚠ SUPERSEDED — do not run this.** Under the parametric model
+> ([`catalog-expansion-v2.md`](./catalog-expansion-v2.md)) bullet length is **derived** from mass,
+> caliber and form factor, so the per-product geometry this run was written to collect is no
+> longer required. What replaces it is a much smaller ask — a set of measured length-to-diameter
+> anchors per construction class — which lives in run **P2**.
+>
+> D is left intact because its load table and its reasoning about which fixture values are
+> recoverable are still correct, and because it records *why* this work was blocked from
+> 2026-07-29 until the model changed.
 
 > **Why this run exists.** Build-spec task 12 (`../archive/elr-range-build-spec.md`, archived 2026-07-29) adds
 > `.300 WM`, `.338 LM` and `.50 BMG` to `GameBuild/app/src/game/catalog.data.json`. Every

@@ -23,7 +23,27 @@ import type { Load } from '../engine-bridge/types';
 import type { LotTruthRanges, RifleTruthRanges } from './hidden-truth';
 import { moaToRad } from '../units/angle';
 import { inchesToMeters } from '../units/length';
+import { fpsToMps } from '../units/velocity';
+import { grainsToKg } from '../units/mass';
 import catalogData from './catalog.data.json';
+import {
+  bc7FromI7,
+  bulletLengthIn,
+  muzzleVelocityFps,
+  sectionalDensity,
+  type VelocityCurveParams,
+} from './ballistic-derivation';
+import {
+  cartridgeParams,
+  findPreset,
+  gradeParams,
+  lengthClassCFor,
+  LOT_SHIFT_REFERENCE,
+  PRESETS,
+  type CartridgeParamsV2,
+  type LoadSpec,
+  type RifleSpec,
+} from './spec';
 
 /** The catalog version every acquired record is stamped with (D10). */
 export const CATALOG_VERSION = catalogData.catalogVersion;
@@ -240,3 +260,245 @@ export function believedLoad(ammoCatalogId: string): Load {
     muzzleVelocityMps: a.believedMvMps,
   };
 }
+
+// =============================================================================
+// rifle-ammo-store S3 — spec-based resolver (ADDITIVE, D19). Everything below
+// is new: it reads cartridges.data.json via game/spec.ts and turns a
+// RifleSpec/LoadSpec into the same kinds of shapes the id-API functions above
+// produce. Nothing above this line is touched; no existing call site changes
+// until S5/S6. The old id API and catalog.data.json are deleted last (S7).
+//
+// Encapsulation (unchanged from the id API, re-affirmed here): resolveRifleSpec
+// /resolveLoadSpec expose ONLY believed values + display-neutral geometry. True
+// values are reachable solely through rifleRangesForSpec/lotRangesForSpec/
+// trueBaseMvForSpec, which engine-bridge and the dev inspector call — the Store
+// must never import those.
+//
+// Believed vs. true (D6/D10 — resolved here, not left ambiguous): the derived
+// velocity curve (`muzzleVelocityFps`) reproduces the plan's §2.2 table, whose
+// column is explicitly the shipped loads' BOX (believed/advertised) MV — cross-
+// checked against catalog.data.json's `boxMvMps`, not `trueBaseMvMps`, for the
+// three anchor loads. So `trueBaseMv = believedMv / (1 + grade.mvOptimism)`,
+// inverting D10's stated `believedMv = trueBaseMv * (1 + mvOptimism)` — the two
+// are algebraically the same relationship, just solved for the unknown the
+// curve doesn't directly give us. Every `mvFpsOverride` in cartridges.data.json
+// (D9/§2.2's .223 bulk outlier, plus 22lr-bulk) is therefore a BELIEVED-MV
+// override, not a true one; see that file's `grades._note` and its 22lr-bulk
+// comment for the worked justification.
+
+/** Player-facing rifle model resolved from a spec — no hidden truth, no tier
+ *  (D2 removes tiers; one rifle per cartridge, configured by barrel + twist). */
+export interface RifleModelForSpec {
+  cartridgeId: string;
+  cartridgeName: string;
+  name: string;
+  className: string;
+  barrelLengthIn: number;
+  twistIn: number;
+  barrelLifeRounds: number;
+  precisionMoa: { nominal: number; sd: number };
+}
+
+/** Player-facing ammo load resolved from a spec — believed values + the
+ *  geometry needed to build a solve Load. NO hidden true MV/BC (same
+ *  encapsulation rule as `AmmoLoad`). */
+export interface AmmoLoadForSpec {
+  cartridgeId: string;
+  cartridgeName: string;
+  grade: AmmoGrade;
+  /** Preset product name, or a generated description for a hand-built load
+   *  (S6: `"6.5 CM · 140 gr · i7 0.93 · Match"`). */
+  product: string;
+  presetId?: string;
+  dragModel: 'G1' | 'G7';
+  massKg: number;
+  diameterM: number;
+  lengthM: number;
+  believedMvMps: number;
+  believedBc: number;
+  weightGr: number;
+  /** Undefined for rimfire (D8 — i7/BC7 does not apply to .22 LR). */
+  i7?: number;
+}
+
+function velocityCurveParamsFor(c: CartridgeParamsV2): VelocityCurveParams {
+  return { a: c.velocityCurve.a, kAnchored: c.velocityCurve.kAnchored, referenceBarrelIn: c.referenceBarrelIn, n: c.n };
+}
+
+/** Resolve a RifleSpec into its player-facing display shape. Pure function of
+ *  the spec + cartridges.data.json — assumes an already-clamped spec (S9's
+ *  sliders clamp on every move via `clampRifleSpec`; this does not re-clamp). */
+export function resolveRifleSpec(spec: RifleSpec): RifleModelForSpec {
+  const c = cartridgeParams(spec.cartridgeId);
+  return {
+    cartridgeId: spec.cartridgeId,
+    cartridgeName: c.name,
+    name: `${c.name} — ${spec.barrelLengthIn}" 1:${spec.twistIn}`,
+    className: c.class,
+    barrelLengthIn: spec.barrelLengthIn,
+    twistIn: spec.twistIn,
+    barrelLifeRounds: c.barrelLifeRounds,
+    precisionMoa: c.precisionMoa,
+  };
+}
+
+/** Internal shape shared by every LoadSpec-consuming export below, so the
+ *  believed/true derivation (D6/D9/D10) is computed exactly once per call
+ *  rather than re-implemented per function. Not exported — callers get the
+ *  player-facing (`resolveLoadSpec`/`believedLoadForSpec`) or truth-facing
+ *  (`lotRangesForSpec`/`trueBaseMvForSpec`) projections of this. */
+interface ResolvedLoadV2 {
+  dragModel: 'G1' | 'G7';
+  massKg: number;
+  diameterM: number;
+  lengthM: number;
+  trueBc: number;
+  trueBaseMvMps: number;
+  believedBc: number;
+  believedMvMps: number;
+  product: string;
+  presetId?: string;
+}
+
+function resolveLoadInternal(spec: LoadSpec): ResolvedLoadV2 {
+  const c = cartridgeParams(spec.cartridgeId);
+  const grade = gradeParams(spec.grade);
+  const preset = spec.presetId ? findPreset(spec.presetId) : undefined;
+  const curve = velocityCurveParamsFor(c);
+  const diameterM = inchesToMeters(c.dIn);
+
+  if (c.presetsOnly) {
+    // .22 LR (D8): G1, no SD/i7 apparatus — a presetId carrying an authored
+    // true BC is mandatory. Never feed a G1 number into a G7 solve.
+    if (!preset) throw new Error(`catalog: rimfire cartridge '${spec.cartridgeId}' requires a presetId (D8)`);
+    if (preset.trueBc == null)
+      throw new Error(`catalog: preset '${preset.id}' has no authored trueBc (required for G1 cartridges)`);
+    const massKg = grainsToKg(preset.weightGr);
+    const sd = sectionalDensity(preset.weightGr, c.dIn);
+    const lengthM = preset.lengthMOverride ?? inchesToMeters(bulletLengthIn(sd, lengthClassCFor(spec.cartridgeId)));
+    const believedMvMps =
+      preset.mvFpsOverride != null
+        ? fpsToMps(preset.mvFpsOverride)
+        : fpsToMps(muzzleVelocityFps(curve, preset.weightGr, c.referenceBarrelIn));
+    const trueBaseMvMps = believedMvMps / (1 + grade.mvOptimism);
+    const trueBc = preset.trueBc;
+    const believedBc = trueBc * (1 + grade.bcOptimism);
+    return {
+      dragModel: 'G1',
+      massKg,
+      diameterM,
+      lengthM,
+      trueBc,
+      trueBaseMvMps,
+      believedBc,
+      believedMvMps,
+      product: preset.name,
+      presetId: preset.id,
+    };
+  }
+
+  const weightGr = spec.weightGr;
+  const i7 = spec.i7;
+  const sd = sectionalDensity(weightGr, c.dIn);
+  const trueBc = bc7FromI7(sd, i7);
+  const massKg = grainsToKg(weightGr);
+  // D9: an oracle-pinned preset keeps its measured length; everything else
+  // (including a preset's own bulk sibling, which is deliberately NOT
+  // oracle-pinned — §0.1's repaired defect) derives length from SD*C.
+  const lengthM = preset?.lengthMOverride ?? inchesToMeters(bulletLengthIn(sd, lengthClassCFor(spec.cartridgeId)));
+  const believedMvMps =
+    preset?.mvFpsOverride != null
+      ? fpsToMps(preset.mvFpsOverride)
+      : fpsToMps(muzzleVelocityFps(curve, weightGr, c.referenceBarrelIn));
+  const trueBaseMvMps = believedMvMps / (1 + grade.mvOptimism);
+  const believedBc = trueBc * (1 + grade.bcOptimism);
+  const product = preset ? preset.name : `${c.name} · ${weightGr} gr · i7 ${i7.toFixed(3)} · ${spec.grade}`;
+  return {
+    dragModel: 'G7',
+    massKg,
+    diameterM,
+    lengthM,
+    trueBc,
+    trueBaseMvMps,
+    believedBc,
+    believedMvMps,
+    product,
+    presetId: preset?.id,
+  };
+}
+
+/** Resolve a LoadSpec into its player-facing display shape (believed + geometry only). */
+export function resolveLoadSpec(spec: LoadSpec): AmmoLoadForSpec {
+  const c = cartridgeParams(spec.cartridgeId);
+  const r = resolveLoadInternal(spec);
+  return {
+    cartridgeId: spec.cartridgeId,
+    cartridgeName: c.name,
+    grade: spec.grade,
+    product: r.product,
+    presetId: r.presetId,
+    dragModel: r.dragModel,
+    massKg: r.massKg,
+    diameterM: r.diameterM,
+    lengthM: r.lengthM,
+    believedMvMps: r.believedMvMps,
+    believedBc: r.believedBc,
+    weightGr: spec.weightGr,
+    i7: c.presetsOnly ? undefined : spec.i7,
+  };
+}
+
+/** Hidden ranges for a rifle spec (mirrors `catalogRifleRanges`, D16's raw zero
+ *  offset unchanged). */
+export function rifleRangesForSpec(spec: RifleSpec): RifleTruthRanges {
+  const c = cartridgeParams(spec.cartridgeId);
+  return {
+    mvOffset: { nominal: 0, sd: fpsToMps(c.barrelToBarrelMvSdFps) },
+    zeroOffset: RAW_ZERO_OFFSET_RANGE,
+    inherentPrecision: { nominal: moaToRad(c.precisionMoa.nominal), sd: moaToRad(c.precisionMoa.sd) },
+  };
+}
+
+/** Hidden ranges for a load spec (mirrors `catalogLotRanges`). D11: lot-to-lot
+ *  MV shift scales with case capacity relative to the 65 CM reference (52.5 gr
+ *  H2O) the base constants were fitted at. `bc.nominal` is the TRUE bc (matches
+ *  the id-API's own convention — see `catalogLotRanges` above), not believed. */
+export function lotRangesForSpec(spec: LoadSpec): LotTruthRanges {
+  const c = cartridgeParams(spec.cartridgeId);
+  const grade = gradeParams(spec.grade);
+  const r = resolveLoadInternal(spec);
+  const lotShiftMps = grade.lotShiftBaseMps * Math.sqrt(c.capacityGrH2O / LOT_SHIFT_REFERENCE.capacityGrH2O);
+  return {
+    meanMvShift: { nominal: 0, sd: lotShiftMps },
+    mvSd: { nominal: grade.perShotMvSdMps.nominal, sd: grade.perShotMvSdMps.sd },
+    bc: { nominal: r.trueBc, sd: r.trueBc * grade.lotBcVarFraction },
+    bcSd: { nominal: grade.perShotBcSdFraction, sd: 0 },
+  };
+}
+
+/** The believed (box) solve Load for a spec — mirrors `believedLoad`. */
+export function believedLoadForSpec(spec: LoadSpec): Load {
+  const r = resolveLoadInternal(spec);
+  return {
+    massKg: r.massKg,
+    diameterM: r.diameterM,
+    lengthM: r.lengthM,
+    bc: r.believedBc,
+    dragModel: r.dragModel,
+    muzzleVelocityMps: r.believedMvMps,
+  };
+}
+
+/** The honest base MV for a spec (before rifle/lot hidden draws) — mirrors
+ *  `lotTrueBaseMvMps`. Truth-side: engine-bridge / dev inspector only. */
+export function trueBaseMvForSpec(spec: LoadSpec): number {
+  return resolveLoadInternal(spec).trueBaseMvMps;
+}
+
+/** Barrel twist as meters/turn — mirrors `catalogTwistM`, but with nothing to
+ *  parse: `RifleSpec.twistIn` is already a plain number. */
+export function twistMForSpec(spec: RifleSpec): number {
+  return inchesToMeters(spec.twistIn);
+}
+
+export { PRESETS };
