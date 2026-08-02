@@ -522,7 +522,7 @@ presets that snap both. Covers **all 10 cartridges** the project ever researched
 .223, 6mm Creedmoor, 6.5 Creedmoor, 6.5 PRC, .308, .300 Win Mag, .300 PRC, .338 Lapua,
 .50 BMG) — closes the "only 4 of 7 shipped" gap this entry used to describe, and adds 3
 more (6mm CM, 6.5 PRC, .300 PRC) beyond the original research ladder.
-**Built** — 2026-08-02 (`Design/Plans/rifle-ammo-store-plan.md`, tasks S1–S11, all
+**Built** — 2026-08-02 (`Design/archive/rifle-ammo-store-plan.md`, tasks S1–S11, all
 owner-confirmed on device). `game/cartridges.data.json` (per-cartridge velocity-curve
 params + slider bands, replacing the old enumerated `catalog.data.json`, deleted at S8),
 `game/ballistic-derivation.ts` (pure MV/BC/length/recoil/Sg formulas), `game/spec.ts` +

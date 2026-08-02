@@ -1,6 +1,6 @@
 // DOPE book — the full-screen, rifle-scoped reference (DOPE-first plan, P1).
 //
-// A tabbed overlay (SettingsScreen/StoreScreen `{ onClose }` pattern) reachable
+// A tabbed overlay (SettingsScreen/GearScreen `{ onClose }` pattern) reachable
 // from the range-select landing and the scope HUD. Two pages:
 //   - "Rifle & Ammo" — the rifle + ammo overview (P3; a stub placeholder here).
 //   - "Come-up"      — the believed come-up table to the cartridge's effective
@@ -39,6 +39,7 @@ import { SIGHT_HEIGHT_M } from '../game/loads';
 import { mpsToFps, asMilMoa, subtensionMmInch, yardsToMeters } from '../units';
 import type { RifleInstance, AmmoLot } from '../persistence';
 import { useGameStore } from '../state/store';
+import { TabButton } from './TabButton';
 
 // Same ISA atmosphere the scope + DopePanel solve against.
 const ISA_ATMOSPHERE: AtmosphereInput = { temperatureK: 288.15, altitudeM: 0, humidity: 0.5, pressurePa: 0 };
@@ -537,27 +538,5 @@ function Chip({ children, warn }: { children: ReactNode; warn?: boolean }) {
     >
       {children}
     </span>
-  );
-}
-
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        fontFamily: 'monospace',
-        fontSize: 14,
-        color: active ? '#fff' : FG,
-        background: active ? 'rgba(40,110,170,0.9)' : 'rgba(232,238,244,0.08)',
-        border: active ? '1px solid #e8eef4' : '1px solid rgba(232,238,244,0.3)',
-        borderRadius: 6,
-        padding: '7px 14px',
-        cursor: 'pointer',
-        WebkitUserSelect: 'none',
-        userSelect: 'none',
-      }}
-    >
-      {children}
-    </button>
   );
 }

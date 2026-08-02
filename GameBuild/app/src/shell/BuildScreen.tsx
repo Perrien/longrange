@@ -38,6 +38,7 @@ import {
   moaToRad,
   yardsToMeters,
 } from '../units';
+import { TabButton } from './TabButton';
 
 const PANEL_BG = '#1a222c';
 const FG = '#e8eef4';
@@ -297,10 +298,10 @@ export function BuildScreen({
         </div>
 
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <TabButton active={tab === 'rifle'} onClick={() => setTab('rifle')}>
+          <TabButton flex active={tab === 'rifle'} onClick={() => setTab('rifle')}>
             Rifle {ownedRifles > 0 && `(×${ownedRifles})`}
           </TabButton>
-          <TabButton active={tab === 'ammo'} onClick={() => setTab('ammo')}>
+          <TabButton flex active={tab === 'ammo'} onClick={() => setTab('ammo')}>
             Ammo {ownedLots > 0 && `(×${ownedLots})`}
           </TabButton>
         </div>
@@ -440,26 +441,5 @@ export function BuildScreen({
         )}
       </div>
     </div>
-  );
-}
-
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        flex: 1,
-        fontFamily: 'monospace',
-        fontSize: 14,
-        color: active ? '#fff' : FG,
-        background: active ? 'rgba(40,110,170,0.9)' : 'rgba(232,238,244,0.08)',
-        border: active ? '1px solid #e8eef4' : '1px solid rgba(232,238,244,0.3)',
-        borderRadius: 6,
-        padding: '8px 0',
-        cursor: 'pointer',
-      }}
-    >
-      {children}
-    </button>
   );
 }

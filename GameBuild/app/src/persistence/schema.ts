@@ -6,7 +6,7 @@
 // additive-optional, unlike almost everything else in this file: a record has
 // one shape, so this one genuinely needs the version bump + a (silent, D16)
 // wipe of owned gear, rather than the usual "validated only when present"
-// pattern. See Design/Plans/rifle-ammo-store-plan.md §1c for why the identity
+// pattern. See Design/archive/rifle-ammo-store-plan.md §1c for why the identity
 // migration couldn't land in smaller pieces. Every bump ships a migration
 // (migrations.ts) + a fixture save in the test corpus (persistence.test.ts),
 // per guardrail §4.6.

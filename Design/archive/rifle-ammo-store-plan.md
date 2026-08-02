@@ -1,5 +1,15 @@
 # Rifle & Ammo Store — parametric builders
 
+**Status: COMPLETE and ARCHIVED** — all 11 tasks (S1–S11) built, gates green throughout,
+every owner-verification stop (S7–S10) confirmed on device; moved to `Design/archive/`
+on 2026-08-02. Kept for provenance (the locked D1–D20 decisions and the reasoning behind
+them), **not as a live spec** — [`../feature-catalog.md`](../feature-catalog.md) §B/§C and
+the "Rifle & Ammo Store" rows in [`../execution/PROGRESS.md`](../execution/PROGRESS.md)
+are the authoritative record of what shipped. This is a **link-safe move**: `Design/Plans/`
+and `Design/archive/` sit at the same depth under `Design/`, so every relative link below
+(`../feature-catalog.md`, `../bullet-catalog/...`, `../execution/...`) still resolves
+correctly from its new location.
+
 `Status: decisions locked, ready to build` · `Date: 2026-08-01` · `Plan slug: rifle-ammo-store`
 `Data authority:` [`../bullet-catalog/build-data-reference.md`](../bullet-catalog/build-data-reference.md)
 `Design context:` [`../bullet-catalog/catalog-expansion-v2.md`](../bullet-catalog/catalog-expansion-v2.md)

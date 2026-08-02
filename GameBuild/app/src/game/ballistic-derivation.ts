@@ -1,5 +1,5 @@
 // rifle-ammo-store S2 — pure ballistic derivation math (§2.1 of
-// Design/Plans/rifle-ammo-store-plan.md). Every function here is a pure
+// Design/archive/rifle-ammo-store-plan.md). Every function here is a pure
 // function of explicit arguments: no engine, no state, no React, no import of
 // cartridges.data.json — same discipline as game/hidden-truth.ts. Callers
 // (game/spec.ts's resolve*ForSpec, S3) supply the cartridge's authored

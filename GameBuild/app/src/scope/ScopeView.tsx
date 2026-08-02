@@ -178,12 +178,12 @@ const BREATH_DEBT_FACTOR = 1.5; // wobble multiplier out of air (oxygen debt)
 
 export function ScopeView({
   onOpenMenu,
-  onOpenLoadout,
+  onOpenGear,
   onGoHome,
   onOpenDopeBook,
 }: {
   onOpenMenu?: () => void;
-  onOpenLoadout?: () => void;
+  onOpenGear?: () => void;
   onGoHome?: () => void;
   onOpenDopeBook?: () => void;
 } = {}) {
@@ -1837,12 +1837,12 @@ export function ScopeView({
           background: 'radial-gradient(circle at center, transparent 0 40vmin, rgba(0,0,0,0.97) 41vmin)',
         }}
       />
-      {/* Top-right utility cluster (task 1.8a + 2.2c Loadout; refreshed 2026-07-27).
-          Home returns to range select (App resets the run); Loadout opens the 2.2c
-          gear-swap overlay (non-destructive — the session survives); Settings opens
-          the 2.1d Settings overlay. Only rendered in the real player flow (App
-          passes the props). */}
-      {(onOpenMenu || onOpenLoadout || onGoHome || onOpenDopeBook) && (
+      {/* Top-right utility cluster (task 1.8a + 2.2c Loadout; Gear-merge 2026-08-02).
+          Home returns to range select (App resets the run); Gear opens the tabbed
+          Store/Loadout screen (non-destructive — the session survives), defaulting
+          to its Loadout tab from here; Settings opens the 2.1d Settings overlay.
+          Only rendered in the real player flow (App passes the props). */}
+      {(onOpenMenu || onOpenGear || onGoHome || onOpenDopeBook) && (
         <div
           style={{
             position: 'absolute',
@@ -1874,9 +1874,9 @@ export function ScopeView({
               Home
             </button>
           )}
-          {onOpenLoadout && (
+          {onOpenGear && (
             <button
-              onClick={onOpenLoadout}
+              onClick={onOpenGear}
               style={{
                 fontFamily: 'monospace',
                 fontSize: 13,
@@ -1890,7 +1890,7 @@ export function ScopeView({
                 userSelect: 'none',
               }}
             >
-              Loadout
+              Gear
             </button>
           )}
           {onOpenDopeBook && (

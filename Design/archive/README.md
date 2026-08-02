@@ -144,3 +144,23 @@ resolve — unlike the docs above that came from `Design/execution/`.
 after every task" (§2.8) and hard ~400-line size limit (§3). Those were replaced
 2026-07-31 by plan-declared pause points — `../execution/execution-protocol.md` §2b.
 A banner at the top of the file says so.
+
+## Completed plan doc (archived 2026-08-02)
+
+`rifle-ammo-store-plan.md` — moved from `Design/Plans/` on completion. **Executed, not
+superseded:** all 11 tasks (S1–S11) built, every owner-verification stop (S7–S10)
+confirmed on device, gates green throughout. Replaces the enumerated 4-cartridge ×
+3-tier gear catalog with two parametric builders (rifle: barrel length + twist; ammo:
+bullet weight + profile + grade) over all 10 researched cartridges — muzzle velocity,
+BC, bullet length, recoil and effective range are now derived per-build instead of
+authored per-catalog-entry. Live record: `../feature-catalog.md` §B "Cartridge-scaled
+recoil" and §C "Gear catalog architecture — parametric rifle + ammo builders, 10
+cartridges" (both Built); the "Rifle & Ammo Store" section in
+`../execution/PROGRESS.md` has the full per-task trail. `Wiki/_gaps.md` N5–N12 register
+what this plan deliberately left out (a third ammo grade, an `i7` band that doesn't
+narrow with weight, a construction-class axis, and several data-quality flags).
+
+Same link-safe-move note as `target-system-plan.md` above: `Design/Plans/` and
+`Design/archive/` sit at the same depth under `Design/`, so this file's own relative
+links (`../feature-catalog.md`, `../bullet-catalog/...`, `../execution/...`) resolve
+unchanged from its new location — nothing inside it needed rewriting.

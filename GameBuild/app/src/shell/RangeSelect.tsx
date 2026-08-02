@@ -6,9 +6,10 @@
 // the registry (`range/ranges.ts`) — Range A (steel), the Test Range, and the
 // Wooded Zero bay today; future ranges appear automatically as the registry
 // grows. Selecting a card calls `onSelect(range.id)`, which App wires to
-// setRangeId + enter Scope. Below the cards sit a Store button and a small
-// Settings button (so gear can be changed before entering a range — owner
-// 2026-07-27).
+// setRangeId + enter Scope. Below the cards sit a Gear button (opens the
+// tabbed Store/Loadout screen, defaulting to its Store tab from here — owner
+// 2026-08-02) and a small Settings button (so gear can be changed before
+// entering a range — owner 2026-07-27).
 //
 // Deliberately simple: no grayed-out "coming soon" slots (D8). Plain inline
 // styles, matching every other component here.
@@ -17,12 +18,12 @@ import { listRanges } from '../range/ranges';
 
 export function RangeSelect({
   onSelect,
-  onOpenStore,
+  onOpenGear,
   onOpenSettings,
   onOpenDopeBook,
 }: {
   onSelect: (rangeId: string) => void;
-  onOpenStore: () => void;
+  onOpenGear: () => void;
   onOpenSettings: () => void;
   onOpenDopeBook: () => void;
 }) {
@@ -79,7 +80,7 @@ export function RangeSelect({
       ))}
 
       <button
-        onClick={onOpenStore}
+        onClick={onOpenGear}
         style={{
           minWidth: 280,
           maxWidth: '80vw',
@@ -95,7 +96,7 @@ export function RangeSelect({
           userSelect: 'none',
         }}
       >
-        Store — rifles &amp; ammo
+        Gear — rifles, ammo &amp; loadout
       </button>
       <button
         onClick={onOpenDopeBook}
