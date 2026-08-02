@@ -111,53 +111,9 @@ on drag. Feeds the hidden-truth ammo model (§D) and interacts with weather (§E
 
 ## B. The firing-solution shot loop (the heart)
 
-#### Cartridge-scaled recoil (and self-spotting)
-
-Today recoil is a **single hardcoded constant** — `RECOIL_PITCH_VEL = 0.05` in `ScopeView.tsx`,
-"~3 mrad peak" — so a .22 LR and a .50 BMG kick **identically**. `recoilFtLb` exists in the
-catalog for every cartridge and is **read by nothing**; `weightLb` is Store display text only.
-
-**Scale by recoil velocity, not energy.** Muzzle-rise angular velocity goes as linear momentum
-over moment of inertia, and both scale with rifle mass, so the right variable is
-`V_r = √(2E / m_rifle)`. This also tames the range: recoil *energy* spans 2000:1 across the
-ladder, recoil *velocity* only about 30:1 — a usable range for a visual effect.
-
-| cartridge | E (ft-lb) | rifle (lb) | V_r (m/s) | rel. kick | peak rise | self-spot |
-|---|---|---|---|---|---|---|
-| .22 LR | 0.05 | 13.5 | 0.15 | 0.13× | 0.4 mrad | easy |
-| .223 | 2.00 | 15.0 | 0.89 | 0.81× | 2.4 mrad | easy |
-| 6.5 CM | 4.27 | 21.0 | 1.10 | 1.00× | 3.0 mrad | easy |
-| .308 | 8.68 | 16.0 | 1.80 | 1.63× | 4.9 mrad | marginal |
-| .300 WM | 14.09 | 18.0 | 2.16 | 1.96× | 5.9 mrad | hard |
-| .338 LM | 22.45 | 22.0 | 2.47 | 2.24× | 6.7 mrad | hard |
-| .50 BMG | 101.77 | 32.0 | 4.36 | 3.95× | 11.9 mrad | no chance |
-
-*(peak rise holds 6.5 CM at today's 3.0 mrad as the calibration point.)*
-
-**The real payoff is self-spotting, not the visual.** Whether you keep the sight picture through
-the shot and watch your own impact is the single biggest practical consequence of recoil, and it
-is exactly why 6 mm and 6.5 mm dominate PRS. Under a scaled model it emerges for free: a .22 or
-6.5 CM barely moves, a .338 loses the target, a .50 is somewhere else entirely. It also gives the
-**spotter cam** (§D) a reason to exist that isn't just distance.
-
-> ⚠ **Recoil must NOT move the point of impact.** The bullet exits in roughly 1–1.5 ms, before the
-> rifle has meaningfully rotated — shot placement is set by hold, wobble and breath, all already
-> modelled. `ScopeView` already samples aim *before* applying the recoil kick, and that must stay.
-> Making recoil throw the shot would be arcade and factually wrong. Flinch/anticipation is a
-> *shooter* effect, not a physics one; deliberately omitted rather than modelled as an automatic
-> penalty.
-
-**Recoil should be computed, not looked up.** Under the parametric ammo model
-(`bullet-catalog/catalog-expansion-v2.md`) recoil momentum is
-`m_bullet · v_muzzle + m_charge · v_gas`, so a heavier bullet kicks harder — surfacing the real
-cost of the heavy high-BC choice, and making rifle weight a meaningful configuration axis for the
-first time. The **case-capacity figures requested in research run R1** serve double duty here:
-they place cartridges on the velocity curve *and* give the charge mass needed to compute recoil
-for an arbitrary load.
-
-**Not built** — logged 2026-08-01 (owner). Cheap: the per-cartridge data already exists, two dead
-fields get wired, and the change is confined to `ScopeView`'s recoil constants plus a small pure
-helper. Self-spotting and follow-up-shot recovery are the larger follow-ons.
+Every feature originally tracked in this category is built — see `### B.` in the
+[Built](#built) section below (cartridge-scaled recoil, rifle-ammo-store S10, closed
+this category out 2026-08-02).
 
 ---
 
@@ -188,14 +144,12 @@ sketch on a mil-grid), then hand off the segment endpoints as mil-offset coordin
 a developer to add as a new pattern entry alongside `CADENCE` in `reticle.ts`.
 
 #### Magnum & ELR cartridge tier
-.300 Win Mag, .338 Lapua, .375/.408 CheyTac, .50 BMG — the reach-to-a-mile and
-anti-materiel end of the spectrum (upper bound: anti-materiel, not artillery).
-**Not built** — planned as progression tiers in Increments 3 (magnums) and 5 (ELR/.50).
-Starting data for these three (rifle-model attrs, hidden ranges, believed vs. true
-MV/BC) already exists in [`bullet-catalog/catalog-seed.json`](./bullet-catalog/catalog-seed.json)
-/ [`catalog-starting-values.md`](./bullet-catalog/catalog-starting-values.md) — it just
-hasn't been trimmed into `game/catalog.data.json` yet (only 4 of the 7 researched
-cartridges are shipped).
+.300 Win Mag, .338 Lapua, .50 BMG — the reach-to-a-mile and anti-materiel end of the
+spectrum (upper bound: anti-materiel, not artillery).
+**Built** — 2026-08-02, folded into the "Gear catalog architecture" entry below
+(rifle-ammo-store S1/S9): all three ship as full parametric builds, not a separate
+progression tier. `.375/.408 CheyTac` was never added to the researched ladder and
+remains out of scope.
 
 #### Handloading
 Author a load — custom bullet shape/core (needs the Bucket A bullet editor) + powder
@@ -540,18 +494,51 @@ Watch the projectile's true sampled arc through the scope as it flies to impact
 deferred in the original vision brief, then brought forward into Increment 1 — this
 entry corrects that.
 
+#### Cartridge-scaled recoil
+Muzzle-rise/lateral kick scaled per cartridge (was a single flat constant — a .22 LR
+and a .50 BMG used to kick identically) — the real payoff is self-spotting emerging
+for free: a .22/6.5 CM barely moves, a .50 loses the target entirely.
+**Built** — 2026-08-02 (rifle-ammo-store S10, owner-confirmed on device). New
+`game/recoil.ts`: `recoilPitchVelocity(rifleSpec, loadSpec)` — real `recoilVelocityMps`
+(bullet + charge mass at the build's actual-barrel MV) calibrated so 6.5 CM/140 gr
+match returns exactly today's felt kick; falls back to that flat value with no active
+gear or a cartridge with no sourced rifle weight. `ScopeView.tsx`'s lateral kick scales
+by the same factor; the POA residual does not (a shooter effect, not a physics one).
+Point of impact unaffected by construction — aim is still sampled before the kick.
+Shares its core with the Store's own recoil-relative-to-6.5CM readout
+(`game/store-readouts.ts`, S9) so the two can't drift apart. **Self-spotting and
+follow-up-shot recovery remain the surviving follow-ons** — not built; this only makes
+the muzzle-rise feel and the resulting sight-picture loss cartridge-accurate.
+
 ### C. Gear systems
 
-#### Gear catalog architecture + rimfire/intermediate cartridges
-Data-driven rifle/ammo catalog: cartridges, rifle grade tiers, factory ammo lots (box
-MV/BC/SD), acquisition + inventory. Currently seeded with **.22 LR, .223, .308, 6.5 CM**
-(rimfire → transonic-wall intermediate) across **hunting / factoryMatch / custom**
-rifle grades.
-**Built** — 2026-07-17 (2.2a/b, code-complete; 2.2d TruthInspector awaiting owner
-sign-off). `game/catalog.data.json` + `catalog.ts`, `game/acquire.ts`, inventory store
-slice + Loadout UI. Trimmed from the full 7-cartridge research set in
-[`bullet-catalog/`](./bullet-catalog/) (`catalog-seed.json` + `catalog-starting-values.md`)
-— the remaining 3 (magnum/ELR tier) are the §C "Magnum & ELR cartridge tier" entry above.
+#### Gear catalog architecture — parametric rifle + ammo builders, 10 cartridges
+Data-driven rifle/ammo catalog, rebuilt from the ground up around two parametric
+builders (D1–D20) rather than an enumerated tier list: a **rifle** is barrel length
+(1″ steps, per-cartridge band) + twist (a discrete per-cartridge option list) — no more
+hunting/factoryMatch/custom tiers; an **ammo load** is bullet weight (1 gr steps) +
+profile (`i7`, the G7 form factor — sleek ↔ blunt) + grade (match/bulk), with named
+presets that snap both. Covers **all 10 cartridges** the project ever researched (.22 LR,
+.223, 6mm Creedmoor, 6.5 Creedmoor, 6.5 PRC, .308, .300 Win Mag, .300 PRC, .338 Lapua,
+.50 BMG) — closes the "only 4 of 7 shipped" gap this entry used to describe, and adds 3
+more (6mm CM, 6.5 PRC, .300 PRC) beyond the original research ladder.
+**Built** — 2026-08-02 (`Design/Plans/rifle-ammo-store-plan.md`, tasks S1–S11, all
+owner-confirmed on device). `game/cartridges.data.json` (per-cartridge velocity-curve
+params + slider bands, replacing the old enumerated `catalog.data.json`, deleted at S8),
+`game/ballistic-derivation.ts` (pure MV/BC/length/recoil/Sg formulas), `game/spec.ts` +
+`catalog.ts`'s spec resolver (believed values + hidden-truth ranges from a
+`RifleSpec`/`LoadSpec` pair), `engine-bridge/effective-range.ts` (derived, cached
+per-build supersonic reach — replaces an authored per-cartridge constant), `game/recoil.ts`
+(cartridge-scaled recoil, §B above), `shell/StoreScreen.tsx` + `shell/BuildScreen.tsx`
+(cartridge list → two-tab build screen with live derived readouts and preset chips,
+D17), save schema v3 (`RifleInstance.spec`/`AmmoLot.spec` replace the old catalog id).
+Validated by `GameBuild/validation/derived-space-check.mjs` (`npm run validate:derived`,
+S11) — sweeps each cartridge's weight/`i7` bands and asserts MV/BC/supersonic-reach
+trends hold everywhere, not just at the 6 oracle-pinned preset loads the golden-vector
+harness covers. Miller `Sg` is surfaced with a marginal band (< 1.4) and never blocks a
+build (D14) — see the gap register below. Also folds in the former "Magnum & ELR
+cartridge tier" entry (above) — those three cartridges are no longer a separate
+progression tier, just three more entries in the same parametric system.
 
 #### Configurable optic — FFP, one reticle, 4.5–35× zoom
 Owner's one-scope decision (no scope catalog): pinch-zoom magnification, FFP reticle
