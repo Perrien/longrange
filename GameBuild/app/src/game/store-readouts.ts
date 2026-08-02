@@ -21,17 +21,10 @@ import {
   type AmmoLoadForSpec,
   type RifleModelForSpec,
 } from './catalog';
-import { chargeMassGr, millerSg, recoilVelocityMps, sectionalDensity } from './ballistic-derivation';
-import {
-  cartridgeParams,
-  gradeParams,
-  RECOIL_CONSTANTS,
-  specFromPreset,
-  type LoadSpec,
-  type RifleSpec,
-} from './spec';
-import { RECOIL_REFERENCE_CARTRIDGE_ID, RECOIL_REFERENCE_PRESET_ID, RIFLE_WEIGHT_LB } from './recoil-reference';
-import { grainsToKg, metersToInches, mpsToFps, poundsToKg } from '../units';
+import { millerSg, sectionalDensity } from './ballistic-derivation';
+import { cartridgeParams, gradeParams, type LoadSpec, type RifleSpec } from './spec';
+import { recoilRatioToReference } from './recoil';
+import { metersToInches, mpsToFps } from '../units';
 
 /** Miller Sg's owner-set marginal threshold (D14) — display only, never blocks
  *  a build and never implies a dispersion consequence (feature-catalog §817). */
@@ -88,52 +81,10 @@ function derivedMvFps(rifleSpec: RifleSpec, loadSpec: LoadSpec): number {
   return mpsToFps(believedLoadForBuild(rifleSpec, loadSpec).muzzleVelocityMps);
 }
 
-/** Recoil pitch velocity (m/s) for a build, using its CURRENTLY selected bullet
- *  weight/MV — same formula `game/recoil.ts` (S10) will wrap in a calibrated,
- *  ScopeView-facing function; this is the Store's own uncalibrated reading,
- *  expressed as a ratio so it doesn't need to agree on units with S10. */
-function recoilVelocityForBuild(rifleSpec: RifleSpec, loadSpec: LoadSpec, rifleLb: number): number {
-  const c = cartridgeParams(rifleSpec.cartridgeId);
-  const build = believedLoadForBuild(rifleSpec, loadSpec);
-  const chargeGr = chargeMassGr(
-    c.capacityGrH2O,
-    RECOIL_CONSTANTS.chargeFraction,
-    (RECOIL_CONSTANTS.chargeGrOverride as Record<string, number>)[rifleSpec.cartridgeId],
-  );
-  return recoilVelocityMps(
-    build.massKg,
-    build.muzzleVelocityMps,
-    grainsToKg(chargeGr),
-    poundsToKg(rifleLb),
-    RECOIL_CONSTANTS.gasVelocityFactor,
-  );
-}
-
-// The reference build (D13): 6.5 CM / 140 gr match at ITS reference barrel +
-// first twist option — a fixed point, computed once at module load (pure
-// inputs, no reason to recompute per call).
-const REFERENCE_RIFLE_SPEC: RifleSpec = (() => {
-  const c = cartridgeParams(RECOIL_REFERENCE_CARTRIDGE_ID);
-  return {
-    cartridgeId: RECOIL_REFERENCE_CARTRIDGE_ID,
-    barrelLengthIn: c.referenceBarrelIn,
-    twistIn: c.twistOptionsInPerTurn[0],
-  };
-})();
-const REFERENCE_LOAD_SPEC: LoadSpec = specFromPreset(RECOIL_REFERENCE_PRESET_ID);
-const REFERENCE_RIFLE_LB = RIFLE_WEIGHT_LB[RECOIL_REFERENCE_CARTRIDGE_ID];
-if (REFERENCE_RIFLE_LB == null) {
-  throw new Error('store-readouts: recoil reference cartridge has no sourced rifle weight — cannot calibrate');
-}
-const REFERENCE_VR_MPS = recoilVelocityForBuild(REFERENCE_RIFLE_SPEC, REFERENCE_LOAD_SPEC, REFERENCE_RIFLE_LB);
-
-function recoilRelativeToReference(rifleSpec: RifleSpec, loadSpec: LoadSpec): number | undefined {
-  const rifleLb = RIFLE_WEIGHT_LB[rifleSpec.cartridgeId];
-  if (rifleLb == null) return undefined;
-  return recoilVelocityForBuild(rifleSpec, loadSpec, rifleLb) / REFERENCE_VR_MPS;
-}
-
-/** Assemble every Rifle-tab readout for the current (rifleSpec, loadSpec) build. */
+/** Assemble every Rifle-tab readout for the current (rifleSpec, loadSpec) build.
+ *  Recoil ratio is `game/recoil.ts`'s (S10) `recoilRatioToReference` — shared
+ *  with ScopeView's calibrated `recoilPitchVelocity` so the Store's readout and
+ *  what the player actually feels can't drift apart. */
 export function rifleReadouts(rifleSpec: RifleSpec, loadSpec: LoadSpec): RifleReadouts {
   const c = cartridgeParams(rifleSpec.cartridgeId);
   return {
@@ -141,7 +92,7 @@ export function rifleReadouts(rifleSpec: RifleSpec, loadSpec: LoadSpec): RifleRe
     derivedMvFpsAtCurrentLoad: derivedMvFps(rifleSpec, loadSpec),
     barrelLifeRounds: c.barrelLifeRounds,
     precisionMoa: c.precisionMoa,
-    recoilRelativeToReference: recoilRelativeToReference(rifleSpec, loadSpec),
+    recoilRelativeToReference: recoilRatioToReference(rifleSpec, loadSpec),
   };
 }
 

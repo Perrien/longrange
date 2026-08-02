@@ -87,6 +87,7 @@ import { buildTracePath } from '../game/trace-path';
 import type { BtkModule, TrajectoryTable, ScatterSample } from '../engine-bridge/types';
 import { resolveShot, type ShotPlate } from '../game/shot';
 import { windToVec, averageEffectiveWind, requiredCorrectionRad } from '../game/firing-solution';
+import { RECOIL_PITCH_VEL_REFERENCE, recoilPitchVelocity } from '../game/recoil';
 import { superposeWind, gustScaleFor } from '../game/wind-superposition';
 import { GUST_REFERENCE_MPS } from '../game/wind-field-config';
 import { callImpact, type ImpactCall } from '../game/impact-call';
@@ -160,8 +161,14 @@ const WOBBLE_RAD = 0.00015; // slow-sway amplitude
 const TREMOR_RAD = 0.00002; // muscle-tremor layer
 const SPRING_K = 64; // recoil/jerk spring: ω≈8 rad/s
 const SPRING_C = 9; // slightly underdamped
-const RECOIL_PITCH_VEL = 0.05; // muzzle-rise impulse (~3 mrad peak)
-const RECOIL_YAW_VEL = 0.012; // random sideways kick
+// Cartridge-scaled recoil (rifle-ammo-store S10, D13): RECOIL_PITCH_VEL_REFERENCE
+// (0.05, "~3 mrad peak") is now imported from game/recoil.ts rather than declared
+// here — it's both the flat fallback (no active gear, or a cartridge with no
+// sourced rifle weight yet) AND the calibration point recoilPitchVelocity() holds
+// 6.5 CM/140 gr match at, so there's exactly one 0.05 in the codebase. The actual
+// per-shot pitch impulse is read from the active gear at fire time (currentRecoil,
+// below) — see fireSteel/fireSightIn.
+const RECOIL_YAW_VEL_REFERENCE = 0.012; // random sideways kick, at the same 6.5 CM reference point; scales with the same factor as pitch (D13 step 4)
 const RESIDUAL_SHIFT_RAD = 0.0001; // ±0.1 mrad POA shift (follow-through)
 const HOLD_STEADY_FACTOR = 0.15; // wobble multiplier during a good breath hold
 const BREATH_DEPLETE_S = 10;
@@ -556,6 +563,26 @@ export function ScopeView({
       } catch (err) {
         console.error('range A: gear context failed, using box-true fallback', err);
         return null;
+      }
+    }
+    // Cartridge-scaled recoil (rifle-ammo-store S10, D13): the active rifle+lot's
+    // pitch impulse (game/recoil.ts, calibrated so 6.5 CM/140 gr match reproduces
+    // today's flat feel exactly), plus the lateral kick scaled by the SAME factor
+    // (D13 step 4 — the random POA residual, RESIDUAL_SHIFT_RAD, does NOT scale;
+    // that's a shooter effect, not a physics one). No active gear (or an unknown/
+    // stale spec) falls back to the flat reference constants — unchanged feel.
+    function currentRecoil(): { pitch: number; yaw: number } {
+      const inv = store().inventory;
+      const rifle = inv.rifles.find((r) => r.id === inv.activeRifleId);
+      const lot = inv.ammoLots.find((l) => l.id === inv.activeLotId);
+      if (!rifle || !lot) return { pitch: RECOIL_PITCH_VEL_REFERENCE, yaw: RECOIL_YAW_VEL_REFERENCE };
+      try {
+        const pitch = recoilPitchVelocity(rifle.spec, lot.spec);
+        const scale = pitch / RECOIL_PITCH_VEL_REFERENCE;
+        return { pitch, yaw: RECOIL_YAW_VEL_REFERENCE * scale };
+      } catch (err) {
+        console.error('recoil: gear-scaled recoil failed, using the flat reference feel', err);
+        return { pitch: RECOIL_PITCH_VEL_REFERENCE, yaw: RECOIL_YAW_VEL_REFERENCE };
       }
     }
     // Cache discriminator: steel solves/sims depend on the gear identity + its
@@ -1198,9 +1225,12 @@ export function ScopeView({
         console.error('fireSteel: shot resolution threw', err);
         blocked(`shot failed: ${describeThrown(err)}`);
       }
-      // Recoil kick + POA residual (feel; ported verbatim from 0.9).
-      st.dist.vp -= RECOIL_PITCH_VEL; // muzzle rise (view kicks up through the negated Euler)
-      st.dist.vy += (Math.random() * 2 - 1) * RECOIL_YAW_VEL;
+      // Recoil kick + POA residual (feel; ported verbatim from 0.9; pitch/yaw are
+      // now cartridge-scaled from the active gear, S10 — the residual stays flat,
+      // it's a shooter effect, not a physics one, D13 step 4).
+      const recoil = currentRecoil();
+      st.dist.vp -= recoil.pitch; // muzzle rise (view kicks up through the negated Euler)
+      st.dist.vy += (Math.random() * 2 - 1) * recoil.yaw;
       st.pitch += (Math.random() * 2 - 1) * RESIDUAL_SHIFT_RAD;
       st.yaw += (Math.random() * 2 - 1) * RESIDUAL_SHIFT_RAD;
     }
@@ -1425,9 +1455,10 @@ export function ScopeView({
       } catch (err) {
         console.error('sight-in fire failed', err);
       }
-      // Recoil (feel; same as the steel path) — ALWAYS runs.
-      st.dist.vp -= RECOIL_PITCH_VEL;
-      st.dist.vy += (Math.random() * 2 - 1) * RECOIL_YAW_VEL;
+      // Recoil (feel; same as the steel path, cartridge-scaled S10) — ALWAYS runs.
+      const recoil = currentRecoil();
+      st.dist.vp -= recoil.pitch;
+      st.dist.vy += (Math.random() * 2 - 1) * recoil.yaw;
       st.pitch += (Math.random() * 2 - 1) * RESIDUAL_SHIFT_RAD;
       st.yaw += (Math.random() * 2 - 1) * RESIDUAL_SHIFT_RAD;
     }
