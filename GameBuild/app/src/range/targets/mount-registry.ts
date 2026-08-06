@@ -81,8 +81,98 @@ const HINGE_STEM: MountType = {
   knockdown: { fallAngleDeg: 80, downDwellS: 2.5, resetRateDegS: 60, stemLengthM: 1.0 },
 };
 
+/**
+ * A hostage paddle clamped so it flips between two positions when struck —
+ * the top (head-level) paddle. A 2-stop `flip` cycle is exactly a binary
+ * left/right toggle (`flip.ts`'s `strikeFlip` wraps `% 2`).
+ *
+ * `xOffsetM: 0.35` is a placeholder swing distance, to be tuned against the
+ * owner's reference art once the assembly is visible on device — it only
+ * needs to clear the head without leaving the sight picture.
+ */
+const HOSTAGE_CLAMP_2WAY: MountType = {
+  id: 'hostage-clamp-2way',
+  name: 'Hostage clamp (2-way)',
+  reaction: 'flip',
+  furniture: 'pivot-post',
+  needsBeamHeight: false,
+  flip: {
+    positions: [
+      { id: 'left', xOffsetM: 0 },
+      { id: 'right', xOffsetM: 0.35 },
+    ],
+    transitionS: 0.3,
+  },
+};
+
+/**
+ * A hostage paddle clamped behind the silhouette's window, alternating sides
+ * each time it returns to centre — the centre (torso-level) paddle. Real
+ * hardware always swings the same direction; the owner explicitly asked for
+ * the alternating version instead ("this is not reality"). Authoring
+ * `'center'` twice in the cycle is what produces the alternation with no
+ * extra state (`flip.ts`'s header).
+ *
+ * ── WHY ±0.33 m, AND NOT A NUMBER TO TASTE ────────────────────────────────
+ * The swung stops MUST put the whole paddle OUTSIDE the backing silhouette's
+ * outline. This is not cosmetics; it is what makes the paddle hittable at all.
+ * `game/shot.ts` walks the rack in order and takes the FIRST plate whose zones
+ * the impact breaks, with no depth or occlusion concept — so while the paddle
+ * overlaps the silhouette's torso, every shot aimed at it resolves against the
+ * silhouette's `body-0`/`minus-1` instead and the paddle can never be struck
+ * again. (At the rest stop it IS reachable, because the silhouette's `window`
+ * is an `isHole` zone that misses cleanly and falls through to the paddle.)
+ * That is exactly the defect the owner reported on device, 2026-08-06: "the
+ * first shot hits and it flips to a side correctly but then it is no longer
+ * able to be hit again", together with "it only flips behind the main body
+ * rather than out to its side". One geometry fix, both symptoms.
+ *
+ * The derivation, against the shipped sizes:
+ *   silhouette half-width  = 0.4572 / 2 = 0.2286 m  (18″, full width at torso
+ *                            level — the outline's sides run straight there)
+ *   paddle radius          = 0.1524 / 2 = 0.0762 m  (6″)
+ *   minimum clear offset   = 0.2286 + 0.0762 = 0.3048 m  ← A HARD FLOOR
+ *
+ * 0.33 m clears that by 2.5 cm (~1″). It was 0.36 m (5.5 cm) for one round;
+ * the owner judged that too far out on device and asked for it "dialed back
+ * just a bit", so the clearance margin — not the swing — is what shrank.
+ *
+ * ⚠️ DO NOT go below ~0.315 m without changing the hit test first. Between
+ * 0.3048 and here there is nothing but bullet radius: a shot lands on whichever
+ * of the two plates it breaks FIRST, and the silhouette is authored first, so
+ * closing the gap re-opens the unhittable-paddle bug from the inner edge
+ * inward. If a tighter swing is ever wanted, the honest way is to make the hit
+ * loop respect depth — this paddle already sits 5 cm in front of the backing
+ * plate (`zNudgeM`), it is simply render-only today.
+ *
+ * The top paddle needs none of this (0.175 m already clears the much narrower
+ * head/neck outline), which is why it stayed re-hittable and this one did not.
+ */
+const HOSTAGE_CLAMP_3WAY: MountType = {
+  id: 'hostage-clamp-3way',
+  name: 'Hostage clamp (3-way, alternating)',
+  reaction: 'flip',
+  furniture: 'pivot-post',
+  needsBeamHeight: false,
+  flip: {
+    positions: [
+      { id: 'center', xOffsetM: 0 },
+      { id: 'right', xOffsetM: 0.33 },
+      { id: 'center', xOffsetM: 0 },
+      { id: 'left', xOffsetM: -0.33 },
+    ],
+    transitionS: 0.3,
+  },
+};
+
 /** Every mount the game knows about. */
-const REGISTERED: readonly MountType[] = [CHAIN_BEAM, BOLT_STAKE, HINGE_STEM];
+const REGISTERED: readonly MountType[] = [
+  CHAIN_BEAM,
+  BOLT_STAKE,
+  HINGE_STEM,
+  HOSTAGE_CLAMP_2WAY,
+  HOSTAGE_CLAMP_3WAY,
+];
 
 for (const m of REGISTERED) validateMountType(m);
 

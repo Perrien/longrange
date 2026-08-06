@@ -37,8 +37,14 @@ function swingMount(over: Partial<MountType> = {}): MountType {
 }
 
 describe('mount registry', () => {
-  it('registers the three shipped mounts and throws on anything else', () => {
-    expect(listMountTypes().map((m) => m.id)).toEqual(['chain-beam', 'bolt-stake', 'hinge-stem']);
+  it('registers the shipped mounts and throws on anything else', () => {
+    expect(listMountTypes().map((m) => m.id)).toEqual([
+      'chain-beam',
+      'bolt-stake',
+      'hinge-stem',
+      'hostage-clamp-2way',
+      'hostage-clamp-3way',
+    ]);
     expect(hasMountType('chain-beam')).toBe(true);
     expect(hasMountType('no-such-mount')).toBe(false);
     expect(() => getMountType('no-such-mount')).toThrow(/unknown mount id 'no-such-mount'/);
@@ -78,6 +84,21 @@ describe('mount registry', () => {
     expect(m.anchor).toBeUndefined();
   });
 
+  it('gives the top hostage paddle a binary 2-stop flip', () => {
+    const m = getMountType('hostage-clamp-2way');
+    expect(m.reaction).toBe('flip');
+    expect(m.furniture).toBe('pivot-post');
+    expect(m.flip!.positions.map((p) => p.id)).toEqual(['left', 'right']);
+    expect(m.flip!.positions[0].xOffsetM).toBe(0);
+  });
+
+  it('gives the centre hostage paddle the alternating 4-stop cycle', () => {
+    const m = getMountType('hostage-clamp-3way');
+    expect(m.reaction).toBe('flip');
+    expect(m.flip!.positions.map((p) => p.id)).toEqual(['center', 'right', 'center', 'left']);
+    expect(m.flip!.positions[0].xOffsetM).toBe(0);
+  });
+
   it('every registered mount passes validation', () => {
     for (const m of listMountTypes()) expect(() => validateMountType(m)).not.toThrow();
   });
@@ -111,6 +132,36 @@ describe('validateMountType', () => {
         }),
       ),
     ).toThrow(/'bolted' mount cannot carry a knockdown spec/);
+  });
+
+  it('requires a flip spec for a flip mount, and forbids one on a non-flip mount', () => {
+    expect(() =>
+      validateMountType(swingMount({ reaction: 'flip', anchor: undefined, needsBeamHeight: false })),
+    ).toThrow(/'flip' mount needs a flip spec/);
+    expect(() =>
+      validateMountType(
+        swingMount({
+          flip: { positions: [{ id: 'a', xOffsetM: 0 }, { id: 'b', xOffsetM: 0.1 }], transitionS: 0.3 },
+        }),
+      ),
+    ).toThrow(/only a 'flip' mount can carry a flip spec/);
+  });
+
+  it('rejects a degenerate flip spec', () => {
+    const flip = (over: Record<string, unknown>) =>
+      validateMountType(
+        swingMount({
+          reaction: 'flip',
+          anchor: undefined,
+          needsBeamHeight: false,
+          flip: { positions: [{ id: 'a', xOffsetM: 0 }, { id: 'b', xOffsetM: 0.1 }], transitionS: 0.3, ...over },
+        }),
+      );
+    expect(() => flip({ positions: [{ id: 'a', xOffsetM: 0 }] })).toThrow(/flip needs at least 2 positions/);
+    expect(() => flip({ positions: [{ id: 'a', xOffsetM: 0.1 }, { id: 'b', xOffsetM: 0.2 }] })).toThrow(
+      /flip position 0 \(rest\) must have xOffsetM 0/,
+    );
+    expect(() => flip({ transitionS: 0 })).toThrow(/flip transitionS must be > 0/);
   });
 
   it('rejects degenerate anchor and knockdown numbers', () => {

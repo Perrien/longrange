@@ -216,6 +216,30 @@ describe('validateTargetType rejects authoring mistakes', () => {
     ).toThrow(/circle needs r > 0/);
   });
 
+  it('accepts a hole zone nested inside an outer zone', () => {
+    expect(() =>
+      validateTargetType(
+        discType({
+          zones: [
+            { id: 'window', label: 'Window', isHole: true, shape: { kind: 'circle', cx: 0, cy: 0, r: 0.1 } },
+            { id: 'plate', label: 'Plate', shape: { kind: 'circle', cx: 0, cy: 0, r: 0.5 } },
+          ],
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects a defaultZoneId that names a hole zone', () => {
+    expect(() =>
+      validateTargetType(
+        discType({
+          zones: [{ id: 'plate', label: 'Plate', isHole: true, shape: { kind: 'circle', cx: 0, cy: 0, r: 0.5 } }],
+          defaultZoneId: 'plate',
+        }),
+      ),
+    ).toThrow(/defaultZoneId 'plate' cannot be a hole zone/);
+  });
+
   it('rejects a defaultMount outside compatibleMounts, and an empty mount list', () => {
     expect(() => validateTargetType(discType({ defaultMount: 'hinge-stem' }))).toThrow(
       /defaultMount 'hinge-stem' is not in compatibleMounts/,
@@ -246,6 +270,44 @@ describe('validateTargetType rejects authoring mistakes', () => {
     ).toThrow(/styles unknown zone 'no-such-zone'/);
   });
 
+  it('accepts a cut face layer naming an isHole zone', () => {
+    expect(() =>
+      validateTargetType(
+        discType({
+          zones: [
+            { id: 'window', label: 'Window', isHole: true, shape: { kind: 'circle', cx: 0, cy: 0, r: 0.1 } },
+            { id: 'plate', label: 'Plate', shape: { kind: 'circle', cx: 0, cy: 0, r: 0.5 } },
+          ],
+          paint: { palette: { face: 1 }, layers: [{ kind: 'fill', color: '$face' }, { kind: 'cut', zoneIds: ['window'] }] },
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects a cut face layer naming a zone that is not a hole', () => {
+    // The face and the hit test must agree about what is open. A visibly cut
+    // window that still SCORES would let a shot straight through it register as
+    // a body hit — worse than either behaviour on its own.
+    expect(() =>
+      validateTargetType(
+        discType({ paint: { palette: { face: 1 }, layers: [{ kind: 'cut', zoneIds: ['plate'] }] } }),
+      ),
+    ).toThrow(/names zone 'plate', which is not marked isHole/);
+  });
+
+  it('rejects a cut face layer naming an unknown zone, or naming none', () => {
+    expect(() =>
+      validateTargetType(
+        discType({ paint: { palette: { face: 1 }, layers: [{ kind: 'cut', zoneIds: ['nope'] }] } }),
+      ),
+    ).toThrow(/names unknown zone 'nope'/);
+    expect(() =>
+      validateTargetType(
+        discType({ paint: { palette: { face: 1 }, layers: [{ kind: 'cut', zoneIds: [] }] } }),
+      ),
+    ).toThrow(/'cut' layer names no zones/);
+  });
+
   it('rejects an empty face', () => {
     expect(() => validateTargetType(discType({ paint: { palette: {}, layers: [] } }))).toThrow(
       /face has no layers/,
@@ -263,8 +325,15 @@ describe('registry', () => {
     // Asserted so the roster cannot drift, and so the zones-inside-outline loop below
     // can never pass vacuously against an empty registry (which is what this assertion
     // guarded when T1 shipped it). Each new type deliberately updates this line:
-    // `idpa-silhouette` T7, `popper` T8, `hanging-gong` T9a.
-    expect(listTargetTypes().map((t) => t.id)).toEqual(['hanging-gong', 'idpa-silhouette', 'popper']);
+    // `idpa-silhouette` T7, `popper` T8, `hanging-gong` T9a, `idpa-hostage-silhouette`
+    // and `hostage-paddle` (hostage-target plan).
+    expect(listTargetTypes().map((t) => t.id)).toEqual([
+      'hanging-gong',
+      'idpa-silhouette',
+      'popper',
+      'idpa-hostage-silhouette',
+      'hostage-paddle',
+    ]);
   });
 
   it('every registered type passes validation (grows with the registry)', () => {

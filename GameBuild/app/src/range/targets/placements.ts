@@ -54,6 +54,14 @@ export interface RawPlacement {
   /** Plate-centre height above ground (m). Omitted ⇒ derived from the mount's
    *  furniture (a beam rack hangs its plate at `PLATE_CENTER_FRACTION` of the beam). */
   centreYM?: number;
+  /** Forward nudge (m, toward the shooter) applied to the RENDERED mesh position
+   *  only — never to `distanceM`/the hit-test plane. Omitted ⇒ 0. Exists for a
+   *  target authored to sit visually in front of another at the exact same
+   *  distance (a hostage paddle behind a silhouette's window) — two plates at
+   *  identical world-Z z-fight, since the renderer has no other depth cue to
+   *  separate two coplanar surfaces. A few centimetres is enough to resolve
+   *  the z-fight without reading as "floating." */
+  zNudgeM?: number;
   palette?: Record<string, number>;
 }
 
@@ -74,6 +82,8 @@ export interface ResolvedPlacement {
   heightM: number;
   beamHeightM?: number;
   centreYM?: number;
+  /** Forward render-only nudge (m). See `RawPlacement.zNudgeM`. */
+  zNudgeM: number;
   /** The type's palette with the entry's overrides applied. */
   palette: Record<string, number>;
 }
@@ -153,6 +163,8 @@ export function resolvePlacement(
     fail(rangeId, id, `beamHeightM must be > 0, got ${beamHeightM}`);
   if (raw.centreYM !== undefined && !(raw.centreYM > 0))
     fail(rangeId, id, `centreYM must be > 0, got ${raw.centreYM}`);
+  if (raw.zNudgeM !== undefined && !Number.isFinite(raw.zNudgeM))
+    fail(rangeId, id, `zNudgeM must be a finite number, got ${raw.zNudgeM}`);
 
   // A palette override keyed on a slot the type does not define is a silent no-op
   // otherwise — the most likely authoring typo, and the least visible.
@@ -182,6 +194,7 @@ export function resolvePlacement(
     heightM: widthM * type.aspect,
     beamHeightM,
     centreYM: raw.centreYM,
+    zNudgeM: raw.zNudgeM ?? 0,
     palette,
   };
 }

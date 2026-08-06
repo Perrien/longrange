@@ -59,9 +59,10 @@ export function plateCentreYM(p: ResolvedPlacement): number {
       // 0.47 m in the air on a visible stem.
       return p.heightM / 2;
     case 'stake':
+    case 'pivot-post':
     case 'none':
-      // Nothing to derive it from — a stake's height is not the plate's centre. These
-      // MUST author `centreYM`.
+      // Nothing to derive it from — a stake's (or a hostage clamp's) height is not
+      // the plate's centre. These MUST author `centreYM`.
       throw new Error(
         `test-range-targets: '${p.id}' on furniture '${p.mount.furniture}' must specify centreYM`,
       );
@@ -85,7 +86,12 @@ export function buildTestRangePlates(
       distanceM: p.distanceM,
       distanceYards: Math.round(p.distanceYards),
       diameterM: p.widthM,
-      position: new THREE.Vector3(p.xOffsetM, centreY, -p.distanceM),
+      // `zNudgeM` moves the RENDERED mesh only, toward the shooter (less-negative
+      // z) — never `distanceM`, which stays the hit-test/range-gating value. It
+      // exists for a target authored to sit visually in front of another at the
+      // identical distance (a hostage paddle behind a silhouette's window):
+      // without it the two meshes are exactly coplanar and z-fight.
+      position: new THREE.Vector3(p.xOffsetM, centreY, -p.distanceM + p.zNudgeM),
       // Chains anchor at the beam; a mount with no beam still needs a number here
       // (the field is not optional), so it takes the plate centre — which collapses
       // its chain pair to zero length, exactly as ELR's stake plates do.

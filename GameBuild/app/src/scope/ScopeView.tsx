@@ -985,6 +985,9 @@ export function ScopeView({
         // plate's group: the player is choosing what to shoot next, and leaving other
         // targets face-down would silently narrow the range.
         steelReactions?.resetDownTargets();
+        // Same reasoning for hostage paddles (flip targets): a fresh engagement
+        // returns every paddle to its rest stop, not just the committed target's.
+        steelReactions?.resetFlipTargets();
         // Mach state at the target (task 10). Solved through the SAME cached
         // path the shot will take, so the marking cannot disagree with what
         // actually arrives. `solveAt` is per-station cached, so on a station

@@ -38,8 +38,10 @@ export const LEGACY_ZONE_ID = 'plate';
 
 /**
  * Which zone of `type` a bullet at `local` breaks, or null if it misses the
- * outline entirely. `local` and `bulletR` are both in the target's
- * width-normalised frame.
+ * outline entirely, OR lands in a hole zone (e.g. a hostage target's window —
+ * a literal absence, so a shot there misses this target regardless of what
+ * larger zone would otherwise enclose it). `local` and `bulletR` are both in
+ * the target's width-normalised frame.
  *
  * Split out from `hitTargetZone` so the zone logic is testable against a target
  * type directly, without one having to be in the registry — the registry is still
@@ -55,7 +57,7 @@ export function zoneAt(local: Point, type: TargetType, bulletR: number): string 
 
   for (const zone of type.zones) {
     if (zone.id === type.defaultZoneId) continue; // resolved as the fallback below
-    if (zoneBroken(local, zone.shape, bulletR)) return zone.id;
+    if (zoneBroken(local, zone.shape, bulletR)) return zone.isHole ? null : zone.id;
   }
   // Inside the outline but outside every scoring zone → the default zone. For the
   // IDPA that is −3, the silhouette itself.

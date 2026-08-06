@@ -16,12 +16,12 @@
 // Pure: no THREE, no engine, no DOM.
 
 /** What a hit does to the target, given how it is mounted. */
-export type ReactionMode = 'swing' | 'bolted' | 'knockdown';
+export type ReactionMode = 'swing' | 'bolted' | 'knockdown' | 'flip';
 
 /** The physical furniture a scene builds for this mount. `'none'` is for a target
  *  that needs no structure of its own (e.g. bolted directly to a backer panel the
  *  range already draws). */
-export type MountFurniture = 'beam-rack' | 'stake' | 'panel' | 'hinge-stem' | 'none';
+export type MountFurniture = 'beam-rack' | 'stake' | 'panel' | 'hinge-stem' | 'pivot-post' | 'none';
 
 /** Hanging-chain geometry. Defaults come from `engine-bridge/steel-target.ts`,
  *  which stays the single source of truth for the shipped values — this type
@@ -49,6 +49,20 @@ export interface KnockdownSpec {
   stemLengthM: number;
 }
 
+/** Flip/reposition behaviour, consumed by `flip.ts`. A hit advances the target
+ *  to its next discrete stop — a lateral reposition, not a physics reaction, so
+ *  there is no fall/rest angle here the way there is for a knockdown. */
+export interface FlipSpec {
+  /** Discrete stops, in hit order. Index 0 is the rest/default position, and its
+   *  `xOffsetM` is 0 by convention (a delta from the placement's own anchor). An
+   *  id MAY repeat (e.g. `'center'` twice) to encode an alternating cycle with no
+   *  extra state — see `flip.ts`. */
+  positions: readonly { id: string; xOffsetM: number }[];
+  /** Seconds for the cosmetic slide between stops. Purely visual — hit-testing
+   *  uses the new stop immediately, it does not wait on this. */
+  transitionS: number;
+}
+
 export interface MountType {
   id: string;
   name: string;
@@ -59,6 +73,7 @@ export interface MountType {
   needsBeamHeight: boolean;
   anchor?: ChainAnchorSpec;
   knockdown?: KnockdownSpec;
+  flip?: FlipSpec;
 }
 
 /** The minimum a plate has to expose for `reactionModeOf` — kept structural so
@@ -88,6 +103,10 @@ export function validateMountType(m: MountType): void {
     throw new Error(`${where}: a 'knockdown' mount needs a knockdown spec`);
   if (m.reaction === 'bolted' && m.knockdown)
     throw new Error(`${where}: a 'bolted' mount cannot carry a knockdown spec`);
+  if (m.reaction === 'flip' && !m.flip)
+    throw new Error(`${where}: a 'flip' mount needs a flip spec`);
+  if (m.reaction !== 'flip' && m.flip)
+    throw new Error(`${where}: only a 'flip' mount can carry a flip spec`);
   if (m.anchor) {
     const a = m.anchor;
     if (!(a.angleRad > 0)) throw new Error(`${where}: anchor angleRad must be > 0`);
@@ -101,5 +120,13 @@ export function validateMountType(m: MountType): void {
     if (!(k.downDwellS >= 0)) throw new Error(`${where}: knockdown downDwellS must be ≥ 0`);
     if (!(k.resetRateDegS > 0)) throw new Error(`${where}: knockdown resetRateDegS must be > 0`);
     if (!(k.stemLengthM > 0)) throw new Error(`${where}: knockdown stemLengthM must be > 0`);
+  }
+  if (m.flip) {
+    const f = m.flip;
+    if (f.positions.length < 2)
+      throw new Error(`${where}: flip needs at least 2 positions, got ${f.positions.length}`);
+    if (f.positions[0].xOffsetM !== 0)
+      throw new Error(`${where}: flip position 0 (rest) must have xOffsetM 0`);
+    if (!(f.transitionS > 0)) throw new Error(`${where}: flip transitionS must be > 0`);
   }
 }

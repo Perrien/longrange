@@ -163,6 +163,15 @@ export function createPlateSurface(paintColors: readonly number[]): PlateSurface
       const { r, g, b } = hexToRgb(paintHex);
       const start = layerByteOffset(layer);
       for (let i = 0; i < PLATE_LAYER_BYTES; i += 4) {
+        // A CUT texel stays cut, unconditionally. The engine paints a splat with a
+        // radius, so a hit just outside a window's rim spills opaque texels into it
+        // and would scab the hole partly shut — a hole that heals when shot near is
+        // worse than one that never existed. (The engine buffer is always alpha 255,
+        // `steel_target.cpp`, so the base is the only place a 0 can come from.)
+        if (base[i + 3] === 0) {
+          data[start + i + 3] = 0;
+          continue;
+        }
         // Still the plate's paint colour ⇒ the engine chipped nothing here, so the
         // art shows through. Anything else is a chip and the engine wins.
         const src = rgba[i] === r && rgba[i + 1] === g && rgba[i + 2] === b ? base : rgba;
@@ -187,11 +196,72 @@ const VERTEX_ANCHOR = '#include <uv_vertex>';
 const FRAGMENT_ANCHOR = 'vec4 diffuseColor = vec4( diffuse, opacity );';
 const MAP_FRAGMENT = '#include <map_fragment>';
 
+/**
+ * Alpha below which an atlas texel is DISCARDED rather than shaded — how a face
+ * gets a real see-through hole (a hostage target's window).
+ *
+ * `alphaTest`, deliberately, not `transparent`. A discard needs no depth sort, so
+ * the plate stays in the opaque pass and nothing else in the scene has to be
+ * ordered against it; `transparent: true` on a shared instanced material would
+ * put every plate on every range into the sorted pass to serve one window.
+ *
+ * Every layer written by `fillLayerRgb`, `buildBullseyeLayer` and the engine's
+ * paint buffer is alpha 255, so this discards NOTHING on any shipped range — the
+ * only source of a 0 is `face-raster.ts`'s explicit cut pass.
+ */
+export const PLATE_ALPHA_TEST = 0.5;
+
+/**
+ * ⚠️ PERFORMANCE KILL SWITCH — face cuts on/off for EVERY plate on EVERY range.
+ *
+ * THE REGRESSION (owner, on device 2026-08-06): frame rate fell to ~10 FPS after
+ * the hostage-window fix, **including on Range A**, which never loads a hostage
+ * target. That rules the target out and points here: `createPlateMaterial` is the
+ * only thing the fix changed that all three ranges share, and the only change in
+ * it that costs anything per FRAME rather than per load.
+ *
+ * The suspected mechanism is the `discard` that `alphaTest` inserts. A fragment
+ * shader containing `discard` cannot promise its depth output ahead of shading, so
+ * GPUs disable early-Z / hidden-surface rejection for the whole draw — a penalty
+ * that lands hardest on exactly the tile-based mobile GPU this ships to (iPad).
+ * Nothing about the cut is expensive per se; arming `alphaTest` at all is.
+ *
+ * OFF here restores the pre-fix material byte-for-byte (no `alphaTest`, no alpha
+ * term, no discard). The cost is cosmetic and local: the hostage window renders as
+ * a solid white texel instead of a hole. Shots still pass through it — that is
+ * `isHole` in the hit test, not the shader (`game/target-hit.ts`).
+ *
+ * If turning this off restores the frame rate, the permanent fix is to cut the
+ * window into the plate's OUTLINE GEOMETRY (a triangulated hole in
+ * `plate-outline-geometry.ts`) rather than the fragment shader — a real hole with
+ * no per-fragment cost and no discard anywhere.
+ */
+export const PLATE_FACE_CUTS_ENABLED = false;
+
+export interface PlateMaterialOptions {
+  /** Override the kill switch — tests exercise both branches explicitly rather
+   *  than inheriting whichever way the switch happens to be thrown. */
+  faceCuts?: boolean;
+}
+
 /** Standard material patched to take its diffuse color from the plate's atlas
  * layer (per-instance `instanceTargetIndex` attribute selects the layer; rim
  * faces carry UV (−1,−1) and render flat gray). Lighting model untouched. */
-export function createPlateMaterial(surface: THREE.DataArrayTexture): THREE.MeshStandardMaterial {
-  const material = new THREE.MeshStandardMaterial({ metalness: 0.3, roughness: 0.6 });
+export function createPlateMaterial(
+  surface: THREE.DataArrayTexture,
+  opts: PlateMaterialOptions = {},
+): THREE.MeshStandardMaterial {
+  const faceCuts = opts.faceCuts ?? PLATE_FACE_CUTS_ENABLED;
+  const material = new THREE.MeshStandardMaterial({
+    metalness: 0.3,
+    roughness: 0.6,
+    // Set at CONSTRUCTION, not afterwards: three keys the `USE_ALPHATEST` shader
+    // define off this, and the patched program is cached by
+    // `customProgramCacheKey`, so a later assignment would not necessarily
+    // recompile the one program every plate shares. 0 ⇒ three emits no `discard`
+    // at all, which is the entire point of the switch being off.
+    alphaTest: faceCuts ? PLATE_ALPHA_TEST : 0,
+  });
 
   material.onBeforeCompile = (shader) => {
     if (!shader.vertexShader.includes(VERTEX_ANCHOR) || !shader.fragmentShader.includes(FRAGMENT_ANCHOR)) {
@@ -209,20 +279,37 @@ export function createPlateMaterial(surface: THREE.DataArrayTexture): THREE.Mesh
         vPlateUv = uv;`,
       );
 
+    // WITH cuts: the atlas ALPHA is carried through (multiplied into `opacity`) so
+    // three's `alphatest_fragment`, which runs just below this line, can discard a
+    // cut texel. Rim faces keep plain `opacity` either way: a hole is authored on
+    // the face, and a rim that vanished with it would show the plate's own back
+    // through the gap.
+    //
+    // WITHOUT cuts: byte-for-byte the pre-2026-08-06 patch — alpha is taken from
+    // `opacity` alone and the texel is never inspected for it, so three emits no
+    // `discard` and the plate keeps its early-Z fast path (see the kill switch).
+    const diffusePatch = faceCuts
+      ? `vec4 plateTexel = texture( plateMapArray, vec3( vPlateUv, vPlateLayer ) );
+          vec4 diffuseColor = vPlateUv.x < 0.0
+            ? vec4( ${EDGE_GRAY}, ${EDGE_GRAY}, ${EDGE_GRAY}, opacity )
+            : vec4( plateTexel.rgb, opacity * plateTexel.a );`
+      : `vec4 diffuseColor = vPlateUv.x < 0.0
+            ? vec4( ${EDGE_GRAY}, ${EDGE_GRAY}, ${EDGE_GRAY}, opacity )
+            : vec4( texture( plateMapArray, vec3( vPlateUv, vPlateLayer ) ).rgb, opacity );`;
+
     shader.fragmentShader =
       'uniform sampler2DArray plateMapArray;\nvarying float vPlateLayer;\nvarying vec2 vPlateUv;\n' +
       shader.fragmentShader
-        .replace(
-          FRAGMENT_ANCHOR,
-          `vec4 diffuseColor = vPlateUv.x < 0.0
-            ? vec4( ${EDGE_GRAY}, ${EDGE_GRAY}, ${EDGE_GRAY}, opacity )
-            : vec4( texture( plateMapArray, vec3( vPlateUv, vPlateLayer ) ).rgb, opacity );`,
-        )
+        .replace(FRAGMENT_ANCHOR, diffusePatch)
         .replace(MAP_FRAGMENT, '// map_fragment unused: diffuse comes from plateMapArray');
   };
   // One patched program shared by every user of this material (three would
-  // otherwise key the cache on the closure identity).
-  material.customProgramCacheKey = () => 'plate-surface-v1';
+  // otherwise key the cache on the closure identity) — but the two branches above
+  // are DIFFERENT programs, so they must not share a cache entry. Keyed on the
+  // branch, not just the version, or flipping the switch could hand back the
+  // program compiled for the other one.
+  const key = `plate-surface-v2-${faceCuts ? 'cut' : 'solid'}`;
+  material.customProgramCacheKey = () => key;
 
   return material;
 }

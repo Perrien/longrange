@@ -15,6 +15,14 @@
 //   bolted    — takes paint, never posed. Nothing moves.
 //   knockdown — TS state machine (`targets/knockdown.ts`) drives a hinge rotation;
 //               the C++ target is kept for its paint buffer but never stepped.
+//   flip      — TS state machine (`targets/flip.ts`) advances a hostage paddle
+//               between discrete clamp stops, animated as a 180° SWING about a
+//               vertical pivot (see `poseFlip` for why a swing and not a slide);
+//               the C++ target is kept for its paint buffer but never stepped,
+//               same as knockdown. Unlike knockdown, the new stop moves the
+//               plate's HIT-TESTABLE position (`game/shot.ts` reads
+//               `PlateInstance.position` directly, never a mesh matrix) — that
+//               mutation happens immediately on strike, before the swing animates.
 //
 // WHAT DELIBERATELY STAYS IN ScopeView: `pendingImpacts`. That is time-of-flight
 // SCHEDULING — when an effect happens — which is a different concern from what the
@@ -37,7 +45,8 @@ import {
   strikeKnockdown,
   type KnockdownState,
 } from '../range/targets/knockdown';
-import type { KnockdownSpec } from '../range/targets/mount-type';
+import { resetFlip, restFlipState, strikeFlip, type FlipState } from '../range/targets/flip';
+import type { FlipSpec, KnockdownSpec } from '../range/targets/mount-type';
 
 /**
  * How a native steel target gets built.
@@ -70,6 +79,11 @@ export interface SteelReactionController {
    *  knockdown on the range; pass one to reset a single piece of furniture, e.g. a
    *  plate rack, together. */
   resetDownTargets(groupId?: string): void;
+  /** Snap every flip target (a hostage paddle) back to its rest stop. No `groupId`
+   *  — hostage-target assemblies deliberately do not use `groupId` (their members
+   *  disagree on mount, which `placements.ts` forbids within one group), and the
+   *  single call site resets every reactive target unconditionally already. */
+  resetFlipTargets(): void;
   /** Whether a plate can currently be hit. False for a knockdown target that is
    *  down or resetting; true for everything else, including any plate that has never
    *  been struck. */
@@ -101,6 +115,38 @@ interface MovingEntry {
   scale: THREE.Vector3;
 }
 
+/** A hostage paddle flipping between clamp positions. Its pose is TS-animated
+ *  (`targets/flip.ts`), so — like a knockdown target — it never joins `moving`. */
+interface FlipEntry {
+  plate: PlateInstance;
+  spec: FlipSpec;
+  state: FlipState;
+  /** Rest position/rotation/scale at stop 0, decomposed once from the plate's
+   *  live instance matrix on its first hit. The X component of every stop is an
+   *  offset FROM `basePos.x`, never an absolute coordinate. */
+  basePos: THREE.Vector3;
+  baseQuat: THREE.Quaternion;
+  scale: THREE.Vector3;
+  /** The cosmetic swing's start/end X offsets (from `basePos.x`) and progress
+   *  0..1. Purely visual — `plate.position.x` is already the new stop the
+   *  instant a strike is registered, independent of this animation. */
+  animFromXM: number;
+  animToXM: number;
+  animT: number;
+  /**
+   * Accumulated rotation about the VERTICAL axis, rad — the paddle's facing at
+   * the start (`From`) and end (`To`) of the current transition. Every strike
+   * adds exactly ±π, so the face the shooter sees alternates with each hit.
+   *
+   * Carried as an accumulator rather than derived from `state.index` because the
+   * cycle repeats positions (`[center, right, center, left]`) while the facing
+   * does not — after four strikes the paddle is back at `center` having turned
+   * through 2π, and stop index alone cannot tell you which face is out.
+   */
+  spunFromRad: number;
+  spunToRad: number;
+}
+
 export function createSteelReactions(
   scene: SteelSceneApi,
   makeReaction: SteelReactionFactory,
@@ -118,12 +164,20 @@ export function createSteelReactions(
   /** Plates on a knockdown mount, once struck. Kept for the whole session so a
    *  reset target remembers its rest frame and its accumulated state. */
   const knocked = new Map<number, KnockdownEntry>();
+  /** Plates on a flip mount (a hostage paddle), once struck. Kept for the whole
+   *  session, same reasoning as `knocked`. */
+  const flipped = new Map<number, FlipEntry>();
 
   // Scratch, reused per frame rather than allocated in the loop.
   const pos = new THREE.Vector3();
   const quat = new THREE.Quaternion();
   const mat = new THREE.Matrix4();
   const hingeAxis = new THREE.Vector3(1, 0, 0); // topple away from the shooter, about X
+  // A hostage paddle swings about a VERTICAL pivot (see `poseFlip`) — a different
+  // axis from the knockdown hinge above, and its own scratch quaternion because
+  // `quat` is live inside the per-frame swing loop.
+  const SPIN_AXIS = new THREE.Vector3(0, 1, 0);
+  const flipQuat = new THREE.Quaternion();
   const toPivot = new THREE.Matrix4();
   const fromPivot = new THREE.Matrix4();
   const spin = new THREE.Matrix4();
@@ -208,6 +262,37 @@ export function createSteelReactions(
     return entry;
   }
 
+  /** Flip bookkeeping for a plate, created on its first hit. Mirrors
+   *  `knockdownFor`: decompose the live instance matrix once, so a reset can
+   *  restore it exactly and a strike can compose a new one from it. */
+  function flipFor(plate: PlateInstance, spec: FlipSpec): FlipEntry {
+    let entry = flipped.get(plate.instanceId);
+    if (!entry) {
+      const slot = plateMeshSlot(scene, plate.instanceId);
+      const rest = new THREE.Matrix4();
+      slot.mesh.getMatrixAt(slot.index, rest);
+      const basePos = new THREE.Vector3();
+      const baseQuat = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      rest.decompose(basePos, baseQuat, scale);
+      entry = {
+        plate,
+        spec,
+        state: restFlipState(),
+        basePos,
+        baseQuat,
+        scale,
+        animFromXM: 0,
+        animToXM: 0,
+        animT: 1, // already settled at stop 0
+        spunFromRad: 0,
+        spunToRad: 0,
+      };
+      flipped.set(plate.instanceId, entry);
+    }
+    return entry;
+  }
+
   /** Write a knockdown entry's current angle into the scene. */
   function poseKnockdown(id: number, entry: KnockdownEntry): void {
     const slot = plateMeshSlot(scene, id);
@@ -217,6 +302,61 @@ export function createSteelReactions(
     fromPivot.makeTranslation(entry.pivot.x, entry.pivot.y, entry.pivot.z);
     spin.makeRotationAxis(hingeAxis, -entry.state.angleRad);
     mat.copy(fromPivot).multiply(spin).multiply(toPivot).multiply(entry.rest);
+    slot.mesh.setMatrixAt(slot.index, mat);
+    slot.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /**
+   * Write a flip entry's current pose into the scene — a paddle SWINGING on a
+   * vertical pivot, not sliding. Purely visual: `entry.plate.position.x` is
+   * already the landed stop, set the instant the strike was registered
+   * (`onImpact`'s `'flip'` branch), so nothing here decides where a shot lands.
+   *
+   * ── WHY A SWING AND NOT A SLIDE (owner, on device 2026-08-06) ───────────────
+   * "Both flippers don't actually flip, they just slide to the side so the same
+   * face is always visible. If I shoot the right side of the flipper, it slides
+   * out to the side and the splat is still visible on the right side." The first
+   * pass lerped X and left the orientation alone — a translating plate, not a
+   * paddle on a clamp.
+   *
+   * THE MODEL. The pivot is the VERTICAL axis midway between the two stops, and a
+   * strike swings the paddle 180° about it, like a door. Two things the owner
+   * asked for fall out of that one rotation for free:
+   *   • the paddle lands exactly on the next stop — a half turn about the
+   *     midpoint maps either stop onto the other, so there is no separate
+   *     translation that could drift out of step with the rotation;
+   *   • the far face comes round to the shooter, so a splat on the struck side
+   *     travels with the paddle and ends up on the far side.
+   * It is also the pivot the owner described for the head paddle in the first
+   * round ("the pivot point should be behind the center of the head") — which is
+   * exactly the midpoint of that mount's two stops.
+   *
+   * The swing always arcs TOWARD the shooter, whichever way the paddle is
+   * travelling: `sin(πt)` is taken unsigned and only the FACING carries the
+   * travel's sign. A door that opened both ways would sweep the paddle straight
+   * through the backing plate on alternate strikes.
+   */
+  function poseFlip(id: number, entry: FlipEntry): void {
+    const slot = plateMeshSlot(scene, id);
+    // Half the travel, and the pivot at its midpoint. Zero for a paddle at rest,
+    // or one whose two stops coincide — which degrades to "no swing" rather than
+    // to a degenerate pivot.
+    const halfTravelM = (entry.animToXM - entry.animFromXM) / 2;
+    const pivotX = entry.basePos.x + entry.animFromXM + halfTravelM;
+    const t = entry.animT;
+    // The rest offset (−halfTravel, 0) rotated about the pivot: x = −h·cos(πt),
+    // z = |h|·sin(πt). t=0 is the from-stop, t=1 the to-stop, and t=½ has the
+    // paddle edge-on, one half-travel proud of the plate.
+    pos.set(
+      pivotX - halfTravelM * Math.cos(Math.PI * t),
+      entry.basePos.y,
+      entry.basePos.z + Math.abs(halfTravelM) * Math.sin(Math.PI * t),
+    );
+    // Facing: the ACCUMULATED turn, so the visible face alternates per strike
+    // rather than resetting with the stop index.
+    const theta = entry.spunFromRad + (entry.spunToRad - entry.spunFromRad) * t;
+    flipQuat.setFromAxisAngle(SPIN_AXIS, theta).multiply(entry.baseQuat);
+    mat.compose(pos, flipQuat, entry.scale);
     slot.mesh.setMatrixAt(slot.index, mat);
     slot.mesh.instanceMatrix.needsUpdate = true;
   }
@@ -252,6 +392,36 @@ export function createSteelReactions(
             stemLengthM: cfg.stemLengthM,
           }),
         );
+        return;
+      }
+
+      // FLIP (a hostage paddle). Same "native target for paint only" shape as
+      // knockdown, but the reaction is a lateral reposition rather than a fall.
+      // `plate.position.x` is mutated to the LANDED stop immediately — that is
+      // what `game/shot.ts` reads on the very next shot — before the cosmetic
+      // slide animates it visually over `spec.transitionS`.
+      if (mode === 'flip') {
+        const mount = getMountType(plate.mountId!);
+        const spec = mount.flip!;
+        const entry = flipFor(plate, spec);
+        const reaction = targetFor(plate);
+        reaction.strike(impactWorld, impactVel, bulletMassKg, bulletDiameterM);
+        paint(plate, reaction);
+        const fromOffsetM = spec.positions[entry.state.index].xOffsetM;
+        entry.state = strikeFlip(entry.state, spec.positions.length);
+        entry.animFromXM = fromOffsetM;
+        entry.animToXM = spec.positions[entry.state.index].xOffsetM;
+        entry.animT = 0;
+        // Each strike is another HALF TURN about the vertical pivot, signed by the
+        // travel direction so the paddle turns the way it swings. Taking the new
+        // baseline from the previous transition's END (`spunToRad`) treats a strike
+        // landing mid-swing as having completed the previous one — exactly what the
+        // line above already does for position, so the two cannot disagree about
+        // which stop the paddle is coming from.
+        entry.spunFromRad = entry.spunToRad;
+        entry.spunToRad =
+          entry.spunFromRad + Math.sign(entry.animToXM - entry.animFromXM) * Math.PI;
+        plate.position.x = entry.basePos.x + entry.animToXM;
         return;
       }
 
@@ -292,6 +462,13 @@ export function createSteelReactions(
           entry.state = next;
           poseKnockdown(id, entry);
         }
+      }
+      // Flips advance independently too — a purely cosmetic slide toward the stop
+      // `plate.position.x` already landed on at strike time (`onImpact`).
+      for (const [id, entry] of flipped) {
+        if (entry.animT >= 1) continue;
+        entry.animT = Math.min(1, entry.animT + dt / entry.spec.transitionS);
+        poseFlip(id, entry);
       }
       if (moving.size === 0) return;
       // Track the meshes actually written, so a multi-shape scene flags only those.
@@ -340,6 +517,24 @@ export function createSteelReactions(
       }
     },
 
+    resetFlipTargets(): void {
+      for (const [id, entry] of flipped) {
+        // `spunToRad` is part of "at rest" now: a paddle can sit on stop 0 having
+        // turned through 2π, which looks identical but is NOT the state a fresh
+        // engagement should start from — the accumulator has to be zeroed or the
+        // face it presents depends on the previous engagement.
+        if (entry.state.index === 0 && entry.animT >= 1 && entry.spunToRad === 0) continue;
+        entry.state = resetFlip();
+        entry.animFromXM = 0;
+        entry.animToXM = entry.spec.positions[0].xOffsetM; // 0, by FlipSpec validation
+        entry.animT = 1; // snap instantly — a reset is not a struck reaction
+        entry.spunFromRad = 0;
+        entry.spunToRad = 0;
+        entry.plate.position.x = entry.basePos.x + entry.animToXM;
+        poseFlip(id, entry);
+      }
+    },
+
     isStanding(instanceId: number): boolean {
       const entry = knocked.get(instanceId);
       // A plate with no knockdown state has never been knocked (or cannot be), so it
@@ -354,6 +549,7 @@ export function createSteelReactions(
       // each native handle exactly once.
       moving.clear();
       knocked.clear();
+      flipped.clear();
       for (const target of targets.values()) target.delete();
       targets.clear();
     },

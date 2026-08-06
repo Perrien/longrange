@@ -81,6 +81,11 @@ export interface TargetZone {
   id: string;
   label: string;
   shape: ZoneShape;
+  /** A literal absence — a cut hole (e.g. a hostage target's window). A hit
+   *  landing here misses THIS target cleanly (`game/target-hit.ts`'s `zoneAt`
+   *  returns null), regardless of any larger zone that would otherwise enclose
+   *  it. Never the `defaultZoneId` — a hole cannot be the outline's fallback. */
+  isHole?: boolean;
 }
 
 /** A colour: either a literal `0xRRGGBB` or a `'$slot'` reference into the
@@ -109,12 +114,22 @@ export interface ZoneStyle {
  * what actually scores. `image` is provided artwork; if it fails to load the
  * rasteriser skips just that layer, which is why a legible `fill`/`zones` pair
  * underneath doubles as the fallback instead of needing a separate code path.
+ *
+ * `cut` is the only layer that removes rather than adds: it punches the named
+ * zones out of the face to fully TRANSPARENT, so the background is visible
+ * through the plate (a hostage target's window). It is deliberately expressed
+ * as a layer over the type's own zones rather than as mesh geometry — the same
+ * reason `zones` is: the drawn hole and the `isHole` zone the hit test misses
+ * through are then one shape by construction, and cannot drift. Every zone a
+ * `cut` names MUST be `isHole` (enforced in `validateTargetType`); a face that
+ * looks open where the hit test scores solid is a bug with no upside.
  */
 export type FaceLayer =
   | { kind: 'fill'; color: ColorRef }
   | { kind: 'image'; artId: string; fit: 'bbox' | 'contain' }
   | { kind: 'shapes'; items: readonly DrawShape[] }
-  | { kind: 'zones'; style: Record<string, ZoneStyle> };
+  | { kind: 'zones'; style: Record<string, ZoneStyle> }
+  | { kind: 'cut'; zoneIds: readonly string[] };
 
 export interface TargetPaint {
   /** Named colour slots, referenced as `'$name'`. */
@@ -219,6 +234,9 @@ export function validateTargetType(t: TargetType): void {
   }
   if (!ids.has(t.defaultZoneId))
     throw new Error(`${where}: defaultZoneId '${t.defaultZoneId}' is not one of its zones`);
+  const defaultZone = t.zones.find((z) => z.id === t.defaultZoneId);
+  if (defaultZone?.isHole)
+    throw new Error(`${where}: defaultZoneId '${t.defaultZoneId}' cannot be a hole zone`);
 
   for (const z of t.zones) {
     if (z.shape.kind === 'circle' && !(z.shape.r > 0))
@@ -251,10 +269,26 @@ export function validateTargetType(t: TargetType): void {
   // A `zones` face layer keyed by a zone that does not exist draws nothing and
   // reads as a missing ring rather than an error.
   for (const layer of t.paint.layers) {
-    if (layer.kind !== 'zones') continue;
-    for (const zoneId of Object.keys(layer.style)) {
-      if (!ids.has(zoneId))
-        throw new Error(`${where}: face 'zones' layer styles unknown zone '${zoneId}'`);
+    if (layer.kind === 'zones') {
+      for (const zoneId of Object.keys(layer.style)) {
+        if (!ids.has(zoneId))
+          throw new Error(`${where}: face 'zones' layer styles unknown zone '${zoneId}'`);
+      }
+    }
+    if (layer.kind === 'cut') {
+      if (layer.zoneIds.length === 0)
+        throw new Error(`${where}: face 'cut' layer names no zones`);
+      for (const zoneId of layer.zoneIds) {
+        const zone = t.zones.find((z) => z.id === zoneId);
+        if (!zone) throw new Error(`${where}: face 'cut' layer names unknown zone '${zoneId}'`);
+        // The face and the hit test must agree about what is a hole. A cut zone
+        // that still scores would let a shot "through" a visibly open window
+        // register as a torso hit, which is worse than either behaviour alone.
+        if (!zone.isHole)
+          throw new Error(
+            `${where}: face 'cut' layer names zone '${zoneId}', which is not marked isHole`,
+          );
+      }
     }
   }
 }

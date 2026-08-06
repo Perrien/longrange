@@ -43,6 +43,34 @@
           "groupId": "test-poppers",
           "distanceYards": 50,
           "xOffsetM": 2.1
+        },
+        {
+          "_note": "Hostage-target assembly (Design/Plans, 'IDPA Hostage/No-Shoot Paddle Targets'). Windowed IDPA silhouette + two independently-shootable hostage paddles (top: binary flip; centre: alternating cycle). 3.2 m right of centre, clear of the poppers (max 2.1 m) and inside the corridor half-width (4.572 m). centreYM 1.2876 matches test-idpa-75's shoulder-at-5ft derivation (same default widthM, same aspect). Every placement in this assembly shares distanceYards 60 exactly — ScopeView filters the hittable rack by exact distanceM equality per engagement, so the backing plate and both paddles must resolve to the identical value. No shared groupId: a group's members must share a mount (placements.ts), and this assembly's three members are on three different mounts by design.",
+          "id": "test-hostage-idpa-60",
+          "typeId": "idpa-hostage-silhouette",
+          "mountId": "bolt-stake",
+          "distanceYards": 60,
+          "xOffsetM": 3.2,
+          "centreYM": 1.2876
+        },
+        {
+          "_note": "Top (head-level) hostage paddle. Rest stop ('left', mount offset 0) sits 0.175 m left of the backing plate's centreline (== the head zone's x); a hit flips it to 'right' (mount offset +0.35 m, landing 0.175 m right of centreline) and back — a SYMMETRIC swing about the head's centre (owner, on device: 'the pivot point should be behind the center of the head... farther out on the right than the left' — the first pass split the 0.35 m swing 0.15/0.20 instead of 0.175/0.175). xOffsetM = plate centreline (3.2) − half the mount's swing (0.175). centreYM was the head zone's own centre (1.586 = backing centreYM + head local y ~0.652 x widthM) until 2026-08-06, when the owner reported the disc CLIPPING THE SHOULDER: at 1.586 the paddle's bottom edge sat at 1.5098 m, 1.4 cm BELOW the silhouette's shoulder line (1.5240 m — the 5 ft shoulder the backing plate's own centreYM is derived from), and the two plates are coplanar, so the overlap z-fought. Owner chose to RAISE it rather than nudge it in z. 1.61 m puts the bottom edge 1 cm clear of that line; above the shoulder the silhouette is only head/neck (half-width 0.0775 m) and this paddle's inner edge is at 0.0988 m, so no overlap is left at either stop. The disc's top now sits 1.3 cm above the plate's top edge, in open air beside the head. Guarded by a test in hostage-paddle.test.ts, not by this note — the shoulder line is invisible in a screenshot.",
+          "id": "test-hostage-top",
+          "typeId": "hostage-paddle",
+          "mountId": "hostage-clamp-2way",
+          "distanceYards": 60,
+          "xOffsetM": 3.025,
+          "centreYM": 1.61
+        },
+        {
+          "_note": "Centre (torso-level) hostage paddle, sitting behind the backing plate's window when at its rest stop ('center', xOffsetM 0 on the mount). A hit cycles it out to 'right' (+0.33 m), back to 'center', then 'left' (-0.33 m), alternating sides forever (owner: 'this is not reality, can we have it alternate sides?' — see flip.ts). The swing was ±0.15 m until 2026-08-06, which kept the paddle entirely BEHIND the 18in backing plate at both swung stops — so it read as 'only flips behind the main body' and, worse, became unhittable there: game/shot.ts takes the first plate whose zones an impact breaks and has no occlusion concept, so every shot at the swung paddle resolved against the silhouette's body-0/minus-1 instead. ±0.33 m clears the outline by 2.5 cm (one round at ±0.36 read as too far out on device, so the margin shrank, not the requirement — 0.3048 m is a hard floor). See mount-registry.ts's HOSTAGE_CLAMP_3WAY for the full derivation. xOffsetM/centreYM now match the WINDOW's concentric alignment with body-0 (owner, on device: 'it should line up with the center circle in the target') — centreYM derived from the backing plate's centreYM + body-0's local y (~0.117) x widthM. zNudgeM (5 cm toward the shooter, render-only — see placements.ts) keeps this paddle's mesh from z-fighting with the backing plate's: both sit at the identical distanceM by design (ScopeView's exact-distanceM rack filter), so without a render-only nudge the two coplanar surfaces flicker (owner, on device: 'looks like it's drawing on the same surface... pixelated').",
+          "id": "test-hostage-center",
+          "typeId": "hostage-paddle",
+          "mountId": "hostage-clamp-3way",
+          "distanceYards": 60,
+          "xOffsetM": 3.2,
+          "centreYM": 1.341,
+          "zNudgeM": 0.05
         }
       ]
     }

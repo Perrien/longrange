@@ -230,3 +230,23 @@ describe('T2: zone resolution on a real silhouette', () => {
     }
   });
 });
+
+describe('T2: isHole zones', () => {
+  const HOLE_TARGET: TargetType = {
+    ...IDPA,
+    zones: [
+      { id: 'window', label: 'Window', isHole: true, shape: circle(211.53, 300.95, 40) },
+      ...IDPA.zones,
+    ],
+  };
+
+  it('misses cleanly when struck inside the hole', () => {
+    expect(zoneAt(px(211.53, 300.95), HOLE_TARGET, BR)).toBeNull();
+  });
+
+  it('scores the enclosing zone just outside the hole', () => {
+    // Just outside the 40px-radius hole but still inside the body-0 circle
+    // (radius 84.05px), both centred at (211.53, 300.95).
+    expect(zoneAt(px(211.53, 300.95 + 60), HOLE_TARGET, BR)).toBe('body-0');
+  });
+});

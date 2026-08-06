@@ -546,3 +546,237 @@ describe('knockdown plates', () => {
     expect(after.elements).toEqual(before.elements);
   });
 });
+
+// --- flip mode (hostage paddles) ----------------------------------------------
+
+/** A hostage paddle on a 2-way (binary) or 3-way (alternating) clamp mount. */
+function paddle(mountId: 'hostage-clamp-2way' | 'hostage-clamp-3way', over: Partial<PlateInstance> = {}): PlateInstance {
+  return plate({ mountId, diameterM: 0.1524, ...over });
+}
+
+describe('flip plates (hostage paddles)', () => {
+  it('take paint and reposition, but never enter the swing set', () => {
+    const { scene, controller } = setup();
+    controller.onImpact({ plate: paddle('hostage-clamp-2way'), ...IMPACT });
+    expect(built).toHaveLength(1);
+    expect(built[0].strikes).toBe(1);
+    expect(scene.writes).toEqual([{ layer: 0, paintHex: 0xf0f0ea }]);
+    controller.update(1 / 60);
+    expect(built[0].steps).toBe(0); // never stepped — the C++ physics is untouched
+  });
+
+  it('moves plate.position.x to the NEXT stop immediately on strike, before any update()', () => {
+    // The load-bearing correctness property: `game/shot.ts` hit-tests
+    // `PlateInstance.position` directly, so the very next shot must see the new
+    // stop even if `update()` (the cosmetic animation) never ran.
+    const { controller } = setup();
+    const p = paddle('hostage-clamp-2way');
+    const before = p.position.x;
+    controller.onImpact({ plate: p, ...IMPACT });
+    expect(p.position.x).toBeCloseTo(before + 0.35, 9); // 'left' (rest) -> 'right'
+  });
+
+  it('toggles a 2-way paddle left/right forever', () => {
+    const { controller } = setup();
+    const p = paddle('hostage-clamp-2way');
+    const base = p.position.x;
+    const seen: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      controller.onImpact({ plate: p, ...IMPACT });
+      seen.push(Math.round((p.position.x - base) * 1000) / 1000);
+    }
+    expect(seen).toEqual([0.35, 0, 0.35, 0]);
+  });
+
+  it('cycles a 3-way paddle center -> right -> center -> left -> center, alternating sides', () => {
+    const { controller } = setup();
+    const p = paddle('hostage-clamp-3way');
+    const base = p.position.x;
+    const seen: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      controller.onImpact({ plate: p, ...IMPACT });
+      seen.push(Math.round((p.position.x - base) * 1000) / 1000);
+    }
+    // ±0.33 m, not ±0.15: the swung stops have to put the paddle clear of the
+    // backing silhouette's 18″ outline or it is unhittable there (see
+    // `mount-registry.ts`'s HOSTAGE_CLAMP_3WAY — 0.3048 m is a hard floor, and
+    // this sits 2.5 cm above it after the owner dialed 0.36 back).
+    expect(seen).toEqual([0.33, 0, -0.33, 0, 0.33, 0]);
+  });
+
+  // --- it SWINGS, it does not slide (owner defect, 2026-08-06) ----------------
+  //
+  // "Both flippers don't actually flip, they just slide to the side so the same
+  // face is always visible. If I shoot the right side of the flipper, it slides
+  // out to the side and the splat is still visible on the right side."
+  //
+  // The fix is a 180° rotation about a vertical pivot midway between the stops.
+  // These pin the three properties that distinguishes it from the old lerp: the
+  // face turns, the paddle arcs toward the shooter, and it still lands exactly on
+  // the stop the hit test already moved to.
+  describe('swing (not slide)', () => {
+    /** The paddle's pose after `steps` frames of `dt`. */
+    function poseAfter(mountId: 'hostage-clamp-2way' | 'hostage-clamp-3way', dt: number, steps: number) {
+      const { scene, controller } = setup();
+      const p = paddle(mountId);
+      const base = p.position.x;
+      controller.onImpact({ plate: p, ...IMPACT });
+      for (let i = 0; i < steps; i++) controller.update(dt);
+      const m = new THREE.Matrix4();
+      scene.plateMesh.getMatrixAt(0, m);
+      const pos = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      m.decompose(pos, quat, scale);
+      return { pos, quat, base, plate: p, controller, scene };
+    }
+
+    it('turns the paddle a half turn about the VERTICAL axis per strike', () => {
+      // The whole point: the far face comes round to the shooter, so a splat on
+      // the struck side goes with it. A slide leaves the same face out.
+      const { quat } = poseAfter('hostage-clamp-2way', 0.3, 1); // transition complete
+      const euler = new THREE.Euler().setFromQuaternion(quat, 'YXZ');
+      expect(Math.abs(euler.y)).toBeCloseTo(Math.PI, 4);
+      // …about Y only. An X or Z component would be a tumble, not a door swing.
+      expect(Math.abs(euler.x)).toBeCloseTo(0, 6);
+      expect(Math.abs(euler.z)).toBeCloseTo(0, 6);
+    });
+
+    it('is edge-on at the halfway point, and proud of the plate by half the travel', () => {
+      // The signature of a real swing: at 90° the paddle shows its rim, and its
+      // centre stands off the backing plate — it is travelling on an arc, not a line.
+      const { pos, base } = poseAfter('hostage-clamp-2way', 0.15, 1); // half of 0.3 s
+      expect(pos.x).toBeCloseTo(base + 0.175, 4); // over the pivot
+      // +z is toward the shooter; the plate rests at z = −100.
+      expect(pos.z).toBeCloseTo(-100 + 0.175, 4);
+    });
+
+    it('always arcs TOWARD the shooter, on the return stop too', () => {
+      // A door that opened both ways would sweep the paddle THROUGH the backing
+      // plate every second strike. The facing takes the travel's sign; the arc
+      // does not.
+      const { scene, controller } = setup();
+      const p = paddle('hostage-clamp-3way');
+      const m = new THREE.Matrix4();
+      const at = () => {
+        scene.plateMesh.getMatrixAt(0, m);
+        return new THREE.Vector3().setFromMatrixPosition(m);
+      };
+      for (let strike = 0; strike < 4; strike++) {
+        controller.onImpact({ plate: p, ...IMPACT });
+        controller.update(0.15); // mid-swing
+        expect(at().z, `strike ${strike + 1} swung the wrong way`).toBeGreaterThan(-100);
+      }
+    });
+
+    it('lands flat on the stop the hit test already moved to', () => {
+      // The rotation must not become a second source of truth for position: a half
+      // turn about the midpoint maps one stop exactly onto the other.
+      const { pos, plate: p } = poseAfter('hostage-clamp-2way', 0.3, 2);
+      expect(pos.x).toBeCloseTo(p.position.x, 6);
+      expect(pos.z).toBeCloseTo(-100, 6); // back in the plate's plane
+    });
+
+    it('ALTERNATES which face is out across strikes, rather than resetting per stop', () => {
+      // The 3-way cycle revisits `center` every other strike. Facing is an
+      // accumulator, so `center` on strike 2 and `center` on strike 4 show
+      // different faces — which stop index alone cannot express.
+      const { scene, controller } = setup();
+      const p = paddle('hostage-clamp-3way');
+      const m = new THREE.Matrix4();
+      const facing = () => {
+        scene.plateMesh.getMatrixAt(0, m);
+        const q = new THREE.Quaternion();
+        m.decompose(new THREE.Vector3(), q, new THREE.Vector3());
+        return new THREE.Euler().setFromQuaternion(q, 'YXZ').y;
+      };
+      const seen: number[] = [];
+      for (let i = 0; i < 4; i++) {
+        controller.onImpact({ plate: p, ...IMPACT });
+        controller.update(0.3);
+        seen.push(Math.round((facing() / Math.PI) * 1000) / 1000);
+      }
+      // Half a turn per strike. Euler wraps, so ±1 and 0 alternate rather than
+      // climbing — what matters is that consecutive entries differ.
+      for (let i = 1; i < seen.length; i++) expect(seen[i]).not.toBe(seen[i - 1]);
+    });
+
+    it('resetFlipTargets clears the accumulated turn, not just the position', () => {
+      // A paddle can sit on stop 0 having turned through 2π: same place, wrong
+      // face. A fresh engagement must start from a known face.
+      const { scene, controller } = setup();
+      const p = paddle('hostage-clamp-3way');
+      for (let i = 0; i < 4; i++) {
+        controller.onImpact({ plate: p, ...IMPACT }); // back to stop 0, spun 2π
+        controller.update(0.3);
+      }
+      controller.resetFlipTargets();
+      const m = new THREE.Matrix4();
+      scene.plateMesh.getMatrixAt(0, m);
+      const q = new THREE.Quaternion();
+      m.decompose(new THREE.Vector3(), q, new THREE.Vector3());
+      expect(new THREE.Euler().setFromQuaternion(q, 'YXZ').y).toBeCloseTo(0, 6);
+    });
+  });
+
+  it('animates the mesh toward the new stop over transitionS, without moving the hit-test position further', () => {
+    const { scene, controller } = setup();
+    const p = paddle('hostage-clamp-2way');
+    controller.onImpact({ plate: p, ...IMPACT });
+    const targetX = p.position.x; // landed immediately
+    controller.update(0.1); // 1/3 of the 0.3 s transition
+    const mid = new THREE.Matrix4();
+    scene.plateMesh.getMatrixAt(0, mid);
+    const midX = new THREE.Vector3().setFromMatrixPosition(mid).x;
+    expect(midX).toBeGreaterThan(0);
+    expect(midX).toBeLessThan(targetX - 1e-6);
+    expect(p.position.x).toBeCloseTo(targetX, 9); // unaffected by the animation
+    controller.update(0.2); // finishes the transition
+    const done = new THREE.Matrix4();
+    scene.plateMesh.getMatrixAt(0, done);
+    expect(new THREE.Vector3().setFromMatrixPosition(done).x).toBeCloseTo(targetX, 6);
+  });
+
+  it('re-uses the same native target across repeat hits, same as knockdown', () => {
+    const { controller } = setup();
+    const p = paddle('hostage-clamp-2way');
+    controller.onImpact({ plate: p, ...IMPACT });
+    controller.onImpact({ plate: p, ...IMPACT });
+    expect(built).toHaveLength(1);
+    expect(built[0].strikes).toBe(2);
+  });
+
+  it('resetFlipTargets snaps back to the rest stop immediately, no animation', () => {
+    const { scene, controller } = setup();
+    const p = paddle('hostage-clamp-3way');
+    const base = p.position.x;
+    controller.onImpact({ plate: p, ...IMPACT }); // -> right
+    controller.onImpact({ plate: p, ...IMPACT }); // -> center
+    controller.onImpact({ plate: p, ...IMPACT }); // -> left
+    expect(p.position.x).not.toBeCloseTo(base, 6);
+
+    controller.resetFlipTargets();
+    expect(p.position.x).toBeCloseTo(base, 9);
+    const m = new THREE.Matrix4();
+    scene.plateMesh.getMatrixAt(0, m);
+    expect(new THREE.Vector3().setFromMatrixPosition(m).x).toBeCloseTo(base, 6);
+
+    // The NEXT strike starts the cycle over from 'center', not where it left off.
+    controller.onImpact({ plate: p, ...IMPACT });
+    expect(p.position.x).toBeCloseTo(base + 0.33, 9);
+  });
+
+  it('resetFlipTargets is a no-op for a paddle that was never struck', () => {
+    const { controller } = setup();
+    expect(() => controller.resetFlipTargets()).not.toThrow();
+  });
+
+  it('deletes every native handle exactly once, and is idempotent, alongside a flip paddle', () => {
+    const { controller } = setup(2);
+    controller.onImpact({ plate: paddle('hostage-clamp-2way', { instanceId: 0 }), ...IMPACT });
+    controller.onImpact({ plate: plate({ instanceId: 1 }), ...IMPACT });
+    controller.dispose();
+    controller.dispose();
+    for (const r of built) expect(r.deletes).toBe(1);
+  });
+});

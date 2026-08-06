@@ -366,7 +366,15 @@ contrast — not just visual mood.
 #### Steel target menagerie
 Poppers, dueling trees, plate racks, swingers/spinners, dropping plates, hostage/
 no-shoot plates for discipline.
-**Not built** — planned Increment 6.
+**Partially built.** The Target × Mount × Group system that these all hang off shipped
+2026-07-31 (`Design/archive/target-system-plan.md`), with **poppers** (hinge-stem /
+knockdown, grouped reset) on the Test Range. **Hostage / no-shoot paddles** followed: a
+windowed IDPA backing plate plus two independently-shootable paddles — top on a binary
+2-way clamp, centre on an alternating 4-stop cycle (`targets/flip.ts`,
+`mount-registry.ts`'s `hostage-clamp-2way`/`-3way`). Owner defect round closed 2026-08-06
+(swing clearance, plain-white face, and a real see-through window via the new `cut` face
+layer + `alphaTest` — see `Design/execution/PROGRESS.md`). **Not built:** dueling trees,
+plate racks, swingers/spinners, dropping plates, Texas star.
 
 #### Human silhouettes + IDPA zone scoring
 Head/torso zones; realistic or IDPA-style scoring; no-shoot plates share this scoring path.

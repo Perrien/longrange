@@ -19,7 +19,8 @@
 // a DOM.
 
 import { PLATE_LAYER_BYTES } from '../plate-surface';
-import type { DrawOp, FacePlan } from './face-plan';
+import type { DrawOp, FacePlan, PxPoint } from './face-plan';
+import { pointInPolygon } from './target-geometry';
 
 /** Art id → URL under `public/`. Resolved through `import.meta.env.BASE_URL` so it
  *  works under the PWA's base path, matching `range/paper-target-texture.ts`. */
@@ -77,6 +78,80 @@ export function cssColor(hex: number): string {
   return `#${(hex & 0xffffff).toString(16).padStart(6, '0')}`;
 }
 
+/** A cut op (`face-plan.ts`'s `cut: true`) — geometry to be made transparent. */
+type CutOp = Extract<DrawOp, { kind: 'ellipse' | 'polygon' }> & { cut: true };
+
+function isCut(op: DrawOp): op is CutOp {
+  return (op.kind === 'ellipse' || op.kind === 'polygon') && op.cut === true;
+}
+
+/**
+ * Punch every cut op out of a finished layer, in the BYTE domain: alpha 0 for
+ * each texel inside a cut shape.
+ *
+ * ── WHY NOT `destination-out` ON THE CANVAS ───────────────────────────────────
+ * Erasing through the 2D context would be fewer lines, but it puts the one part
+ * of a hole that MUST be exact — which texels end up transparent — behind a
+ * canvas the node env does not have, so it could only ever be checked by eye.
+ * The shapes are two closed-form predicates, so testing them directly is both
+ * cheaper and stronger. It also keeps `FaceContext` (and its mock) unchanged.
+ *
+ * Runs AFTER the opacity-forcing pass, never before: that pass sets every texel
+ * to alpha 255 and would otherwise heal the hole straight back up.
+ *
+ * Binary, not antialiased. The plate material discards on `alphaTest`, so a
+ * partially-transparent rim texel would render opaque anyway — a soft edge here
+ * would be thrown away downstream, and pretending otherwise invites the next
+ * reader to "fix" a hole that is already doing what it can.
+ */
+export function applyCuts(
+  rgba: Uint8Array,
+  ops: readonly CutOp[],
+  widthPx: number,
+  heightPx: number,
+): void {
+  for (const op of ops) {
+    // Bounded to the shape's own box — the tile is 512×256 and a window is a
+    // small part of it, so a whole-tile scan per cut is wasted work at load.
+    const poly = op.kind === 'polygon' ? op.points : null;
+    const ell = op.kind === 'ellipse' ? op : null;
+    const box = poly ? polyBounds(poly) : boxOf(ell!.cx, ell!.cy, ell!.rx, ell!.ry);
+    const x0 = Math.max(0, Math.floor(box.minX));
+    const x1 = Math.min(widthPx - 1, Math.ceil(box.maxX));
+    const y0 = Math.max(0, Math.floor(box.minY));
+    const y1 = Math.min(heightPx - 1, Math.ceil(box.maxY));
+    for (let py = y0; py <= y1; py++) {
+      for (let px = x0; px <= x1; px++) {
+        // Texel CENTRE, so a shape's boundary falls between texels rather than
+        // biasing the hole a half-pixel up and left.
+        const p = { x: px + 0.5, y: py + 0.5 };
+        const inside = poly
+          ? pointInPolygon(p, poly)
+          : ((p.x - ell!.cx) / ell!.rx) ** 2 + ((p.y - ell!.cy) / ell!.ry) ** 2 <= 1;
+        if (inside) rgba[(py * widthPx + px) * 4 + 3] = 0;
+      }
+    }
+  }
+}
+
+function boxOf(cx: number, cy: number, rx: number, ry: number) {
+  return { minX: cx - rx, maxX: cx + rx, minY: cy - ry, maxY: cy + ry };
+}
+
+function polyBounds(points: readonly PxPoint[]) {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of points) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, maxX, minY, maxY };
+}
+
 function tracePolygon(ctx: FaceContext, points: readonly { x: number; y: number }[]): void {
   ctx.beginPath();
   points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
@@ -125,6 +200,9 @@ export async function rasterizeFace(plan: FacePlan, deps: FaceRasterDeps): Promi
   }
 
   for (const op of plan.ops) {
+    // A cut removes rather than draws — it is applied to the finished bytes
+    // below, not replayed onto the context.
+    if (isCut(op)) continue;
     switch (op.kind) {
       case 'fill':
         ctx.fillStyle = cssColor(op.color);
@@ -163,6 +241,10 @@ export async function rasterizeFace(plan: FacePlan, deps: FaceRasterDeps): Promi
   // would otherwise read as a HOLE in the steel rather than as bare plate — the same
   // reason `buildBullseyeLayer` makes every texel opaque including outside the disc.
   for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255;
+  // …and only THEN cut the texels that are meant to be holes. Order matters: the
+  // pass above exists to deny accidental transparency, this one to grant the
+  // deliberate kind, so it has to come second or it is undone.
+  applyCuts(rgba, plan.ops.filter(isCut), plan.widthPx, plan.heightPx);
   return rgba;
 }
 

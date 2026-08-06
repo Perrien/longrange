@@ -8,7 +8,9 @@
 // types through placements (`placements.ts`, T3).
 
 import { HANGING_GONG } from './hanging-gong';
+import { HOSTAGE_PADDLE } from './hostage-paddle';
 import { IDPA_SILHOUETTE } from './idpa';
+import { IDPA_HOSTAGE_SILHOUETTE } from './idpa-hostage';
 import { POPPER } from './popper';
 import { validateTargetType, type TargetType } from './target-type';
 
@@ -17,7 +19,13 @@ import { validateTargetType, type TargetType } from './target-type';
  *
  * `target-type.test.ts` asserts the roster, so it cannot quietly drift.
  */
-const REGISTERED: readonly TargetType[] = [HANGING_GONG, IDPA_SILHOUETTE, POPPER];
+const REGISTERED: readonly TargetType[] = [
+  HANGING_GONG,
+  IDPA_SILHOUETTE,
+  POPPER,
+  IDPA_HOSTAGE_SILHOUETTE,
+  HOSTAGE_PADDLE,
+];
 
 // Fail at import, not at render. A malformed type is a build-time bug.
 for (const t of REGISTERED) validateTargetType(t);
