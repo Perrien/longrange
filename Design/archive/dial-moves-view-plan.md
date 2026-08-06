@@ -1,6 +1,6 @@
 # Dial Moves the View — build plan
 
-`Status: ready to execute` · `Date: 2026-08-06` · `Plan slug: dial-moves-view`
+`Status: COMPLETE 2026-08-06 — all three tasks built, owner-confirmed on device` · `Date: 2026-08-06` · `Plan slug: dial-moves-view`
 `Audience: the executing coding agent (junior)` · `Owner decisions: locked in §7`
 
 > Read `Design/execution/execution-protocol.md` first. This plan declares its own

@@ -1,5 +1,5 @@
 // Turret-follows-view: the erector offset that makes turning a dial move the
-// sight picture (plan `Design/Plans/dial-moves-view-plan.md`).
+// sight picture (plan `Design/archive/dial-moves-view-plan.md`).
 //
 // On a real rifle clamped in a vise, turning the elevation turret UP tips the
 // scope's erector tube up, so the sight line points DOWN relative to the bore —

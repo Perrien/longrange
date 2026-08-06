@@ -198,3 +198,52 @@ Same link-safe-move note as `target-system-plan.md`/`rifle-ammo-store-plan.md`
 above: `Design/Plans/` and `Design/archive/` sit at the same depth under
 `Design/`, and this plan used repo-root-relative backtick paths throughout
 rather than markdown relative links, so nothing needed rewriting on the move.
+
+## Completed plan doc (archived 2026-08-06, second of the day)
+
+`dial-moves-view-plan.md` — moved from `Design/Plans/` on completion. **Executed, not
+superseded:** all three tasks (DV1 the pure module + tests, DV2 the `ScopeView` wiring,
+DV3 documentation) built, the single owner-verification stop confirmed on device ("All
+looking great"), gates green throughout. Turning a turret now moves the **sight picture**
+in real time — the turret drives the scope's erector, so dialing elevation UP points the
+sight line *down* relative to the bore and the crosshair walks DOWN the target — which
+makes the owner's zeroing workflow a real mechanic (fire a group, don't touch the rifle,
+dial until the crosshair sits on the group, confirm, re-aim) and teaches the direction
+rule by muscle memory. Live record: `../feature-catalog.md` §B "Turret-follows-view (live
+erector offset)" and the "Dial Moves the View" section in `../execution/PROGRESS.md`
+(per-task trail, gate numbers, and the confirm-zero seam under *Deferred observations*).
+New for this plan: `Wiki/turret-direction.md`, plus `Wiki/_gaps.md` **G7**.
+
+**Worth re-reading for the pattern it establishes** — how to add a visible behaviour to a
+system whose math must not change. The plan opened by proving the change was free:
+`resolveShot` computes `applied = aimError + dial + playerZero`, and rotating the *camera*
+by the dial changes `aimError` by exactly minus the dial, so the impact is unchanged and
+**dialing alone still cannot move a shot** — no shot-math edit, no engine work, no
+`schemaVersion` bump (the offset is derived per frame from already-persisted state). That
+invariant was then pinned by test rather than asserted in prose, which is what let a
+feature touching the aim path land in ~50 lines of one file. Three transferable habits:
+
+- **Name the sign convention's owner.** The camera's Euler is asymmetric (+pitch looks
+  DOWN, +yaw looks RIGHT) while the store's turrets are both positive-up/right, so the two
+  axes take *opposite* signs (`+` elevation, `−` windage). The plan predicted this as the
+  single most likely thing to get backwards, told the executing agent not to re-derive it
+  at the keyboard, and put the rule in one pure module with the direction table in the
+  words a player would use. Executed as written, plus a mutation check: flipping the two
+  signs fails 12 of 27 tests, so the tests genuinely pin it rather than merely covering it.
+- **Fold the *stored* zero into the offset, not just the live dial.** Confirming a zero is
+  physically re-indexing the turret ring — the erector doesn't move — so the view must not
+  jump at the exact moment the feature exists to serve. FM 23-10 PDF p.44 step 6 turned out
+  to document precisely this (loosen the hex screws, re-index to "1"/"0"), which is now the
+  primary-source basis for the decision.
+- **The eased value is the truth.** The offset glides over ~80 ms, and every consumer
+  (`findAimed`, `findAimedTarget`, `commitRef`, both FIRE paths, the mirage dispatch)
+  already routed through `aimQuaternion` — so reading the *eased* `st.sight` there, and
+  never recomputing the target inside it, meant a shot fired mid-glide resolves against
+  the exact crosshair the player saw, and no call site needed touching.
+
+Same link-safe-move note as `dueling-tree-plan.md` above: `Design/Plans/` and
+`Design/archive/` sit at the same depth under `Design/`, and this plan used repo-root-relative
+backtick paths throughout rather than markdown relative links, so nothing inside it needed
+rewriting on the move. The four places that referenced the plan by path — `turret-view.ts`,
+`turret-view.test.ts`, `../feature-catalog.md` and `../execution/PROGRESS.md` — were
+repointed to `Design/archive/` as part of the move, so no dead paths were left behind.

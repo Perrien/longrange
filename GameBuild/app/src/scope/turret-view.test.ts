@@ -1,4 +1,4 @@
-// Turret-follows-view tests (plan `Design/Plans/dial-moves-view-plan.md`, DV1).
+// Turret-follows-view tests (plan `Design/archive/dial-moves-view-plan.md`, DV1).
 //
 // This file is the plan's memory: the sign conventions are asserted in the words
 // the player would use ("the crosshair walks DOWN"), the closed-form sight-line

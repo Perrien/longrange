@@ -523,6 +523,52 @@ Shares its core with the Store's own recoil-relative-to-6.5CM readout
 follow-up-shot recovery remain the surviving follow-ons** — not built; this only makes
 the muzzle-rise feel and the resulting sight-picture loss cartridge-accurate.
 
+#### Turret-follows-view (live erector offset)
+Turning a turret moves the **sight picture** in real time, as on a rifle held in a vise:
+the turret drives the scope's erector, so dialing elevation UP points the sight line
+*down* relative to the bore and the crosshair walks DOWN the target (dial windage RIGHT
+and it walks LEFT). The rifle hasn't moved, so **dialing alone cannot move the impact** —
+re-aiming to put the crosshair back on the target is what actually points the barrel
+where the come-up needs it. This turns the owner's zeroing workflow into a real mechanic
+(fire a group, don't touch the rifle, dial until the crosshair sits on the group, confirm,
+re-aim) and teaches the direction rule by muscle memory: *the crosshair chases the group;
+the impact moves opposite the crosshair.*
+**Built** — 2026-08-06 (`Design/archive/dial-moves-view-plan.md`, DV1–DV3, owner-confirmed
+on device). New `scope/turret-view.ts` (pure): `sightOffset` = live turret +
+the rifle's stored `playerZero` — the stored zero is included because confirming a zero is
+physically just re-indexing the turret ring, so the erector does not move and the view must
+not jump; `sightAimAngles` (pitch **adds** elevation, yaw **subtracts** windage — this
+Euler convention is asymmetric), `sightLineDir`, and an ~80 ms exponential glide
+(`SIGHT_GLIDE_TAU_S`). Wired into `scope/ScopeView.tsx` in five small edits (eased
+`st.sight` seeded at scene setup, advanced once per frame, applied in `aimQuaternion`);
+every existing consumer — `findAimed`, `findAimedTarget`, `commitRef`, both FIRE paths,
+the mirage aim dispatch — already routed through `aimQuaternion` and picked it up
+unchanged. **No change to any shot code**: rotating the sight line by the dial changes
+`resolveShot`'s `aimError` by exactly minus the dial, so `applied = aimError + dial +
+playerZero` is unchanged — pinned by `scope/turret-view.test.ts` (27 tests: the direction
+table in the player's words, parity with THREE to 1e-12, and the
+dialing-alone-does-not-move-the-impact invariant at up to ±3 MIL). No engine change, no
+save-schema change (the offset is derived per frame from already-persisted state), and the
+hidden `zeroOffsetRad` is deliberately excluded (§4.8 — including it would let a player
+read a fresh rifle's misalignment off the screen). Documented in
+`Wiki/turret-direction.md`.
+**Locked owner decisions (2026-08-06):** (1) **always on, no Settings toggle** — it is the
+physically correct behaviour, so it is simply how the game works (one code path, no schema
+bump); the ELR re-acquire cost is accepted (20 MIL at 10× moves the target ~half a screen
+height; at 25× clean out of the field of view, and zooming out to re-acquire is the real
+behaviour). (2) **Movement only — no HUD teaching aid**: no direction label, no
+bore/point-of-aim ghost marker. The view moving *is* the lesson, and it is the one that
+transfers to a real rifle, where no label exists.
+**Known seam (accepted, not chased):** `confirmZero` shifts the offset by `−required`, so
+re-zeroing to a *different* distance nudges the view by the come-up between the old and new
+zero references. At the rifle's current zero distance — the normal sight-in-bay case —
+`required ≈ 0` and the view is still. Closing it would mean modelling the trajectory zero's
+own launch angle as a fourth offset term (a solver call per frame); deferred.
+**Deferred follow-ons:** a re-acquire aid for large come-ups (off-screen target arrow or
+auto-zoom-out — only if the owner asks); scope-cant/canted-base interaction (catalog §C3 —
+the offset is two independent axes today, a canted base would rotate them together, nothing
+here blocks it); a drawn spinning turret dial (cosmetic).
+
 ### C. Gear systems
 
 #### Gear catalog architecture — parametric rifle + ammo builders, 10 cartridges
