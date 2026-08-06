@@ -71,6 +71,57 @@
           "xOffsetM": 3.2,
           "centreYM": 1.341,
           "zNudgeM": -0.05
+        },
+        {
+          "_note": "Dueling tree (Design/Plans/dueling-tree-plan.md). Reuses the shipped hostage-paddle flip mechanism unchanged (flip.ts, poseFlip's 180 deg swing-away-from-shooter) — the only new thing here is the ARRANGEMENT: one post carrying 5 paddles, all resting on the same side. POST CENTRELINE: x = -3.0 m (left of the IDPA silhouette at -1.8, whose outline reaches -2.03; the tree's widest [8in] extent runs -3.26..-2.74, leaving 0.71 m clear air; well inside NO_HILL_CORRIDOR's 4.572 m half-width so the terrain under it is flat). ARM DERIVATION: dueling-tree.ts's duelingTreeSwingM(paddleWidthM) = 2 x (paddleWidthM/2 + DUELING_TREE_POST_RADIUS_M[0.0381] + DUELING_TREE_ARM_CLEARANCE_M[0.02]). For the shipped 6in paddle: 2 x (0.0762 + 0.0381 + 0.02) = 0.2686 m stop-to-stop, i.e. a 0.1343 m arm. Rest stop is authored on the LEFT, so xOffsetM = post - arm = -3.0 - 0.1343 = -3.1343 (this file's authored value below). DISTANCE: 80 yd is deliberately exclusive to the tree (gong 100, IDPA 75, hostage assembly 60, poppers 50) — ScopeView filters the hittable rack by exact distanceM equality, so sharing a distance would silently merge the tree into another target's engagement. CENTRES: duelingTreePaddleYM(i) = 1.397 - i x 0.254 (10in pitch, which exceeds even the 8in paddle's diameter so adjacent paddles never overlap), giving 55/45/35/25/15in — chosen so an 8in paddle's top edge (59in) stays 1in under the 60in post top, and its bottom edge (11in) stays clear of the ground. 8in SWAP RECIPE (DT3 — a documented, tested one-minute edit; the tree ships as 6in, this is not currently applied): for ALL FIVE entries below, change widthInches 6 -> 8, mountId 'dueling-tree-arm-6' -> 'dueling-tree-arm-8', and xOffsetM -3.1343 -> -3.1597 (post stays at -3.0; the arm and therefore the rest offset grow with the paddle). zNudgeM is deliberately omitted on every entry here (must stay 0) — unlike the hostage centre paddle, a tree paddle has no coplanar neighbour to z-fight; the post is a solid cylinder with volume, not a flat backing surface.",
+          "id": "test-tree-1",
+          "typeId": "dueling-tree-paddle",
+          "mountId": "dueling-tree-arm-6",
+          "groupId": "test-dueling-tree",
+          "distanceYards": 80,
+          "xOffsetM": -3.1343,
+          "widthInches": 6,
+          "centreYM": 1.397
+        },
+        {
+          "id": "test-tree-2",
+          "typeId": "dueling-tree-paddle",
+          "mountId": "dueling-tree-arm-6",
+          "groupId": "test-dueling-tree",
+          "distanceYards": 80,
+          "xOffsetM": -3.1343,
+          "widthInches": 6,
+          "centreYM": 1.143
+        },
+        {
+          "id": "test-tree-3",
+          "typeId": "dueling-tree-paddle",
+          "mountId": "dueling-tree-arm-6",
+          "groupId": "test-dueling-tree",
+          "distanceYards": 80,
+          "xOffsetM": -3.1343,
+          "widthInches": 6,
+          "centreYM": 0.889
+        },
+        {
+          "id": "test-tree-4",
+          "typeId": "dueling-tree-paddle",
+          "mountId": "dueling-tree-arm-6",
+          "groupId": "test-dueling-tree",
+          "distanceYards": 80,
+          "xOffsetM": -3.1343,
+          "widthInches": 6,
+          "centreYM": 0.635
+        },
+        {
+          "id": "test-tree-5",
+          "typeId": "dueling-tree-paddle",
+          "mountId": "dueling-tree-arm-6",
+          "groupId": "test-dueling-tree",
+          "distanceYards": 80,
+          "xOffsetM": -3.1343,
+          "widthInches": 6,
+          "centreYM": 0.381
         }
       ]
     }

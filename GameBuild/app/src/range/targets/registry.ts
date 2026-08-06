@@ -7,6 +7,7 @@
 // `ScopeView` or a scene builder needs to know the list exists; scenes reach
 // types through placements (`placements.ts`, T3).
 
+import { DUELING_TREE_PADDLE } from './dueling-tree';
 import { HANGING_GONG } from './hanging-gong';
 import { HOSTAGE_PADDLE } from './hostage-paddle';
 import { IDPA_SILHOUETTE } from './idpa';
@@ -25,6 +26,7 @@ const REGISTERED: readonly TargetType[] = [
   POPPER,
   IDPA_HOSTAGE_SILHOUETTE,
   HOSTAGE_PADDLE,
+  DUELING_TREE_PADDLE,
 ];
 
 // Fail at import, not at render. A malformed type is a build-time bug.

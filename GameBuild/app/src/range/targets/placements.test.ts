@@ -120,6 +120,11 @@ describe('placements: the data file itself', () => {
       'test-hostage-idpa-60',
       'test-hostage-top',
       'test-hostage-center',
+      'test-tree-1',
+      'test-tree-2',
+      'test-tree-3',
+      'test-tree-4',
+      'test-tree-5',
     ]);
     const gong = list[0];
     expect(gong.type.id).toBe('hanging-gong');

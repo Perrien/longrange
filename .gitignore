@@ -14,6 +14,13 @@ node_modules/
 *.o
 *.a
 
+# Sandbox artifact: files a stale `dist/` build left behind that the mounted
+# FUSE filesystem refuses to `unlink` (rename works, delete doesn't — same
+# EPERM class noted in Design/execution/PROGRESS.md's H4/dueling-tree DT2
+# gates). Renamed out of `dist/` so `vite build`'s emptyOutDir doesn't trip
+# over them; ignored here so they never show up as untracked.
+.build-artifact-stale-undeletable*
+
 # CMake
 CMakeCache.txt
 CMakeFiles/

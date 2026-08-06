@@ -21,7 +21,14 @@ export type ReactionMode = 'swing' | 'bolted' | 'knockdown' | 'flip';
 /** The physical furniture a scene builds for this mount. `'none'` is for a target
  *  that needs no structure of its own (e.g. bolted directly to a backer panel the
  *  range already draws). */
-export type MountFurniture = 'beam-rack' | 'stake' | 'panel' | 'hinge-stem' | 'pivot-post' | 'none';
+export type MountFurniture =
+  | 'beam-rack'
+  | 'stake'
+  | 'panel'
+  | 'hinge-stem'
+  | 'pivot-post'
+  | 'tree-post'
+  | 'none';
 
 /** Hanging-chain geometry. Defaults come from `engine-bridge/steel-target.ts`,
  *  which stays the single source of truth for the shipped values — this type

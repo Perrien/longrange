@@ -60,9 +60,11 @@ export function plateCentreYM(p: ResolvedPlacement): number {
       return p.heightM / 2;
     case 'stake':
     case 'pivot-post':
+    case 'tree-post':
     case 'none':
-      // Nothing to derive it from — a stake's (or a hostage clamp's) height is not
-      // the plate's centre. These MUST author `centreYM`.
+      // Nothing to derive it from — a stake's (or a hostage clamp's, or a
+      // dueling-tree post's) height is not the plate's centre. These MUST
+      // author `centreYM`.
       throw new Error(
         `test-range-targets: '${p.id}' on furniture '${p.mount.furniture}' must specify centreYM`,
       );

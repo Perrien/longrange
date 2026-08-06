@@ -58,7 +58,7 @@ describe('T9a: the migrated gong reproduces the shipped one', () => {
   const built = plates[0];
   const legacy = legacyGong();
 
-  it('is the first of the range\'s seven authored targets', () => {
+  it('is the first of the range\'s twelve authored targets', () => {
     expect(plates.map((p) => p.rackId)).toEqual([
       'test-gong-100',
       'test-idpa-75',
@@ -67,6 +67,11 @@ describe('T9a: the migrated gong reproduces the shipped one', () => {
       'test-hostage-idpa-60',
       'test-hostage-top',
       'test-hostage-center',
+      'test-tree-1',
+      'test-tree-2',
+      'test-tree-3',
+      'test-tree-4',
+      'test-tree-5',
     ]);
   });
 
@@ -136,8 +141,8 @@ describe('T9a: invariants the rest of the system depends on', () => {
   it('implies two chain slots per plate', () => {
     // The reaction loop indexes `chainRest[id*2+ci]` unconditionally, so the scene must
     // size its chain mesh at exactly this, including for plates that do not hang.
-    expect(plates).toHaveLength(7); // gong, IDPA, 2 poppers, hostage assembly (plate + 2 paddles)
-    expect(plates.length * 2).toBe(14);
+    expect(plates).toHaveLength(12); // gong, IDPA, 2 poppers, hostage assembly (plate + 2 paddles), 5 tree paddles
+    expect(plates.length * 2).toBe(24);
   });
 });
 
@@ -379,14 +384,21 @@ describe('T9b: layout keeps the sight line clear', () => {
 });
 
 describe('T9b: multi-shape invariants', () => {
-  it('needs five DISTINCT geometries but keeps one global id space', () => {
+  it('needs six DISTINCT geometries but keeps one global id space', () => {
     const types = new Set(plates.map((p) => p.targetTypeId));
     expect(types).toEqual(
-      new Set(['hanging-gong', 'idpa-silhouette', 'popper', 'idpa-hostage-silhouette', 'hostage-paddle']),
+      new Set([
+        'hanging-gong',
+        'idpa-silhouette',
+        'popper',
+        'idpa-hostage-silhouette',
+        'hostage-paddle',
+        'dueling-tree-paddle',
+      ]),
     );
     // Ids stay 0..n-1 across all of them — the atlas layer index, the chain slot key
     // and the reaction map key all depend on it.
-    expect(plates.map((p) => p.instanceId)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(plates.map((p) => p.instanceId)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   });
 
   it('gives the two beamless mounts a collapsed chain pair rather than a missing one', () => {

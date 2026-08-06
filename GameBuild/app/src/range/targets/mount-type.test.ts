@@ -44,6 +44,8 @@ describe('mount registry', () => {
       'hinge-stem',
       'hostage-clamp-2way',
       'hostage-clamp-3way',
+      'dueling-tree-arm-6',
+      'dueling-tree-arm-8',
     ]);
     expect(hasMountType('chain-beam')).toBe(true);
     expect(hasMountType('no-such-mount')).toBe(false);

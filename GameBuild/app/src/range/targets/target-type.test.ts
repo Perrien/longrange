@@ -329,6 +329,7 @@ describe('registry', () => {
       'popper',
       'idpa-hostage-silhouette',
       'hostage-paddle',
+      'dueling-tree-paddle',
     ]);
   });
 

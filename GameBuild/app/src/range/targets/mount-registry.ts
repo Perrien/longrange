@@ -18,6 +18,8 @@ import {
   CHAIN_OUTWARD_OFFSET_M,
   CHAIN_SPLAY_FRACTION,
 } from '../../engine-bridge/steel-target';
+import { inchesToMeters } from '../../units';
+import { duelingTreeSwingM } from './dueling-tree';
 
 /**
  * A plate hung on chains from a rack beam — the shipped behaviour of Range A, the
@@ -165,6 +167,53 @@ const HOSTAGE_CLAMP_3WAY: MountType = {
   },
 };
 
+/**
+ * A dueling-tree arm clamped so a hit swings its paddle 180° round the tree's
+ * centre post — same `flip` mechanism as the hostage clamps above, arranged as
+ * a plain 2-stop left/right toggle (`flip.ts`'s `strikeFlip` wraps `% 2`).
+ *
+ * The swing distance depends on the paddle's own size (the arm has to clear
+ * the post — `duelingTreeSwingM`, `dueling-tree.ts` §3.2), so a 6″ and an 8″
+ * paddle need DIFFERENT static stop lists. That is exactly the shape
+ * `hostage-clamp-2way`/`-3way` already take — two registry entries differing
+ * only in their stop list — so it is not a new pattern, just a new pair.
+ *
+ * `transitionS: 0.35` — marginally slower than the hostage clamp's 0.3: the
+ * arm is longer, and a snappier swing on a 5-paddle stack reads as teleporting
+ * rather than swinging. Tune on device if the owner disagrees.
+ */
+const DUELING_TREE_ARM_6: MountType = {
+  id: 'dueling-tree-arm-6',
+  name: 'Dueling-tree arm (6" paddle)',
+  reaction: 'flip',
+  furniture: 'tree-post',
+  needsBeamHeight: false,
+  flip: {
+    positions: [
+      { id: 'left', xOffsetM: 0 },
+      { id: 'right', xOffsetM: duelingTreeSwingM(inchesToMeters(6)) },
+    ],
+    transitionS: 0.35,
+  },
+};
+
+/** Same as `DUELING_TREE_ARM_6`, sized for an 8″ paddle — a longer arm, so a
+ *  longer swing between stops (`duelingTreeSwingM`). */
+const DUELING_TREE_ARM_8: MountType = {
+  id: 'dueling-tree-arm-8',
+  name: 'Dueling-tree arm (8" paddle)',
+  reaction: 'flip',
+  furniture: 'tree-post',
+  needsBeamHeight: false,
+  flip: {
+    positions: [
+      { id: 'left', xOffsetM: 0 },
+      { id: 'right', xOffsetM: duelingTreeSwingM(inchesToMeters(8)) },
+    ],
+    transitionS: 0.35,
+  },
+};
+
 /** Every mount the game knows about. */
 const REGISTERED: readonly MountType[] = [
   CHAIN_BEAM,
@@ -172,6 +221,8 @@ const REGISTERED: readonly MountType[] = [
   HINGE_STEM,
   HOSTAGE_CLAMP_2WAY,
   HOSTAGE_CLAMP_3WAY,
+  DUELING_TREE_ARM_6,
+  DUELING_TREE_ARM_8,
 ];
 
 for (const m of REGISTERED) validateMountType(m);

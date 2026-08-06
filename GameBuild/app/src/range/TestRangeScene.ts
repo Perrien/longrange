@@ -34,6 +34,7 @@ import { planFace } from './targets/face-plan';
 import { browserFaceDeps, rasterizeFace } from './targets/face-raster';
 import { holeRings, outlinePolygon } from './targets/target-geometry';
 import type { ResolvedPlacement } from './targets/placements';
+import { DUELING_TREE_POST_HEIGHT_M, DUELING_TREE_POST_RADIUS_M } from './targets/dueling-tree';
 
 const FRAME_COLOR = 0xaaaaaa; // galvanised posts/beam
 const CHAIN_COLOR = 0x4a4a4a; // dark galvanised chain
@@ -201,8 +202,20 @@ export class TestRangeScene implements SteelSceneApi {
         case 'hinge-stem':
           for (const member of members) this.addHingeStem(member, mat);
           break;
+        case 'tree-post':
+          this.addTreePost(members, placement, mat);
+          break;
+        case 'pivot-post':
+          // Deliberately draws nothing: the hostage clamps are hidden behind the
+          // silhouette. Written as an explicit no-op so the default arm below can
+          // exist — that is what makes it one.
+          break;
         case 'none':
           break;
+        default: {
+          const unhandled: never = placement.mount.furniture;
+          throw new Error(`TestRangeScene: no furniture case for '${unhandled}'`);
+        }
       }
     }
   }
@@ -253,6 +266,41 @@ export class TestRangeScene implements SteelSceneApi {
     const stem = new THREE.Mesh(geo, mat);
     stem.position.set(plate.position.x, pivotY + length / 2, plate.position.z);
     this.add(stem);
+  }
+
+  /**
+   * The dueling tree's centre post — one solid cylinder, ground to
+   * `DUELING_TREE_POST_HEIGHT_M`, built once for the whole group.
+   *
+   * Its x is RECOVERED from the mount's own stops rather than a second
+   * hard-coded placement constant, the same way `poseFlip` recovers the swing
+   * pivot: every paddle in the group rests at the SAME `xOffsetM` (all five
+   * start on the tree's left side), which is `post − arm`; the mount's 'right'
+   * stop is the full swing (`2 × arm`) away, so `paddle.x + swing / 2` lands
+   * back on the post centreline regardless of which member happens to be
+   * `members[0]`.
+   *
+   * Deliberately does NOT draw the arms — at the plan's 2 cm rim-to-post
+   * clearance they are a few pixels at 80 yd (deferred, see `PROGRESS.md`).
+   */
+  private addTreePost(
+    members: readonly PlateInstance[],
+    placement: ResolvedPlacement,
+    mat: THREE.Material,
+  ): void {
+    const swingM = placement.mount.flip!.positions[1].xOffsetM;
+    const postX = members[0].position.x + swingM / 2;
+    const geo = this.track(
+      new THREE.CylinderGeometry(
+        DUELING_TREE_POST_RADIUS_M,
+        DUELING_TREE_POST_RADIUS_M,
+        DUELING_TREE_POST_HEIGHT_M,
+        10,
+      ),
+    );
+    const post = new THREE.Mesh(geo, mat);
+    post.position.set(postX, DUELING_TREE_POST_HEIGHT_M / 2, -placement.distanceM);
+    this.add(post);
   }
 
   // --- hanging chains (two slots per plate, ALWAYS) --------------------------
