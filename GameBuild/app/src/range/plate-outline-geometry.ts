@@ -25,15 +25,7 @@
 
 import * as THREE from 'three';
 import type { Point } from './targets/target-type';
-
-/** Winding of a ring, positive = counter-clockwise (y-up). */
-function signedArea(ring: readonly Point[]): number {
-  let a = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    a += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
-  }
-  return a / 2;
-}
+import { ringSignedArea } from './targets/target-geometry';
 
 /**
  * Unit-width plate geometry for an arbitrary outline: two triangulated caps plus a
@@ -42,25 +34,58 @@ function signedArea(ring: readonly Point[]): number {
  * `outline` must be a closed CCW ring in the width-normalised frame with no repeated
  * final vertex — which is exactly what `targets/svg-outline.ts` `flattenOutline()`
  * produces.
+ *
+ * ── HOLES (a hostage target's window) ─────────────────────────────────────────
+ * `holes` are rings punched clean through the plate, wound CLOCKWISE (use
+ * `targets/target-geometry.ts`'s `holeRings`, which guarantees it). Each one is
+ * excluded from both caps and given its own inner WALL, so a shot lines up with
+ * actual absence rather than with a transparent texel.
+ *
+ * This is deliberately geometry and not a shader trick. The first attempt punched
+ * the face in the atlas and armed `alphaTest` on the shared plate material; the
+ * `discard` that compiles in cost every plate on every range its early-Z fast path,
+ * and the game went from 60 to ~10 FPS on device (owner, 2026-08-06). A triangulated
+ * hole costs a handful of triangles once, at load, and nothing per frame.
+ *
+ * The winding requirement does double duty and is the only subtle part: earcut wants
+ * holes wound opposite the contour, AND the rim loop below derives each quad's
+ * facing from its ring's direction — so a CW hole ring gets a wall facing into the
+ * hole from the same code that gives the outline an outward-facing rim. A CCW hole
+ * ring would both fill itself in and turn its wall inside out.
  */
 export function createPlateOutlineGeometry(
   outline: readonly Point[],
   aspect: number,
+  holes: readonly (readonly Point[])[] = [],
 ): THREE.BufferGeometry {
   if (outline.length < 3)
     throw new Error(`plate-outline-geometry: need ≥3 outline points, got ${outline.length}`);
   if (!(aspect > 0)) throw new Error(`plate-outline-geometry: aspect must be > 0, got ${aspect}`);
-  if (signedArea(outline) <= 0)
+  if (ringSignedArea(outline) <= 0)
     throw new Error('plate-outline-geometry: outline must be counter-clockwise (use toCcw)');
+  for (const [h, hole] of holes.entries()) {
+    if (hole.length < 3)
+      throw new Error(`plate-outline-geometry: hole ${h} needs ≥3 points, got ${hole.length}`);
+    if (ringSignedArea(hole) >= 0)
+      throw new Error(
+        `plate-outline-geometry: hole ${h} must be CLOCKWISE (opposite the outline) — use holeRings`,
+      );
+  }
 
   // three's earcut, already in the pinned 0.185.1 — no new dependency. Required
   // rather than a centroid fan: both shipped silhouettes are NON-convex (the IDPA's
   // neck/shoulder junction, the popper's waist pinch), and a fan over a reflex
   // vertex produces overlapping triangles.
   const contour = outline.map((p) => new THREE.Vector2(p.x, p.y));
-  const faces = THREE.ShapeUtils.triangulateShape(contour, []);
+  const holeContours = holes.map((h) => h.map((p) => new THREE.Vector2(p.x, p.y)));
+  const faces = THREE.ShapeUtils.triangulateShape(contour, holeContours);
   if (faces.length === 0)
     throw new Error('plate-outline-geometry: triangulation produced no faces (degenerate outline?)');
+
+  // `triangulateShape` indexes into the CONCATENATION of the contour and every hole,
+  // in the order they were passed — so the cap loops must resolve indices against
+  // the same flat list, not against `outline`.
+  const capPoints: readonly Point[] = holes.length === 0 ? outline : [outline, ...holes].flat();
 
   const positions: number[] = [];
   const uvs: number[] = [];
@@ -76,7 +101,7 @@ export function createPlateOutlineGeometry(
   // −Z, so a CCW contour triangle (a,b,c) is emitted REVERSED.
   for (const [ia, ib, ic] of faces) {
     for (const i of [ia, ic, ib]) {
-      const p = outline[i];
+      const p = capPoints[i];
       positions.push(p.x, p.y, -hd);
       uvs.push(...capUv(p, 0.25));
     }
@@ -86,22 +111,26 @@ export function createPlateOutlineGeometry(
   // is +Z, so CCW order is already correct.
   for (const [ia, ib, ic] of faces) {
     for (const i of [ia, ib, ic]) {
-      const p = outline[i];
+      const p = capPoints[i];
       positions.push(p.x, p.y, hd);
       uvs.push(...capUv(p, 0.75));
     }
   }
 
-  // Rim: two triangles per outline edge, wound OUTWARD. For a CCW ring the interior
-  // is on the left of each edge, so the outward normal is (dy, −dx) — the general
-  // form of the disc's "radially away from the axis".
-  for (let i = 0; i < outline.length; i++) {
-    const a = outline[i];
-    const b = outline[(i + 1) % outline.length];
-    // (a,−h) (b,−h) (a,+h) then (b,−h) (b,+h) (a,+h)
-    positions.push(a.x, a.y, -hd, b.x, b.y, -hd, a.x, a.y, hd);
-    positions.push(b.x, b.y, -hd, b.x, b.y, hd, a.x, a.y, hd);
-    for (let k = 0; k < 6; k++) uvs.push(-1, -1);
+  // Rim: two triangles per edge, wound OUTWARD. For a CCW ring the interior is on
+  // the left of each edge, so the outward normal is (dy, −dx) — the general form of
+  // the disc's "radially away from the axis". A HOLE ring is wound the other way, so
+  // the identical emission gives it a wall facing into the hole: one loop, both
+  // cases, correctness carried by the winding rather than by a branch.
+  for (const ring of [outline, ...holes]) {
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      // (a,−h) (b,−h) (a,+h) then (b,−h) (b,+h) (a,+h)
+      positions.push(a.x, a.y, -hd, b.x, b.y, -hd, a.x, a.y, hd);
+      positions.push(b.x, b.y, -hd, b.x, b.y, hd, a.x, a.y, hd);
+      for (let k = 0; k < 6; k++) uvs.push(-1, -1);
+    }
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -125,9 +154,12 @@ export function triangulatedArea(outline: readonly Point[], faces: readonly numb
 
 /** The triangulation this module would use — exposed so tests can check the faces
  *  themselves rather than only the emitted buffer. */
-export function triangulateOutline(outline: readonly Point[]): number[][] {
+export function triangulateOutline(
+  outline: readonly Point[],
+  holes: readonly (readonly Point[])[] = [],
+): number[][] {
   return THREE.ShapeUtils.triangulateShape(
     outline.map((p) => new THREE.Vector2(p.x, p.y)),
-    [],
+    holes.map((h) => h.map((p) => new THREE.Vector2(p.x, p.y))),
   );
 }

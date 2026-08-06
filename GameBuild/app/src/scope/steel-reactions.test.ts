@@ -25,8 +25,19 @@ class FakeReaction {
   textureReads = 0;
   /** Settle after this many steps. */
   movingFor = 3;
+  /** Every `setOrientation` the controller pushed down, in order. The real engine
+   *  picks the painted texture half from this, so "was it told?" is the whole
+   *  question for a TS-posed target's splats. */
+  orientations: { x: number; y: number; z: number; w: number }[] = [];
+  /** Impact positions as the engine RECEIVED them — the engine has no
+   *  `setPosition`, so a TS-posed target must pre-compensate. */
+  strikeAt: { x: number; y: number; z: number }[] = [];
   constructor(readonly spec: Record<string, unknown>) {}
-  strike(): void {
+  setOrientation(q: { x: number; y: number; z: number; w: number }): void {
+    this.orientations.push({ ...q });
+  }
+  strike(impactWorld?: { x: number; y: number; z: number }): void {
+    if (impactWorld) this.strikeAt.push({ ...impactWorld });
     this.strikes++;
     this.steps = 0; // a fresh impulse re-starts the swing
   }
@@ -642,19 +653,21 @@ describe('flip plates (hostage paddles)', () => {
       expect(Math.abs(euler.z)).toBeCloseTo(0, 6);
     });
 
-    it('is edge-on at the halfway point, and proud of the plate by half the travel', () => {
+    it('is edge-on at the halfway point, half a travel BEHIND the plate', () => {
       // The signature of a real swing: at 90° the paddle shows its rim, and its
-      // centre stands off the backing plate — it is travelling on an arc, not a line.
+      // centre stands off the backing plate — travelling on an arc, not a line.
       const { pos, base } = poseAfter('hostage-clamp-2way', 0.15, 1); // half of 0.3 s
       expect(pos.x).toBeCloseTo(base + 0.175, 4); // over the pivot
-      // +z is toward the shooter; the plate rests at z = −100.
-      expect(pos.z).toBeCloseTo(-100 + 0.175, 4);
+      // −z is DOWNRANGE and the plate rests at z = −100, so the paddle swings to
+      // −100.175: away from the shooter (owner, 2026-08-06 — the bullet is going
+      // that way, and the paddle hangs behind the backing plate).
+      expect(pos.z).toBeCloseTo(-100 - 0.175, 4);
     });
 
-    it('always arcs TOWARD the shooter, on the return stop too', () => {
+    it('always arcs AWAY from the shooter, on the return stop too', () => {
       // A door that opened both ways would sweep the paddle THROUGH the backing
-      // plate every second strike. The facing takes the travel's sign; the arc
-      // does not.
+      // plate every second strike — it hangs behind the plate, so "both ways"
+      // means "into it". The facing takes the travel's sign; the arc does not.
       const { scene, controller } = setup();
       const p = paddle('hostage-clamp-3way');
       const m = new THREE.Matrix4();
@@ -665,7 +678,7 @@ describe('flip plates (hostage paddles)', () => {
       for (let strike = 0; strike < 4; strike++) {
         controller.onImpact({ plate: p, ...IMPACT });
         controller.update(0.15); // mid-swing
-        expect(at().z, `strike ${strike + 1} swung the wrong way`).toBeGreaterThan(-100);
+        expect(at().z, `strike ${strike + 1} swung the wrong way`).toBeLessThan(-100);
       }
     });
 
@@ -699,6 +712,86 @@ describe('flip plates (hostage paddles)', () => {
       // Half a turn per strike. Euler wraps, so ±1 and 0 alternate rather than
       // climbing — what matters is that consecutive entries differ.
       for (let i = 1; i < seen.length; i++) expect(seen[i]).not.toBe(seen[i - 1]);
+    });
+
+    // --- splats land on the face the shooter can SEE ---------------------------
+    //
+    // Owner, on device 2026-08-06: "The shoulder target only gets splats on the
+    // front side... When it flips to the other side, even after multiple shots, the
+    // back is always clean. After the target flips, the other side should be the one
+    // collecting the splats."
+    //
+    // Cause: `SteelTarget::recordImpact` picks the painted texture half from the
+    // body's OWN `normal_`, and stores the impact at `inverse(orientation_) ·
+    // (impact − position_)`. A flip paddle's pose is TypeScript's, so the engine
+    // believed it was unrotated at its build position forever. `setOrientation`
+    // exists for precisely this and was never called.
+    describe('pose pushed down to the engine', () => {
+      it('tells the engine the paddle FACING before recording the hit', () => {
+        const { controller } = setup();
+        const p = paddle('hostage-clamp-2way');
+        controller.onImpact({ plate: p, ...IMPACT });
+        // First strike: still unturned, so the identity — but pushed down anyway,
+        // because the engine has no other way to know it is being posed elsewhere.
+        expect(built[0].orientations).toHaveLength(1);
+        expect(built[0].orientations[0].w).toBeCloseTo(1, 6);
+
+        controller.update(0.3); // the flip completes: the paddle is now 180° round
+        controller.onImpact({ plate: p, ...IMPACT });
+        // Second strike: a half turn about Y ⇒ (0,1,0,0). This is the value that
+        // flips `vel · normal_` and therefore the texture half that gets painted.
+        const q = built[0].orientations[1];
+        expect(Math.abs(q.y)).toBeCloseTo(1, 6);
+        expect(q.w).toBeCloseTo(0, 6);
+      });
+
+      it('sets the facing BEFORE the strike, not after', () => {
+        // Order is the whole fix: the engine reads its orientation during the hit, so
+        // a late update paints the previous face and corrects nothing.
+        const { controller } = setup();
+        const p = paddle('hostage-clamp-2way');
+        controller.onImpact({ plate: p, ...IMPACT });
+        expect(built[0].orientations.length).toBeGreaterThanOrEqual(built[0].strikes);
+      });
+
+      it('re-expresses the impact in the frame the engine still believes it occupies', () => {
+        // The engine has no `setPosition`, so the IMPACT moves instead. Without this a
+        // paddle swung 0.35 m out takes every hit 0.35 m off a 15 cm face — clamped to
+        // the rim, every time.
+        const { controller } = setup();
+        const p = paddle('hostage-clamp-2way');
+        const base = p.position.x;
+        controller.onImpact({ plate: p, ...IMPACT }); // at stop 0: no compensation
+        expect(built[0].strikeAt[0].x).toBeCloseTo(IMPACT.impactWorld.x, 9);
+
+        // Now swung out. A shot at the paddle's new centre must read as its CENTRE,
+        // not as a point a swing-width off it.
+        const swungX = p.position.x;
+        expect(swungX - base).toBeCloseTo(0.35, 9);
+        controller.onImpact({
+          plate: p,
+          ...IMPACT,
+          impactWorld: { x: swungX, y: IMPACT.impactWorld.y, z: IMPACT.impactWorld.z },
+        });
+        expect(built[0].strikeAt[1].x).toBeCloseTo(base, 9);
+      });
+
+      it('leaves a plain swinging plate alone — timeStep owns its pose', () => {
+        // `setOrientation` on a chain-hung plate would fight the rigid body that is
+        // actually integrating it.
+        const { controller } = setup();
+        controller.onImpact({ plate: plate(), ...IMPACT });
+        expect(built[0].orientations).toEqual([]);
+      });
+
+      it('leaves a knockdown popper alone too', () => {
+        // A popper is filtered out of the rack while it is anything but standing
+        // (`isStanding`), so it can only be struck upright — where its orientation is
+        // the identity the engine already assumes.
+        const { controller } = setup();
+        controller.onImpact({ plate: plate({ mountId: 'hinge-stem' }), ...IMPACT });
+        expect(built[0].orientations).toEqual([]);
+      });
     });
 
     it('resetFlipTargets clears the accumulated turn, not just the position', () => {

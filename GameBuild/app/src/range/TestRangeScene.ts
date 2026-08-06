@@ -32,7 +32,7 @@ import type { SteelSceneApi } from './steel-scene-api';
 import { buildEnvironment, type EnvironmentHandle } from './environment';
 import { planFace } from './targets/face-plan';
 import { browserFaceDeps, rasterizeFace } from './targets/face-raster';
-import { outlinePolygon } from './targets/target-geometry';
+import { holeRings, outlinePolygon } from './targets/target-geometry';
 import type { ResolvedPlacement } from './targets/placements';
 
 const FRAME_COLOR = 0xaaaaaa; // galvanised posts/beam
@@ -96,12 +96,20 @@ export class TestRangeScene implements SteelSceneApi {
     for (const [typeKey, group] of byType) {
       const placement = this.placements.find((pl) => pl.type.id === typeKey);
       const type = placement?.type;
+      // Holes (`TargetType.holeZoneIds`) are punched through the MESH — a hostage
+      // silhouette's window. Derived per TYPE, since geometry is shared by every
+      // plate of that type.
+      const holes = type ? holeRings(type.zones, type.holeZoneIds) : [];
       // A round plate keeps the shipped disc generator untouched; anything else gets
       // its outline triangulated. Positions are in the width-normalised frame either
       // way, so the instance scale is uniform in x/y.
+      //
+      // A holed DISC also takes the outline generator — the disc generator cannot
+      // express a hole, and silently dropping one would be a window that scores as a
+      // hole but renders solid. No shipped disc has holes, so nothing moves today.
       const geo = this.track(
-        type && type.shape.kind !== 'disc'
-          ? createPlateOutlineGeometry(outlinePolygon(type.shape, type.aspect), type.aspect)
+        type && (type.shape.kind !== 'disc' || holes.length > 0)
+          ? createPlateOutlineGeometry(outlinePolygon(type.shape, type.aspect), type.aspect, holes)
           : createPlateDiscGeometry(),
       );
       const mesh = new THREE.InstancedMesh(geo, material, group.length);

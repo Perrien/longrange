@@ -67,8 +67,8 @@ export type DrawOp =
    *  buffer runs bottom-up (trap 2). SKIPPABLE: if the asset fails to load the
    *  rasteriser drops this op and the rest of the stack still renders. */
   | { kind: 'image'; artId: string; side: FaceSide; x: number; y: number; w: number; h: number; flipY: true }
-  | { kind: 'ellipse'; side: FaceSide; cx: number; cy: number; rx: number; ry: number; fill?: number; stroke?: number; strokeWidthPx?: number; cut?: true }
-  | { kind: 'polygon'; side: FaceSide; points: PxPoint[]; fill?: number; stroke?: number; strokeWidthPx?: number; cut?: true };
+  | { kind: 'ellipse'; side: FaceSide; cx: number; cy: number; rx: number; ry: number; fill?: number; stroke?: number; strokeWidthPx?: number }
+  | { kind: 'polygon'; side: FaceSide; points: PxPoint[]; fill?: number; stroke?: number; strokeWidthPx?: number };
 
 export interface FacePlan {
   widthPx: number;
@@ -232,28 +232,6 @@ export function planFace(type: TargetType, opts: FacePlanOptions = {}): FacePlan
         for (const zoneId of Object.keys(layer.style)) {
           if (!zonesById.has(zoneId))
             throw new Error(`face-plan: ${where} styles unknown zone '${zoneId}'`);
-        }
-        break;
-      }
-      case 'cut': {
-        // A HOLE, not a dark fill. Emitted as ordinary zone geometry carrying
-        // `cut: true`, which the rasteriser reads as "zero these texels' alpha"
-        // — so the shape maths, the anisotropy correction and the both-faces
-        // rule are shared with every other layer instead of re-derived.
-        //
-        // Style is deliberately empty: a cut has no colour. Anything drawn
-        // "in" the hole would only show up if the alpha pass later failed.
-        for (const side of sides) {
-          for (const zoneId of layer.zoneIds) {
-            const zone = zonesById.get(zoneId);
-            if (!zone) throw new Error(`face-plan: ${where} cuts unknown zone '${zoneId}'`);
-            // `shapeOps` only ever returns ellipse/polygon ops, but the union it
-            // is typed against includes `fill`, so the flag is attached through a
-            // narrowed local rather than by widening `DrawOp`.
-            for (const op of shapeOps(zone.shape, type.aspect, side, {})) {
-              if (op.kind === 'ellipse' || op.kind === 'polygon') ops.push({ ...op, cut: true });
-            }
-          }
         }
         break;
       }

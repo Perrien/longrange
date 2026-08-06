@@ -178,6 +178,66 @@ function zoneRing(shape: Exclude<ZoneShape, { kind: 'circle' }>): readonly Point
   ];
 }
 
+/** Segments used to polygonise a circular HOLE. Coarser than
+ *  `PERIMETER_SAMPLES` would be wasteful and finer is invisible: a 6″ window at
+ *  60 yd is a few dozen pixels across, and every segment costs two rim triangles
+ *  in the wall. */
+export const HOLE_SEGMENTS = 48;
+
+/** Signed area of a ring; positive = counter-clockwise in this y-up frame. */
+export function ringSignedArea(ring: readonly Point[]): number {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    a += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
+  }
+  return a / 2;
+}
+
+/**
+ * A target's HOLE rings (`TargetType.holeZoneIds`) as explicit closed rings in the
+ * width-normalised frame, wound CLOCKWISE.
+ *
+ * Winding is the load-bearing part, and it does double duty. `ShapeUtils.
+ * triangulateShape` wants holes wound opposite to the contour, and
+ * `plate-outline-geometry.ts` derives each rim quad's facing from its ring's
+ * direction — so a CW hole ring gets a wall facing INTO the hole for free, using
+ * the same code as the outline's outward-facing rim. Hand a CCW ring to either and
+ * you get an inside-out wall and a triangulation that fills the hole in.
+ *
+ * Takes the zones rather than the whole type so it stays a pure ring function; the
+ * `isHole` agreement is `validateTargetType`'s job.
+ */
+export function holeRings(
+  zones: readonly { id: string; shape: ZoneShape }[],
+  holeZoneIds: readonly string[] | undefined,
+  segments = HOLE_SEGMENTS,
+): Point[][] {
+  if (!holeZoneIds || holeZoneIds.length === 0) return [];
+  const byId = new Map(zones.map((z) => [z.id, z]));
+  return holeZoneIds.map((id) => {
+    const zone = byId.get(id);
+    if (!zone) throw new Error(`target-geometry: holeZoneIds names unknown zone '${id}'`);
+    const ring = ringFor(zone.shape, segments);
+    // Normalise to CW regardless of how the zone happened to be authored — a
+    // zone's winding is nobody's concern when it is only being hit-tested, so it
+    // cannot be assumed here.
+    return ringSignedArea(ring) > 0 ? ring.slice().reverse() : ring;
+  });
+}
+
+/** Any zone shape as an explicit ring; circles are polygonised. */
+function ringFor(shape: ZoneShape, segments: number): Point[] {
+  if (shape.kind === 'circle') {
+    const pts: Point[] = [];
+    for (let i = 0; i < segments; i++) {
+      const a = (2 * Math.PI * i) / segments;
+      pts.push({ x: shape.cx + shape.r * Math.cos(a), y: shape.cy + shape.r * Math.sin(a) });
+    }
+    return pts;
+  }
+  return zoneRing(shape).map((p) => ({ ...p }));
+}
+
 /** Is the point strictly inside the zone? (No tolerance — see `zoneBroken`.) */
 export function pointInZone(p: Point, shape: ZoneShape): boolean {
   if (shape.kind === 'circle') {

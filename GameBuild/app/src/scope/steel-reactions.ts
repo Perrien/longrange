@@ -15,6 +15,11 @@
 //   bolted    — takes paint, never posed. Nothing moves.
 //   knockdown — TS state machine (`targets/knockdown.ts`) drives a hinge rotation;
 //               the C++ target is kept for its paint buffer but never stepped.
+//               Deliberately does NOT push its pose down via `setOrientation` the
+//               way `flip` does: a popper is filtered out of the rack while it is
+//               anything but standing (`isStanding`, read by ScopeView before
+//               `resolveShot`), so it can only ever be struck upright — at which
+//               point its orientation IS the identity the engine already assumes.
 //   flip      — TS state machine (`targets/flip.ts`) advances a hostage paddle
 //               between discrete clamp stops, animated as a 180° SWING about a
 //               vertical pivot (see `poseFlip` for why a swing and not a slide);
@@ -145,6 +150,17 @@ interface FlipEntry {
    */
   spunFromRad: number;
   spunToRad: number;
+  /**
+   * Where the C++ target believes it is — `plate.position` at the moment the native
+   * target was built, captured because the engine has no `setPosition`.
+   *
+   * `SteelTarget::recordImpact` computes `local = impact − position_` against its own
+   * frozen `position_`. A flip paddle's position is TS-driven, so once it swings to a
+   * stop 0.33 m away, an impact expressed in world coordinates lands a third of a
+   * metre off a 15 cm paddle — i.e. clamped to the rim, every time. The strike is
+   * therefore re-expressed in this frame before being handed down (`onImpact`).
+   */
+  enginePos: THREE.Vector3;
 }
 
 export function createSteelReactions(
@@ -287,6 +303,11 @@ export function createSteelReactions(
         animT: 1, // already settled at stop 0
         spunFromRad: 0,
         spunToRad: 0,
+        // The native target is built from `plate.position` on this same first hit
+        // (`targetFor`), so this is that value — and the paddle is at stop 0 here by
+        // construction, since a flip entry is created before its first strike is
+        // registered.
+        enginePos: plate.position.clone(),
       };
       flipped.set(plate.instanceId, entry);
     }
@@ -331,10 +352,23 @@ export function createSteelReactions(
    * round ("the pivot point should be behind the center of the head") — which is
    * exactly the midpoint of that mount's two stops.
    *
-   * The swing always arcs TOWARD the shooter, whichever way the paddle is
-   * travelling: `sin(πt)` is taken unsigned and only the FACING carries the
-   * travel's sign. A door that opened both ways would sweep the paddle straight
-   * through the backing plate on alternate strikes.
+   * ── THE SWING GOES AWAY FROM THE SHOOTER ─────────────────────────────────
+   * Owner, 2026-08-06, after the first swing shipped arcing toward the shooter:
+   * "the action is actually backwards, the paddles shouldn't flip towards the
+   * shooter but away. Technically the paddle is behind the body target. The
+   * bullet goes through the center hole, hits the paddle, it flips away from the
+   * shooter rather than towards."
+   *
+   * That is momentum, not taste — the bullet is travelling downrange, so it drives
+   * the paddle downrange. It also settles the mount's DEPTH: a paddle that swings
+   * away must hang BEHIND the backing plate, or the arc sweeps it straight through
+   * the plate on every strike. Which is why `test-hostage-center`'s `zNudgeM` is
+   * negative (see `placements.data.json`); this is the reusable half of that
+   * pairing, and the reason it is stated here rather than only in the placement.
+   *
+   * The arc is always away, whichever way the paddle is travelling: `sin(πt)` is
+   * taken unsigned and only the FACING carries the travel's sign. A door that
+   * opened both ways would come back through the plate on alternate strikes.
    */
   function poseFlip(id: number, entry: FlipEntry): void {
     const slot = plateMeshSlot(scene, id);
@@ -345,12 +379,14 @@ export function createSteelReactions(
     const pivotX = entry.basePos.x + entry.animFromXM + halfTravelM;
     const t = entry.animT;
     // The rest offset (−halfTravel, 0) rotated about the pivot: x = −h·cos(πt),
-    // z = |h|·sin(πt). t=0 is the from-stop, t=1 the to-stop, and t=½ has the
-    // paddle edge-on, one half-travel proud of the plate.
+    // z = −|h|·sin(πt) — NEGATIVE, i.e. downrange, away from the shooter (world
+    // −z is downrange; the plate sits at −distanceM). t=0 is the from-stop, t=1
+    // the to-stop, and t=½ has the paddle edge-on, one half-travel BEHIND the
+    // plate's plane.
     pos.set(
       pivotX - halfTravelM * Math.cos(Math.PI * t),
       entry.basePos.y,
-      entry.basePos.z + Math.abs(halfTravelM) * Math.sin(Math.PI * t),
+      entry.basePos.z - Math.abs(halfTravelM) * Math.sin(Math.PI * t),
     );
     // Facing: the ACCUMULATED turn, so the visible face alternates per strike
     // rather than resetting with the stop index.
@@ -405,7 +441,42 @@ export function createSteelReactions(
         const spec = mount.flip!;
         const entry = flipFor(plate, spec);
         const reaction = targetFor(plate);
-        reaction.strike(impactWorld, impactVel, bulletMassKg, bulletDiameterM);
+        // ── PUSH THE TS-DRIVEN POSE DOWN BEFORE RECORDING THE HIT ───────────────
+        // Owner, on device 2026-08-06: "The shoulder target only gets splats on the
+        // front side... When it flips to the other side, even after multiple shots,
+        // the back is always clean."
+        //
+        // `SteelTarget::recordImpact` reads the body's OWN `orientation_` and
+        // `position_` — it picks the texture half from `vel · normal_` and stores the
+        // impact at `inverse(orientation_) · (impact − position_)`. A flip paddle's
+        // pose lives in TypeScript, so the engine still believes it is unrotated at
+        // its build position, and every splat went to the half that ends up facing
+        // downrange after a flip. `setOrientation` exists for exactly this (see its
+        // docstring in `steel_target.h`); it simply was never called.
+        //
+        // Orientation is the paddle's facing as it stands NOW — `spunToRad`, the end
+        // of the last completed transition, since the strike lands before this one
+        // begins.
+        flipQuat.setFromAxisAngle(SPIN_AXIS, entry.spunToRad);
+        reaction.setOrientation({
+          x: flipQuat.x,
+          y: flipQuat.y,
+          z: flipQuat.z,
+          w: flipQuat.w,
+        });
+        // Position gets no such setter, so the IMPACT moves instead: re-expressed in
+        // the frame the engine still believes it occupies. Without this a paddle at a
+        // 0.33 m stop takes every hit 0.33 m off a 15 cm face — clamped to the rim.
+        reaction.strike(
+          {
+            x: impactWorld.x - (plate.position.x - entry.enginePos.x),
+            y: impactWorld.y - (plate.position.y - entry.enginePos.y),
+            z: impactWorld.z - (plate.position.z - entry.enginePos.z),
+          },
+          impactVel,
+          bulletMassKg,
+          bulletDiameterM,
+        );
         paint(plate, reaction);
         const fromOffsetM = spec.positions[entry.state.index].xOffsetM;
         entry.state = strikeFlip(entry.state, spec.positions.length);

@@ -31,12 +31,16 @@
 // the whole reason it is a separate type rather than a copy) while sharing none
 // of its palette.
 //
-// The window is a `cut` layer, i.e. a REAL hole: "the center hole in the main
-// target should be a visible hole where the bckground can be seen". Previously
-// it was a near-black `$void` fill, which is what read as "just a black spot".
-// The shots-go-through half of that request was already true — `isHole` — and is
-// now the same shape by construction, since a `cut` can only name an `isHole`
-// zone (`validateTargetType`).
+// The window is a REAL hole, punched through the MESH via `holeZoneIds`: "the
+// center hole in the main target should be a visible hole where the bckground can
+// be seen". It was a near-black `$void` fill first (which read as "just a black
+// spot"), then briefly a transparent texel with `alphaTest` — which worked but
+// cost every plate on every range its early-Z fast path, 60 FPS → ~10 on device.
+// Geometry is the version that is both correct and free; see `holeZoneIds`.
+//
+// The shots-go-through half of the request was already true — `isHole` — and the
+// two are now the same shape by construction, since `holeZoneIds` can only name an
+// `isHole` zone (`validateTargetType`).
 
 import { localCircle, localPolygon } from './svg-outline';
 import {
@@ -52,15 +56,33 @@ import type { TargetType } from './target-type';
 /**
  * Window centre/radius, in the SAME spec-pixel frame as `IDPA_HEAD_CIRCLE`/
  * `IDPA_BODY_CIRCLE` (viewBox 423×694). CONCENTRIC with the body-0 circle
- * (owner, on device: "it should line up with the center circle in the
- * target") and about double the radius of the first pass (35 → 70 px) — still
- * well inside body-0's own 84.05 px radius, so the window reads as a large
+ * (owner, on device: "it should line up with the center circle in the target"),
+ * and well inside body-0's own 84.05 px radius, so the window reads as an
  * aperture nested inside the −0 ring rather than crossing it.
+ *
+ * ── WHY 62 px, WHICH IS A PADDLE MEASUREMENT AND NOT AN ART ONE ───────────────
+ * The window must be SMALLER than the centre paddle that sits behind it, or a ring
+ * of background shows around the paddle at its rest stop (owner, on device
+ * 2026-08-06: "The hole should actually be a bit smaller than the paddle so no
+ * ring exists"). 35 px first, then 70 px to line up with body-0 — and 70 px is
+ * 0.0814 m against the paddle's 0.0762 m radius, which is exactly the 5 mm ring
+ * the owner saw. 62 px is 0.0721 m, so the paddle overlaps the rim by ~4 mm all
+ * round.
+ *
+ * The paddle was the alternative knob (owner: "whichever is easier"), and it is
+ * the WRONG one: `HOSTAGE_PADDLE.defaultWidthM` is shared by both hostage mounts,
+ * so growing it to 7″ would push the head paddle's bottom edge back below the
+ * silhouette's shoulder line — the clipping fixed hours earlier — and squeeze the
+ * centre paddle's swing-clearance floor from 0.3048 to 0.3175 m against a 0.33 m
+ * swing. Shrinking the window touches nothing else.
+ *
+ * The relationship is pinned by a test in `hostage-paddle.test.ts`; it is invisible
+ * from either file alone.
  */
 export const IDPA_HOSTAGE_WINDOW_CIRCLE = {
   cx: IDPA_BODY_CIRCLE.cx,
   cy: IDPA_BODY_CIRCLE.cy,
-  r: 70,
+  r: 62,
 } as const;
 
 /** Plain white — the whole face (owner: "main body should be just white"). */
@@ -97,15 +119,13 @@ export const IDPA_HOSTAGE_SILHOUETTE: TargetType = {
     { id: 'minus-3', label: '−3', shape: { kind: 'polygon', points: IDPA_OUTLINE } },
   ],
   defaultZoneId: 'minus-3',
+  // Punched clean through the mesh, not painted. Ordering-free, unlike the `cut`
+  // face layer this replaced — there is no later layer that could fill it in.
+  holeZoneIds: ['window'],
   massModel: 'rect',
   paint: {
     palette: { face: IDPA_HOSTAGE_FACE_HEX },
-    layers: [
-      { kind: 'fill', color: '$face' },
-      // LAST, as any cut must be: it removes what earlier layers put down, so a
-      // layer added after it would fill the window back in.
-      { kind: 'cut', zoneIds: ['window'] },
-    ],
+    layers: [{ kind: 'fill', color: '$face' }],
   },
   defaultWidthM: 0.4572, // 18" — same as the plain IDPA silhouette.
   compatibleMounts: ['bolt-stake', 'chain-beam'],

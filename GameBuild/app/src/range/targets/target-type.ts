@@ -115,21 +115,13 @@ export interface ZoneStyle {
  * rasteriser skips just that layer, which is why a legible `fill`/`zones` pair
  * underneath doubles as the fallback instead of needing a separate code path.
  *
- * `cut` is the only layer that removes rather than adds: it punches the named
- * zones out of the face to fully TRANSPARENT, so the background is visible
- * through the plate (a hostage target's window). It is deliberately expressed
- * as a layer over the type's own zones rather than as mesh geometry — the same
- * reason `zones` is: the drawn hole and the `isHole` zone the hit test misses
- * through are then one shape by construction, and cannot drift. Every zone a
- * `cut` names MUST be `isHole` (enforced in `validateTargetType`); a face that
- * looks open where the hit test scores solid is a bug with no upside.
+ * A HOLE IS NOT A FACE LAYER. See `TargetType.holeZoneIds`.
  */
 export type FaceLayer =
   | { kind: 'fill'; color: ColorRef }
   | { kind: 'image'; artId: string; fit: 'bbox' | 'contain' }
   | { kind: 'shapes'; items: readonly DrawShape[] }
-  | { kind: 'zones'; style: Record<string, ZoneStyle> }
-  | { kind: 'cut'; zoneIds: readonly string[] };
+  | { kind: 'zones'; style: Record<string, ZoneStyle> };
 
 export interface TargetPaint {
   /** Named colour slots, referenced as `'$name'`. */
@@ -150,6 +142,24 @@ export interface TargetType {
   /** The zone a hit inside the outline but outside every other zone falls back
    *  to; must be one of `zones`. Conventionally the outline zone itself. */
   defaultZoneId: string;
+  /**
+   * Zones that are physically ABSENT — punched clean through the plate (a hostage
+   * target's window). Each named zone must be `isHole` (`validateTargetType`), so
+   * the hole you can see and the hole a bullet passes through are one shape.
+   *
+   * ── WHY THIS IS NOT A FACE LAYER ─────────────────────────────────────────────
+   * It was one, briefly (a `cut` layer, 2026-08-06). Punching the FACE meant
+   * painting the window transparent in the atlas and arming `alphaTest` on the
+   * shared plate material — and the `discard` that `alphaTest` compiles in cost
+   * every plate on every range its early-Z fast path, which took the game from 60
+   * to ~10 FPS on device. A hole is geometry, and pretending otherwise had a
+   * measurable price.
+   *
+   * So it lives on the TYPE, next to `shape`, and is consumed by
+   * `plate-outline-geometry.ts`, which triangulates it as an actual hole with an
+   * actual inner wall. Nothing per-fragment, no discard anywhere.
+   */
+  holeZoneIds?: readonly string[];
   massModel: MassModel;
   paint: TargetPaint;
   /** Width (m) a placement gets if it does not specify one. */
@@ -269,26 +279,24 @@ export function validateTargetType(t: TargetType): void {
   // A `zones` face layer keyed by a zone that does not exist draws nothing and
   // reads as a missing ring rather than an error.
   for (const layer of t.paint.layers) {
-    if (layer.kind === 'zones') {
-      for (const zoneId of Object.keys(layer.style)) {
-        if (!ids.has(zoneId))
-          throw new Error(`${where}: face 'zones' layer styles unknown zone '${zoneId}'`);
-      }
+    if (layer.kind !== 'zones') continue;
+    for (const zoneId of Object.keys(layer.style)) {
+      if (!ids.has(zoneId))
+        throw new Error(`${where}: face 'zones' layer styles unknown zone '${zoneId}'`);
     }
-    if (layer.kind === 'cut') {
-      if (layer.zoneIds.length === 0)
-        throw new Error(`${where}: face 'cut' layer names no zones`);
-      for (const zoneId of layer.zoneIds) {
-        const zone = t.zones.find((z) => z.id === zoneId);
-        if (!zone) throw new Error(`${where}: face 'cut' layer names unknown zone '${zoneId}'`);
-        // The face and the hit test must agree about what is a hole. A cut zone
-        // that still scores would let a shot "through" a visibly open window
-        // register as a torso hit, which is worse than either behaviour alone.
-        if (!zone.isHole)
-          throw new Error(
-            `${where}: face 'cut' layer names zone '${zoneId}', which is not marked isHole`,
-          );
-      }
+  }
+
+  if (t.holeZoneIds !== undefined) {
+    if (t.holeZoneIds.length === 0)
+      throw new Error(`${where}: holeZoneIds is present but empty — omit it instead`);
+    for (const zoneId of t.holeZoneIds) {
+      const zone = t.zones.find((z) => z.id === zoneId);
+      if (!zone) throw new Error(`${where}: holeZoneIds names unknown zone '${zoneId}'`);
+      // The geometry and the hit test must agree about what is absent. A punched
+      // zone that still SCORES would let a shot through a visibly open window
+      // register as a torso hit — worse than either behaviour on its own.
+      if (!zone.isHole)
+        throw new Error(`${where}: holeZoneIds names zone '${zoneId}', which is not marked isHole`);
     }
   }
 }

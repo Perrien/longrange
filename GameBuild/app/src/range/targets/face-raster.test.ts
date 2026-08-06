@@ -8,14 +8,13 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  applyCuts,
   artUrl,
   cssColor,
   rasterizeFace,
   type FaceContext,
   type FaceRasterDeps,
 } from './face-raster';
-import { planFace, type DrawOp, type FacePlan } from './face-plan';
+import { planFace } from './face-plan';
 import { PLATE_LAYER_BYTES, PLATE_TILE_HEIGHT, PLATE_TILE_WIDTH } from '../plate-surface';
 import type { TargetType } from './target-type';
 
@@ -298,143 +297,5 @@ describe('output buffer', () => {
     await expect(rasterizeFace(planFace(GONG), d)).rejects.toThrow(
       /produced 16 bytes, expected \d+/,
     );
-  });
-});
-
-describe('cuts (a real see-through hole)', () => {
-  /** Fresh byte surface per call, so a cut pass cannot read its own output. */
-  function byteDeps() {
-    const { ctx, calls } = mockContext();
-    const bytes = new Uint8Array(PLATE_LAYER_BYTES);
-    return {
-      d: { makeSurface: () => ({ ctx, readRgba: () => bytes }), loadImage: async () => null } as FaceRasterDeps,
-      calls,
-      bytes,
-    };
-  }
-
-  const alphaAt = (rgba: Uint8Array, x: number, y: number) =>
-    rgba[(y * PLATE_TILE_WIDTH + x) * 4 + 3];
-
-  /** The cut op of a given kind, narrowed — a cut carries no colour, so `kind`
-   *  plus the `cut` flag is the whole identity. */
-  const cutOp = <K extends 'ellipse' | 'polygon'>(plan: FacePlan, kind: K) =>
-    plan.ops.find(
-      (o): o is Extract<DrawOp, { kind: K }> => o.kind === kind && o.cut === true,
-    )!;
-
-  /** A gong with a circular window cut dead centre, radius 0.2 of its width. */
-  const WINDOWED: TargetType = {
-    ...GONG,
-    id: 'windowed',
-    zones: [
-      { id: 'window', label: 'Window', isHole: true, shape: { kind: 'circle', cx: 0, cy: 0, r: 0.2 } },
-      { id: 'plate', label: 'Plate', shape: { kind: 'circle', cx: 0, cy: 0, r: 0.5 } },
-    ],
-    paint: {
-      palette: { face: 0xffffff },
-      layers: [{ kind: 'fill', color: '$face' }, { kind: 'cut', zoneIds: ['window'] }],
-    },
-  };
-
-  it('zeroes alpha inside a cut and leaves everything else opaque', async () => {
-    const plan = planFace(WINDOWED);
-    const { d } = byteDeps();
-    const out = await rasterizeFace(plan, d);
-    const cut = cutOp(plan, 'ellipse');
-    expect(alphaAt(out, Math.round(cut.cx), Math.round(cut.cy))).toBe(0);
-    expect(alphaAt(out, Math.round(cut.cx + cut.rx * 1.5), Math.round(cut.cy))).toBe(255);
-    expect(alphaAt(out, 0, 0)).toBe(255);
-  });
-
-  it('cuts AFTER forcing opacity, not before — order or the hole heals shut', async () => {
-    // The opacity pass sets every texel to 255 to deny ACCIDENTAL transparency; the
-    // cut pass grants the deliberate kind. Reversed, the first would undo the second
-    // and the window would render as an opaque texel of whatever was underneath.
-    const plan = planFace(WINDOWED);
-    const { d, bytes } = byteDeps();
-    bytes.fill(0); // start fully transparent, as a real canvas does
-    const out = await rasterizeFace(plan, d);
-    const cut = cutOp(plan, 'ellipse');
-    expect(alphaAt(out, Math.round(cut.cx), Math.round(cut.cy))).toBe(0);
-    expect(alphaAt(out, 4, 4)).toBe(255); // an uncovered texel is still SOLID, not a hole
-  });
-
-  it('never replays a cut onto the context — it is a byte operation', async () => {
-    // Erasing through the 2D context would put "which texels are transparent" behind
-    // a canvas node does not have. `applyCuts` keeps it testable, which is the point.
-    const { d, calls } = byteDeps();
-    await rasterizeFace(planFace(WINDOWED), d);
-    expect(calls.filter((c) => c.startsWith('ellipse'))).toHaveLength(0);
-    expect(calls.filter((c) => c.startsWith('fillRect'))).toHaveLength(1); // the fill still runs
-  });
-
-  it('cuts a polygon zone by even-odd containment, not just its bounding box', async () => {
-    const t: TargetType = {
-      ...GONG,
-      id: 'poly-cut',
-      zones: [
-        {
-          id: 'slot',
-          label: 'Slot',
-          isHole: true,
-          // A triangle: its bounding box corners are OUTSIDE it, which is what
-          // separates real containment from a lazy box fill.
-          shape: { kind: 'polygon', points: [{ x: -0.3, y: -0.3 }, { x: 0.3, y: -0.3 }, { x: 0, y: 0.3 }] },
-        },
-        { id: 'plate', label: 'Plate', shape: { kind: 'circle', cx: 0, cy: 0, r: 0.5 } },
-      ],
-      paint: {
-        palette: { face: 0xffffff },
-        layers: [{ kind: 'fill', color: '$face' }, { kind: 'cut', zoneIds: ['slot'] }],
-      },
-    };
-    const plan = planFace(t);
-    const { d } = byteDeps();
-    const out = await rasterizeFace(plan, d);
-    const poly = cutOp(plan, 'polygon');
-    const xs = poly.points.map((p) => p.x);
-    const ys = poly.points.map((p) => p.y);
-    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-    const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-    expect(alphaAt(out, Math.round(cx), Math.round(cy))).toBe(0); // interior
-    // The apex is at cx; a top CORNER of the box is outside the triangle.
-    expect(alphaAt(out, Math.round(Math.min(...xs)) + 1, Math.round(Math.max(...ys)) - 1)).toBe(255);
-  });
-
-  it('leaves a target with no cut layer fully opaque', async () => {
-    const { d } = byteDeps();
-    const out = await rasterizeFace(planFace(ARTED), d);
-    for (let i = 3; i < out.length; i += 4) {
-      if (out[i] !== 255) throw new Error(`texel ${(i - 3) / 4} became transparent`);
-    }
-  });
-});
-
-describe('applyCuts', () => {
-  it('clamps to the tile, so a cut hanging off the edge cannot write out of bounds', () => {
-    const rgba = new Uint8Array(PLATE_LAYER_BYTES).fill(255);
-    expect(() =>
-      applyCuts(
-        rgba,
-        [{ kind: 'ellipse', side: 'downrange', cx: 0, cy: 0, rx: 40, ry: 40, cut: true }],
-        PLATE_TILE_WIDTH,
-        PLATE_TILE_HEIGHT,
-      ),
-    ).not.toThrow();
-    expect(rgba[3]).toBe(0); // texel (0,0) is inside it
-    expect(rgba.length).toBe(PLATE_LAYER_BYTES); // nothing grew
-  });
-
-  it('touches ONLY the alpha channel — a hole keeps the colour under it', () => {
-    const rgba = new Uint8Array(PLATE_LAYER_BYTES).fill(200);
-    applyCuts(
-      rgba,
-      [{ kind: 'ellipse', side: 'downrange', cx: 10, cy: 10, rx: 5, ry: 5, cut: true }],
-      PLATE_TILE_WIDTH,
-      PLATE_TILE_HEIGHT,
-    );
-    const i = (10 * PLATE_TILE_WIDTH + 10) * 4;
-    expect([rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]]).toEqual([200, 200, 200, 0]);
   });
 });

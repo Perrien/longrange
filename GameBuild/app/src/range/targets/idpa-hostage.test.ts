@@ -18,42 +18,9 @@ import { getTargetType, listTargetTypes } from './registry';
 import { validateTargetType } from './target-type';
 import { zoneAt } from '../../game/target-hit';
 import { toLocal } from './svg-outline';
-import { planFace, type DrawOp } from './face-plan';
-import { rasterizeFace, type FaceContext, type FaceRasterDeps } from './face-raster';
-import { PLATE_LAYER_BYTES } from '../plate-surface';
-
-/**
- * Raster deps that return a REAL byte buffer over a do-nothing context.
- *
- * The context is inert because these tests are about the alpha channel, which
- * `rasterizeFace` writes itself (the opacity pass, then the cut pass) rather than
- * reading back from a canvas — so a node env with no canvas can still check the
- * one thing that decides whether the window is a hole. Colour fidelity is
- * `face-raster.test.ts`'s call-log problem.
- */
-function byteDeps(): FaceRasterDeps {
-  const noop = () => {};
-  const ctx = {
-    fillStyle: '',
-    strokeStyle: '',
-    lineWidth: 0,
-    fillRect: noop,
-    beginPath: noop,
-    closePath: noop,
-    moveTo: noop,
-    lineTo: noop,
-    ellipse: noop,
-    fill: noop,
-    stroke: noop,
-    save: noop,
-    restore: noop,
-    translate: noop,
-    scale: noop,
-    drawImage: noop,
-  } as unknown as FaceContext;
-  const bytes = new Uint8Array(PLATE_LAYER_BYTES);
-  return { makeSurface: () => ({ ctx, readRgba: () => bytes }), loadImage: async () => null };
-}
+import { planFace } from './face-plan';
+import { holeRings, outlinePolygon, ringSignedArea } from './target-geometry';
+import { createPlateOutlineGeometry } from '../plate-outline-geometry';
 
 describe('idpa-hostage-silhouette', () => {
   it('is a valid target type', () => {
@@ -121,9 +88,7 @@ describe('idpa-hostage-silhouette', () => {
   // and the window a real see-through hole rather than a black spot.
   it('is a plain white face with NO artwork and no drawn zone lines', () => {
     const kinds = IDPA_HOSTAGE_SILHOUETTE.paint.layers.map((l) => l.kind);
-    expect(kinds).toEqual(['fill', 'cut']);
-    expect(kinds).not.toContain('image');
-    expect(kinds).not.toContain('zones');
+    expect(kinds).toEqual(['fill']);
     expect(IDPA_HOSTAGE_SILHOUETTE.paint.palette).toEqual({ face: IDPA_HOSTAGE_FACE_HEX });
     expect(IDPA_HOSTAGE_FACE_HEX).toBe(0xffffff);
     // The plate's engine paint colour comes from the `fill` layer, so a splat
@@ -131,41 +96,65 @@ describe('idpa-hostage-silhouette', () => {
     expect(planFace(IDPA_HOSTAGE_SILHOUETTE).paintHex).toBe(0xffffff);
   });
 
-  it('cuts the window LAST, so nothing fills it back in', () => {
-    const layers = IDPA_HOSTAGE_SILHOUETTE.paint.layers;
-    const last = layers[layers.length - 1];
-    expect(last.kind).toBe('cut');
-    expect((last as { zoneIds: readonly string[] }).zoneIds).toEqual(['window']);
+  it('declares the window as a MESH hole, not as paint', () => {
+    // The face is paint; a hole is absence. Punching it through the face instead
+    // meant `alphaTest` on the shared plate material, and the `discard` that
+    // compiles in took the game from 60 FPS to ~10 on device — on every range.
+    expect(IDPA_HOSTAGE_SILHOUETTE.holeZoneIds).toEqual(['window']);
+    for (const layer of IDPA_HOSTAGE_SILHOUETTE.paint.layers) {
+      expect(layer.kind).not.toBe('cut');
+    }
   });
 
-  it('rasterises the window to fully TRANSPARENT texels, not to a dark fill', async () => {
-    // The owner's actual complaint ("currently it's just a black spot") is about
-    // the bytes, so this asserts the bytes: inside the window alpha 0, outside
-    // alpha 255 in the face colour.
-    const plan = planFace(IDPA_HOSTAGE_SILHOUETTE);
-    const rgba = await rasterizeFace(plan, byteDeps());
-    const cut = plan.ops.find((o) => o.kind === 'ellipse' && o.cut) as {
+  it('derives ONE clockwise hole ring, matching the window zone', () => {
+    // Clockwise is not a detail: earcut needs holes wound opposite the contour, and
+    // the rim loop derives the wall's facing from the same winding.
+    const rings = holeRings(
+      IDPA_HOSTAGE_SILHOUETTE.zones,
+      IDPA_HOSTAGE_SILHOUETTE.holeZoneIds,
+    );
+    expect(rings).toHaveLength(1);
+    expect(ringSignedArea(rings[0])).toBeLessThan(0); // CW in this y-up frame
+    // And it is the window's own circle: every vertex one radius from its centre.
+    const w = IDPA_HOSTAGE_SILHOUETTE.zones.find((z) => z.id === 'window')!.shape as {
       cx: number;
       cy: number;
-      rx: number;
-      ry: number;
+      r: number;
     };
-    const alphaAt = (x: number, y: number) =>
-      rgba[(Math.round(y) * plan.widthPx + Math.round(x)) * 4 + 3];
-
-    expect(alphaAt(cut.cx, cut.cy)).toBe(0); // dead centre of the window
-    expect(alphaAt(cut.cx + cut.rx * 0.5, cut.cy)).toBe(0); // well inside it
-    expect(alphaAt(cut.cx + cut.rx * 1.5, cut.cy)).toBe(255); // clear of it: solid
-    expect(alphaAt(4, 4)).toBe(255); // a far corner of the tile
+    for (const p of rings[0]) {
+      expect(Math.hypot(p.x - w.cx, p.y - w.cy)).toBeCloseTo(w.r, 9);
+    }
   });
 
-  it('cuts BOTH faces of the plate, not just the shooter-facing half', () => {
-    // A plate is one tile holding both halves (`face-plan.ts`); a hole through
-    // steel is visible from either side.
-    const cuts = planFace(IDPA_HOSTAGE_SILHOUETTE).ops.filter(
-      (o): o is Extract<DrawOp, { kind: 'ellipse' }> => o.kind === 'ellipse' && o.cut === true,
+  it('punches the window clean out of the built mesh', () => {
+    // End to end, on the real silhouette: no cap triangle survives over the window
+    // centre, which is what makes the background visible through it.
+    const holes = holeRings(IDPA_HOSTAGE_SILHOUETTE.zones, IDPA_HOSTAGE_SILHOUETTE.holeZoneIds);
+    const geo = createPlateOutlineGeometry(
+      outlinePolygon(IDPA_HOSTAGE_SILHOUETTE.shape, IDPA_HOSTAGE_SILHOUETTE.aspect),
+      IDPA_HOSTAGE_SILHOUETTE.aspect,
+      holes,
     );
-    expect(cuts.map((o) => o.side).sort()).toEqual(['downrange', 'shooter']);
+    const pos = geo.getAttribute('position');
+    const w = IDPA_HOSTAGE_SILHOUETTE.zones.find((z) => z.id === 'window')!.shape as {
+      cx: number;
+      cy: number;
+    };
+    let covering = 0;
+    for (let t = 0; t + 2 < pos.count; t += 3) {
+      const flat =
+        Math.abs(pos.getZ(t) - pos.getZ(t + 1)) < 1e-9 &&
+        Math.abs(pos.getZ(t) - pos.getZ(t + 2)) < 1e-9;
+      if (!flat) continue; // rim/wall quads are vertical
+      const sign = (ax: number, ay: number, bx: number, by: number) =>
+        (w.cx - bx) * (ay - by) - (ax - bx) * (w.cy - by);
+      const d1 = sign(pos.getX(t), pos.getY(t), pos.getX(t + 1), pos.getY(t + 1));
+      const d2 = sign(pos.getX(t + 1), pos.getY(t + 1), pos.getX(t + 2), pos.getY(t + 2));
+      const d3 = sign(pos.getX(t + 2), pos.getY(t + 2), pos.getX(t), pos.getY(t));
+      if ((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0)) covering++;
+    }
+    expect(covering).toBe(0);
+    geo.dispose();
   });
 
   it('is registered, and defaults to a stake mount like the plain silhouette', () => {

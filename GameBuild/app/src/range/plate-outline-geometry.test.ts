@@ -195,3 +195,146 @@ describe('createPlateOutlineGeometry input guards', () => {
     );
   });
 });
+
+// --- holes (a hostage target's window) ---------------------------------------
+//
+// The point of this whole route: a hole that is real ABSENCE, not a transparent
+// texel. The alpha/`alphaTest` version worked and cost the game 60 FPS → ~10 on
+// device, because the `discard` it compiled in dropped every plate's early-Z. So
+// these tests care about geometry, and about the winding that makes it correct.
+describe('createPlateOutlineGeometry with holes', () => {
+  /** A CW ring (opposite the outline) — what `holeRings` guarantees. */
+  function cwCircle(cx: number, cy: number, r: number, segments = 32): Point[] {
+    const pts: Point[] = [];
+    for (let i = 0; i < segments; i++) {
+      const a = (-2 * Math.PI * i) / segments; // negative ⇒ clockwise in y-up
+      pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+    }
+    return pts;
+  }
+
+  const HOLE_R = 0.15;
+  const hole = cwCircle(0, 0, HOLE_R);
+
+  it('removes the hole from the triangulated area, rather than covering it', () => {
+    // The sum-of-areas check the solid outline gets, with the hole subtracted: a
+    // triangulation that quietly ignored the hole would come out at the full ring
+    // area, and a hole punched twice (once per cap list) would undershoot.
+    const faces = triangulateOutline(SQUARE, [hole]);
+    const holeArea = ringArea(hole);
+    const allPoints = [...SQUARE, ...hole];
+    expect(triangulatedArea(allPoints, faces)).toBeCloseTo(1 - holeArea, 6);
+    expect(holeArea).toBeGreaterThan(0); // the polygonised ring is not degenerate
+  });
+
+  it('leaves no cap triangle covering the hole centre', () => {
+    // The property a player actually sees. Sampling the centre is the sharpest
+    // version: if any triangle still spans it, the window renders solid.
+    const geo = createPlateOutlineGeometry(SQUARE, 1, [hole]);
+    const pos = geo.getAttribute('position');
+    const inside = (t: number, px: number, py: number) => {
+      // Same-side test: the point is inside iff it is on one consistent side of all
+      // three edges.
+      const sign = (ax: number, ay: number, bx: number, by: number) =>
+        (px - bx) * (ay - by) - (ax - bx) * (py - by);
+      const d1 = sign(pos.getX(t), pos.getY(t), pos.getX(t + 1), pos.getY(t + 1));
+      const d2 = sign(pos.getX(t + 1), pos.getY(t + 1), pos.getX(t + 2), pos.getY(t + 2));
+      const d3 = sign(pos.getX(t + 2), pos.getY(t + 2), pos.getX(t), pos.getY(t));
+      return (d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0);
+    };
+    // Cap triangles only — rim quads are vertical and legitimately cross x=y=0 in
+    // projection. Caps are the flat-z ones.
+    for (let t = 0; t + 2 < pos.count; t += 3) {
+      const flat =
+        Math.abs(pos.getZ(t) - pos.getZ(t + 1)) < 1e-9 &&
+        Math.abs(pos.getZ(t) - pos.getZ(t + 2)) < 1e-9;
+      if (!flat) continue;
+      expect(inside(t, 0, 0), `cap triangle at ${t} still covers the hole centre`).toBe(false);
+    }
+    geo.dispose();
+  });
+
+  it('gives the hole its own WALL, wound to face INTO the hole', () => {
+    // Without a wall you would see through the plate's own shell — the window would
+    // look like a bite out of a sheet rather than a bored hole. And the wall must
+    // face inward: reversed, the hole reads as solid from every angle that matters.
+    const solid = createPlateOutlineGeometry(SQUARE, 1);
+    const holed = createPlateOutlineGeometry(SQUARE, 1, [hole]);
+    // Two triangles (6 verts) per hole edge, added to the outline's own rim.
+    const wallVerts = 6 * hole.length;
+    const solidRimVerts = 6 * SQUARE.length;
+    expect(holed.getAttribute('position').count).toBeGreaterThan(
+      solid.getAttribute('position').count - solidRimVerts + wallVerts - 1,
+    );
+
+    // Facing: a wall quad's normal must point toward the hole's axis, i.e. its
+    // horizontal component must oppose the vertex's own outward direction.
+    const pos = holed.getAttribute('position');
+    let checked = 0;
+    for (let t = 0; t + 2 < pos.count; t += 3) {
+      const zs = [pos.getZ(t), pos.getZ(t + 1), pos.getZ(t + 2)];
+      if (Math.max(...zs) - Math.min(...zs) < 1e-9) continue; // a cap, not a wall
+      const cx = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
+      const cy = (pos.getY(t) + pos.getY(t + 1) + pos.getY(t + 2)) / 3;
+      const rFromAxis = Math.hypot(cx, cy);
+      if (rFromAxis > HOLE_R * 1.5) continue; // the OUTLINE's rim, not the hole's
+      const n = faceNormal(pos, t);
+      // Pointing inward ⇒ the normal's dot with the outward radial is negative.
+      expect(n.x * cx + n.y * cy, `hole wall at ${t} faces outward`).toBeLessThan(0);
+      checked++;
+    }
+    expect(checked, 'no hole-wall triangles were found at all').toBeGreaterThan(0);
+    solid.dispose();
+    holed.dispose();
+  });
+
+  it('marks hole-wall vertices as rim (UV −1,−1), so they render as bare steel', () => {
+    // A bored hole shows metal on its inside, not a slice of the painted face.
+    //
+    // Selected per TRIANGLE, not per vertex: the hole's boundary vertices appear in
+    // the caps too, at the same radius, carrying real face UVs. Only the vertical
+    // (z-spanning) triangles are wall.
+    const geo = createPlateOutlineGeometry(SQUARE, 1, [hole]);
+    const pos = geo.getAttribute('position');
+    const uv = geo.getAttribute('uv');
+    let walls = 0;
+    for (let t = 0; t + 2 < pos.count; t += 3) {
+      const zs = [pos.getZ(t), pos.getZ(t + 1), pos.getZ(t + 2)];
+      if (Math.max(...zs) - Math.min(...zs) < 1e-9) continue; // a cap
+      const cx = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
+      const cy = (pos.getY(t) + pos.getY(t + 1) + pos.getY(t + 2)) / 3;
+      if (Math.hypot(cx, cy) > HOLE_R * 1.5) continue; // the OUTLINE's rim
+      for (let k = 0; k < 3; k++) {
+        expect(uv.getX(t + k)).toBe(-1);
+        expect(uv.getY(t + k)).toBe(-1);
+      }
+      walls++;
+    }
+    expect(walls, 'no hole-wall triangles were found at all').toBeGreaterThan(0);
+    geo.dispose();
+  });
+
+  it('rejects a hole wound the SAME way as the outline', () => {
+    // Winding is what earcut and the rim loop both key off. A CCW hole would fill
+    // itself in AND turn its wall inside out — two silent failures, so it throws.
+    const ccw = [...hole].reverse();
+    expect(() => createPlateOutlineGeometry(SQUARE, 1, [ccw])).toThrow(/must be CLOCKWISE/);
+  });
+
+  it('rejects a degenerate hole rather than emitting a torn cap', () => {
+    expect(() => createPlateOutlineGeometry(SQUARE, 1, [[{ x: 0, y: 0 }, { x: 0.1, y: 0 }]])).toThrow(
+      /hole 0 needs ≥3 points/,
+    );
+  });
+
+  it('is byte-identical to the solid geometry when no holes are passed', () => {
+    // The guarantee that makes this change safe for the IDPA silhouette and the
+    // popper, which have no holes and must not move.
+    const before = createPlateOutlineGeometry(IDPA.points, IDPA.aspect);
+    const after = createPlateOutlineGeometry(IDPA.points, IDPA.aspect, []);
+    expect(after.getAttribute('position').array).toEqual(before.getAttribute('position').array);
+    expect(after.getAttribute('uv').array).toEqual(before.getAttribute('uv').array);
+    before.dispose();
+    after.dispose();
+  });
+});

@@ -408,8 +408,11 @@ describe('T9b: multi-shape invariants', () => {
     const needsArt = getTargetPlacements('test-range').filter(
       (pl) => planFace(pl.type, { palette: pl.palette }).ops.some((op) => op.kind !== 'fill'),
     );
+    // The hostage silhouette is deliberately ABSENT: its face is a single flat
+    // `fill` (plain white, owner 2026-08-06) and its window is mesh geometry, so
+    // the atlas layer created with the plate's paint colour is already correct and
+    // there is nothing to rasterise.
     expect(needsArt.map((pl) => pl.type.id).sort()).toEqual([
-      'idpa-hostage-silhouette',
       'idpa-silhouette',
       'popper',
       'popper',

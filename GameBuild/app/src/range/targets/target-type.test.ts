@@ -270,7 +270,7 @@ describe('validateTargetType rejects authoring mistakes', () => {
     ).toThrow(/styles unknown zone 'no-such-zone'/);
   });
 
-  it('accepts a cut face layer naming an isHole zone', () => {
+  it('accepts holeZoneIds naming an isHole zone', () => {
     expect(() =>
       validateTargetType(
         discType({
@@ -278,34 +278,30 @@ describe('validateTargetType rejects authoring mistakes', () => {
             { id: 'window', label: 'Window', isHole: true, shape: { kind: 'circle', cx: 0, cy: 0, r: 0.1 } },
             { id: 'plate', label: 'Plate', shape: { kind: 'circle', cx: 0, cy: 0, r: 0.5 } },
           ],
-          paint: { palette: { face: 1 }, layers: [{ kind: 'fill', color: '$face' }, { kind: 'cut', zoneIds: ['window'] }] },
+          holeZoneIds: ['window'],
         }),
       ),
     ).not.toThrow();
   });
 
-  it('rejects a cut face layer naming a zone that is not a hole', () => {
-    // The face and the hit test must agree about what is open. A visibly cut
-    // window that still SCORES would let a shot straight through it register as
-    // a body hit — worse than either behaviour on its own.
-    expect(() =>
-      validateTargetType(
-        discType({ paint: { palette: { face: 1 }, layers: [{ kind: 'cut', zoneIds: ['plate'] }] } }),
-      ),
-    ).toThrow(/names zone 'plate', which is not marked isHole/);
+  it('rejects holeZoneIds naming a zone that is not a hole', () => {
+    // The geometry and the hit test must agree about what is absent. A punched
+    // window that still SCORES would let a shot straight through it register as a
+    // body hit — worse than either behaviour on its own.
+    expect(() => validateTargetType(discType({ holeZoneIds: ['plate'] }))).toThrow(
+      /holeZoneIds names zone 'plate', which is not marked isHole/,
+    );
   });
 
-  it('rejects a cut face layer naming an unknown zone, or naming none', () => {
-    expect(() =>
-      validateTargetType(
-        discType({ paint: { palette: { face: 1 }, layers: [{ kind: 'cut', zoneIds: ['nope'] }] } }),
-      ),
-    ).toThrow(/names unknown zone 'nope'/);
-    expect(() =>
-      validateTargetType(
-        discType({ paint: { palette: { face: 1 }, layers: [{ kind: 'cut', zoneIds: [] }] } }),
-      ),
-    ).toThrow(/'cut' layer names no zones/);
+  it('rejects holeZoneIds naming an unknown zone, or present-but-empty', () => {
+    expect(() => validateTargetType(discType({ holeZoneIds: ['nope'] }))).toThrow(
+      /holeZoneIds names unknown zone 'nope'/,
+    );
+    // Present-but-empty is an authoring slip that reads as "has holes" everywhere
+    // downstream while producing none. Omitting it is the way to say "no holes".
+    expect(() => validateTargetType(discType({ holeZoneIds: [] }))).toThrow(
+      /holeZoneIds is present but empty/,
+    );
   });
 
   it('rejects an empty face', () => {

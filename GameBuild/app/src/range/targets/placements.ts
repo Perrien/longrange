@@ -54,13 +54,22 @@ export interface RawPlacement {
   /** Plate-centre height above ground (m). Omitted ⇒ derived from the mount's
    *  furniture (a beam rack hangs its plate at `PLATE_CENTER_FRACTION` of the beam). */
   centreYM?: number;
-  /** Forward nudge (m, toward the shooter) applied to the RENDERED mesh position
-   *  only — never to `distanceM`/the hit-test plane. Omitted ⇒ 0. Exists for a
-   *  target authored to sit visually in front of another at the exact same
-   *  distance (a hostage paddle behind a silhouette's window) — two plates at
-   *  identical world-Z z-fight, since the renderer has no other depth cue to
-   *  separate two coplanar surfaces. A few centimetres is enough to resolve
-   *  the z-fight without reading as "floating." */
+  /**
+   * Depth nudge (m) applied to the RENDERED mesh position only — never to
+   * `distanceM`/the hit-test plane. **SIGNED: positive is toward the shooter,
+   * negative is downrange.** Omitted ⇒ 0.
+   *
+   * Exists for a target authored to sit visually in front of or behind another at
+   * the exact same distance (a hostage paddle and its backing silhouette) — two
+   * plates at identical world-Z z-fight, since the renderer has no other depth cue
+   * to separate two coplanar surfaces. A few centimetres resolves it without
+   * reading as "floating."
+   *
+   * It is also load-bearing for a `flip` mount, not merely cosmetic: a hostage
+   * paddle swings DOWNRANGE when struck (`scope/steel-reactions.ts`'s `poseFlip`),
+   * so it must be nudged NEGATIVE — behind its backing plate. A positive nudge
+   * would put the paddle in front and its swing would sweep through the plate.
+   */
   zNudgeM?: number;
   palette?: Record<string, number>;
 }

@@ -16,8 +16,6 @@ import {
   fillLayerRgb,
   createPlateSurface,
   createPlateMaterial,
-  PLATE_ALPHA_TEST,
-  PLATE_FACE_CUTS_ENABLED,
 } from './plate-surface';
 import { RANGE_A_RACKS } from './range-a-config';
 
@@ -231,22 +229,6 @@ describe('base-layer compositing (task T4)', () => {
     s.dispose();
   });
 
-  it('keeps a CUT texel cut, even where the engine painted a chip over it', () => {
-    // A hostage window is alpha 0 in the base. The engine paints splats with a
-    // radius, so a hit just outside the rim spills opaque texels into the hole —
-    // a hole that scabs shut when shot near is worse than no hole at all. The
-    // engine buffer is always alpha 255 (`steel_target.cpp`), so a 0 can only
-    // come from the authored cut, which makes "base alpha 0 wins" unambiguous.
-    const s = createPlateSurface([PAINT]);
-    const base = artBuffer(0x2f6fd0);
-    base[7 * 4 + 3] = 0; // texel 7 is inside the window
-    s.setBaseLayer(0, base);
-    s.writeEngineLayer(0, engineBuffer(7), PAINT); // …and the engine chips exactly there
-    const data = s.texture.image.data as Uint8Array;
-    expect(data[7 * 4 + 3]).toBe(0); // still a hole
-    expect(data[8 * 4 + 3]).toBe(255); // its neighbour is untouched steel
-    s.dispose();
-  });
 });
 
 describe('plate material patch', () => {
@@ -274,67 +256,32 @@ describe('plate material patch', () => {
     expect(shader.fragmentShader).not.toContain('vec4 diffuseColor = vec4( diffuse, opacity );');
     expect(shader.fragmentShader).not.toContain('#include <map_fragment>');
     // Cache key is stable so every plate mesh shares one program.
-    expect(material.customProgramCacheKey()).toContain('plate-surface-v2');
+    expect(material.customProgramCacheKey()).toBe('plate-surface-v1');
     surface.dispose();
   });
 
-  it('with face cuts ON, carries the atlas ALPHA into diffuseColor and arms alphaTest', () => {
-    // How a face gets a real see-through hole (a hostage target's window): the
-    // cut pass in `face-raster.ts` writes alpha 0, three's `alphatest_fragment`
-    // — which sits just below the line patched here — discards it. Without the
-    // `* plateTexel.a` term the hole renders as an opaque texel of whatever
-    // colour happened to be underneath, which is the "just a black spot" bug.
+  it('emits NO alphaTest and never inspects the texel alpha', () => {
+    // THE 10-FPS LESSON (owner, on device 2026-08-06). For one round this material
+    // carried the atlas alpha into `diffuseColor` and set `alphaTest`, to punch a
+    // hostage window through the FACE. `alphaTest` compiles a `discard`, a shader
+    // that can discard cannot promise its depth ahead of shading, and the GPU drops
+    // early-Z for the whole draw — 60 FPS to ~10, on every range including Range A,
+    // which has no hostage target. Holes are mesh geometry now
+    // (`TargetType.holeZoneIds`), and this test is what stops the shader route
+    // coming back by accident.
     const surface = createPlateSurface([0xf0f0ea]);
-    const material = createPlateMaterial(surface.texture, { faceCuts: true });
-    expect(material.alphaTest).toBe(PLATE_ALPHA_TEST);
-    // Discard, NOT blend: a sorted transparent pass for every plate on every
-    // range would be the cost of serving one window.
+    const material = createPlateMaterial(surface.texture);
+    expect(material.alphaTest).toBe(0);
     expect(material.transparent).toBe(false);
 
     const shader = mockShader();
     (material.onBeforeCompile as unknown as (s: unknown) => void)(shader);
-    expect(shader.fragmentShader).toContain('opacity * plateTexel.a');
-    // The rim branch keeps plain opacity — a hole is authored on the FACE, and a
-    // rim that vanished with it would show the plate's own back through the gap.
-    expect(shader.fragmentShader).toContain(`vec4( ${0.55}, ${0.55}, ${0.55}, opacity )`);
-    surface.dispose();
-  });
-
-  it('with face cuts OFF, emits NO alphaTest and never inspects the texel alpha', () => {
-    // THE PERFORMANCE KILL SWITCH (owner, on device 2026-08-06: ~10 FPS, on Range A
-    // too, which loads no hostage target). `alphaTest > 0` makes three emit a
-    // `discard`, which costs a GPU its early-Z fast path for the whole draw. Off
-    // must therefore mean no alphaTest AT ALL, not a threshold nothing trips —
-    // three keys the shader define off `alphaTest > 0`, so 0 is what removes the
-    // discard from the compiled program.
-    const surface = createPlateSurface([0xf0f0ea]);
-    const material = createPlateMaterial(surface.texture, { faceCuts: false });
-    expect(material.alphaTest).toBe(0);
-
-    const shader = mockShader();
-    (material.onBeforeCompile as unknown as (s: unknown) => void)(shader);
+    // Alpha comes from `opacity` alone — the texel's own alpha is never read.
     expect(shader.fragmentShader).not.toContain('plateTexel');
     expect(shader.fragmentShader).not.toContain('opacity * ');
-    // Still samples the atlas for COLOUR — only the alpha handling changes.
+    expect(shader.fragmentShader).not.toContain('discard');
+    // …but the atlas is still sampled for COLOUR.
     expect(shader.fragmentShader).toContain('texture( plateMapArray, vec3( vPlateUv, vPlateLayer ) )');
-    surface.dispose();
-  });
-
-  it('gives the two branches DIFFERENT program cache keys', () => {
-    // They are different programs. Sharing a cache entry would hand one branch the
-    // other's compiled shader — a hole that renders solid, or a discard that was
-    // supposed to be gone.
-    const surface = createPlateSurface([0xf0f0ea]);
-    const cut = createPlateMaterial(surface.texture, { faceCuts: true });
-    const solid = createPlateMaterial(surface.texture, { faceCuts: false });
-    expect(cut.customProgramCacheKey()).not.toBe(solid.customProgramCacheKey());
-    surface.dispose();
-  });
-
-  it('defaults to the kill switch, so the scenes get whichever way it is thrown', () => {
-    const surface = createPlateSurface([0xf0f0ea]);
-    const material = createPlateMaterial(surface.texture);
-    expect(material.alphaTest).toBe(PLATE_FACE_CUTS_ENABLED ? PLATE_ALPHA_TEST : 0);
     surface.dispose();
   });
 

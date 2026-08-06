@@ -9,7 +9,7 @@ import { HOSTAGE_PADDLE, HOSTAGE_PADDLE_FACE_HEX } from './hostage-paddle';
 import { getTargetType, listTargetTypes } from './registry';
 import { validateTargetType } from './target-type';
 import { hitTargetZone, zoneAt } from '../../game/target-hit';
-import { IDPA_HOSTAGE_SILHOUETTE } from './idpa-hostage';
+import { IDPA_HOSTAGE_SILHOUETTE, IDPA_HOSTAGE_WINDOW_CIRCLE } from './idpa-hostage';
 import {
   IDPA_BODY_CIRCLE,
   IDPA_FRAME,
@@ -150,6 +150,23 @@ describe('a paddle is reachable at EVERY stop of its mount', () => {
     const hit = firstHit(plates, { x: SILHOUETTE_X + 0.15, y: bodyY });
     expect(hit!.instanceId).toBe(0);
     expect(['body-0', 'minus-1']).toContain(hit!.zoneId);
+  });
+
+  it('COVERS the backing plate window, leaving no ring of background around it', () => {
+    // Owner, on device 2026-08-06: "The hole should actually be a bit smaller than
+    // the paddle so no ring exists." The window was 70 spec-px (0.0814 m) against a
+    // 0.0762 m paddle radius, so ~5 mm of background showed all the way round at the
+    // rest stop.
+    //
+    // Neither file can see this on its own — the window is authored in spec pixels in
+    // `idpa-hostage.ts`, the paddle in metres here — so the relationship is asserted
+    // rather than commented, in the one place that knows both.
+    const windowRadiusM =
+      (IDPA_HOSTAGE_WINDOW_CIRCLE.r / IDPA_FRAME.widthPx) * IDPA_HOSTAGE_SILHOUETTE.defaultWidthM;
+    const paddleRadiusM = HOSTAGE_PADDLE.defaultWidthM / 2;
+    expect(paddleRadiusM).toBeGreaterThan(windowRadiusM);
+    // …and by a visible margin, not by a rounding error.
+    expect(paddleRadiusM - windowRadiusM).toBeGreaterThan(0.002);
   });
 
   it('hangs the head paddle clear of the SHOULDER, not just clear of the head', () => {
