@@ -164,3 +164,37 @@ Same link-safe-move note as `target-system-plan.md` above: `Design/Plans/` and
 `Design/archive/` sit at the same depth under `Design/`, so this file's own relative
 links (`../feature-catalog.md`, `../bullet-catalog/...`, `../execution/...`) resolve
 unchanged from its new location — nothing inside it needed rewriting.
+
+## Completed plan doc (archived 2026-08-06)
+
+`dueling-tree-plan.md` — moved from `Design/Plans/` on completion. **Executed, not
+superseded:** all three tasks (DT1 geometry/mounts/type, DT2 placement + post
+rendering, DT3 the 8″ option) built and owner-confirmed on device at both
+verification stops ("Looks great" on the swing/reset check, "Looks fantastic" on
+the 8″ check), gates green throughout. A dueling tree — one 5-ft centre post
+carrying 5 round paddles all resting on one side — built almost entirely as new
+GEOMETRY over the shipped hostage-paddle flip mechanism (`targets/flip.ts`,
+`scope/steel-reactions.ts`'s `poseFlip`): the 180° swing-away-from-shooter, the
+COMMIT reset and the two-sided splat correctness needed zero new reaction code,
+only a different arrangement of stops (two size-specific arm mounts) and a post
+to draw. Live record: `../feature-catalog.md` §F "Steel target menagerie"
+(dueling tree entry) and the "Dueling Tree" section in `../execution/PROGRESS.md`
+(full per-task trail, gate numbers, and the synthetic-8″ test coverage that keeps
+the documented swap recipe honest without shipping a second tree).
+
+Worth re-reading it for the pattern it establishes, reusable for the next
+flip-mount target: keep the reaction on the MOUNT and the size/shape on the
+TARGET TYPE, derive geometry (arm length, swing distance, stack pitch) as
+exported functions the tests recompute rather than pasted literals, and when a
+new enum member is added (`MountFurniture` gained `'tree-post'` here), check
+which of the switches over it are actually `tsc`-enforced — `plateCentreYM`'s
+explicit `: number` return type catches a missing case at compile time,
+`TestRangeScene.addFurniture`'s `void` return did not until this plan added the
+`default: { const unhandled: never = ...; throw }` exhaustiveness guard, closing
+a pre-existing gap (the shipped hostage-clamp `'pivot-post'` furniture case had
+been an undocumented no-op) as a side effect.
+
+Same link-safe-move note as `target-system-plan.md`/`rifle-ammo-store-plan.md`
+above: `Design/Plans/` and `Design/archive/` sit at the same depth under
+`Design/`, and this plan used repo-root-relative backtick paths throughout
+rather than markdown relative links, so nothing needed rewriting on the move.

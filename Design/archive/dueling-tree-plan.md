@@ -1,7 +1,18 @@
 # Dueling Tree — build plan
 
-`Status: ready to execute` · `Date: 2026-08-06` · `Plan slug: dueling-tree`
+`Status: DONE — all three tasks built, owner-confirmed on device, archived 2026-08-06` · `Date: 2026-08-06` · `Plan slug: dueling-tree`
 `Audience: the executing coding agent (junior)` · `Owner decisions: locked below`
+
+> **CLOSED 2026-08-06.** Executed, not superseded — DT1/DT2/DT3 all built and
+> owner-confirmed on device ("Looks great" on DT2's swing/reset check, "Looks
+> fantastic" on DT3's 8″ check), gates green throughout, committed and pushed.
+> Moved here from `Design/Plans/` on completion. Live record:
+> `Design/feature-catalog.md` §F "Steel target menagerie" and the "Dueling Tree"
+> section in `Design/execution/PROGRESS.md` (full per-task trail, including the
+> synthetic-8″ test coverage and the documented but not-shipped 8″ swap recipe).
+> This file is kept for provenance — the geometry derivations, the reuse
+> rationale for the shipped hostage-paddle flip mechanism, and the `addFurniture`
+> exhaustiveness fix that came out of plan review.
 
 > Read `Design/execution/execution-protocol.md` first. This plan declares its own
 > pause points (§2b) and commit points (§2c). Three tasks, two owner-verification

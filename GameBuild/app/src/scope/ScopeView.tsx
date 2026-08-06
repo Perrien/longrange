@@ -35,6 +35,7 @@ import {
   type SceneCost,
 } from './perf-hud';
 import { pickAimedPlate, resolveTargetPlate } from './aim-pick';
+import { easeSightOffset, sightOffset, type SightOffset } from './turret-view';
 
 import type { SteelSceneApi } from '../range/steel-scene-api';
 import { WoodedZeroScene } from '../range/WoodedZeroScene';
@@ -565,6 +566,20 @@ export function ScopeView({
         return null;
       }
     }
+    // Where the erector currently WANTS to be (dial-moves-view DV2): the live
+    // turret plus whatever a Confirm Zero folded into the rifle's stored zero.
+    // See scope/turret-view.ts for why `playerZero` belongs here and why the
+    // rifle's hidden `zeroOffsetRad` must never be (§3.1/§3.3 of the plan).
+    // Deliberately NOT `steelGearCtx()` — that resolves specs and builds a whole
+    // solve context, and has no business running every frame; this reads two
+    // numbers off the store. The frame loop eases `st.sight` toward this, and the
+    // EASED value is what the camera renders and what every shot resolves against.
+    function sightOffsetTarget(): SightOffset {
+      const s = store();
+      const inv = s.inventory;
+      const rifle = inv.rifles.find((r) => r.id === inv.activeRifleId);
+      return sightOffset(s.session.scope, rifle?.playerZero ?? null);
+    }
     // Cartridge-scaled recoil (rifle-ammo-store S10, D13): the active rifle+lot's
     // pitch impulse (game/recoil.ts, calibrated so 6.5 CM/140 gr match reproduces
     // today's flat feel exactly), plus the lateral kick scaled by the SAME factor
@@ -828,6 +843,11 @@ export function ScopeView({
       dist: { y: 0, p: 0, vy: 0, vp: 0 }, // spring-damper disturbance (recoil + jerks)
       nextJerkAt: 2,
       breath: 1,
+      // Eased erector offset (dial-moves-view DV2). SEEDED, not glided, from the
+      // live turret + stored zero: walking onto a range with a zeroed rifle (or
+      // with dope still on the turret) must be settled on the first frame, not
+      // swing into place — that reads as a bug, and would be one.
+      sight: sightOffsetTarget(),
     };
 
     // Reticle redraw cache key (zoom | size | unit). Declared here — above
@@ -926,12 +946,37 @@ export function ScopeView({
       const tremP = TREMOR_RAD * (Math.sin(2 * Math.PI * 5.3 * t + 1.1) + 0.6 * Math.sin(2 * Math.PI * 8.9 * t));
       return { yaw: a * (swayY + tremY), pitch: a * (swayP + tremP) };
     }
+    // The sight line = hold − erector offset (dial-moves-view DV2). Rifle held
+    // still, player watching through the scope:
+    //
+    //   | You dial            | The sight line | On screen              | Impact would move |
+    //   |---------------------|----------------|------------------------|-------------------|
+    //   | Elevation UP    (+) | pitches DOWN   | crosshair walks DOWN   | UP                |
+    //   | Elevation DOWN  (−) | pitches up     | crosshair walks UP     | DOWN              |
+    //   | Windage RIGHT   (+) | yaws LEFT      | crosshair walks LEFT   | RIGHT             |
+    //   | Windage LEFT    (−) | yaws right     | crosshair walks RIGHT  | LEFT              |
+    //
+    // The two axes take OPPOSITE signs below — `+` elevation, `−` windage —
+    // because this Euler convention is asymmetric: +pitch looks DOWN while +yaw
+    // looks RIGHT. `scope/turret-view.ts` owns that rule and its tests pin it
+    // (incl. parity with THREE), so change it there, not here.
+    //
+    // Reads the EASED `st.sight`, never a freshly-computed target: every caller
+    // (`findAimed`, `findAimedTarget`, `commitRef`, both FIRE paths, the mirage
+    // aim-distance dispatch) then resolves against the exact sight line drawn on
+    // screen, so a shot fired mid-glide cannot resolve against a crosshair the
+    // player never saw.
     function aimQuaternion(t: number): THREE.Quaternion {
       const w = wobble(t);
       // Negated Euler + `+=` drag (0.9 convention): drag right → aim right,
       // drag down → aim down (FPS-style, owner-approved).
       return new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(-(st.pitch + w.pitch + st.dist.p), -(st.yaw + w.yaw + st.dist.y), 0, 'YXZ'),
+        new THREE.Euler(
+          -(st.pitch + w.pitch + st.dist.p + st.sight.elevRad),
+          -(st.yaw + w.yaw + st.dist.y - st.sight.windRad),
+          0,
+          'YXZ',
+        ),
       );
     }
 
@@ -1704,6 +1749,12 @@ export function ScopeView({
       else hideBulletTrace();
       camera.fov = SCOPE_BASE_FOV_DEG / store().session.scope.magnification;
       camera.updateProjectionMatrix();
+      // Glide the erector toward the dialed position (~80 ms, owner decision 1)
+      // on the loop's already-clamped `dt`, so a stalled frame cannot overshoot.
+      // Must run BEFORE the camera reads it: the eased value is the sight line
+      // this frame draws, and therefore the one any shot this frame resolves
+      // against (see `aimQuaternion`).
+      st.sight = easeSightOffset(st.sight, sightOffsetTarget(), dt);
       camera.quaternion.copy(aimQuaternion(st.t));
       // Mirage (task 1.7c, D1; toggle added 1.7d; layered port W5; strength
       // preset W6): renders in BOTH modes when on, like the flags — Steady

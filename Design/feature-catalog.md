@@ -373,8 +373,13 @@ windowed IDPA backing plate plus two independently-shootable paddles — top on 
 2-way clamp, centre on an alternating 4-stop cycle (`targets/flip.ts`,
 `mount-registry.ts`'s `hostage-clamp-2way`/`-3way`). Owner defect round closed 2026-08-06
 (swing clearance, plain-white face, and a real see-through window via the new `cut` face
-layer + `alphaTest` — see `Design/execution/PROGRESS.md`). **Not built:** dueling trees,
-plate racks, swingers/spinners, dropping plates, Texas star.
+layer + `alphaTest` — see `Design/execution/PROGRESS.md`). **Dueling tree** built and
+owner-confirmed 2026-08-06 (`Design/archive/dueling-tree-plan.md`): a 5-ft centre post
+carrying 5 round paddles all resting on one side, reusing the hostage-paddle flip
+mechanism unchanged (same 180° swing-away-from-shooter) — the new part was the
+arrangement, not the reaction. Two size-specific arm mounts (6″ shipped default, 8″
+built/tested but not shipped — a documented three-field data swap, not a runtime
+toggle). **Not built:** plate racks, swingers/spinners, dropping plates, Texas star.
 
 #### Human silhouettes + IDPA zone scoring
 Head/torso zones; realistic or IDPA-style scoring; no-shoot plates share this scoring path.
