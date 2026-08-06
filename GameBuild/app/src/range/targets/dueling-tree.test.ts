@@ -23,7 +23,7 @@ import {
 import { getMountType, listMountTypes } from './mount-registry';
 import { getTargetType, listTargetTypes } from './registry';
 import { validateTargetType } from './target-type';
-import { getTargetPlacements } from './placements';
+import { getTargetPlacements, resolvePlacementList, type RawPlacement } from './placements';
 import { hitTargetZone } from '../../game/target-hit';
 import type { ShotPlate } from '../../game/shot';
 
@@ -207,6 +207,86 @@ describe('the shipped dueling-tree placements', () => {
         plates[i] = { ...plates[i], position: { x: stopX, y: tree[i].centreYM! } };
         const hit = firstHit(plates, { x: stopX, y: tree[i].centreYM! });
         expect(hit, `paddle ${tree[i].id} is unreachable at x=${stopX}`).not.toBeNull();
+        expect(hit!.instanceId, `stop at x=${stopX} resolved to a different paddle`).toBe(i);
+        expect(hit!.zoneId).toBe('paddle');
+      }
+    }
+  });
+});
+
+// --- DT3: the 8″ option, covered WITHOUT shipping it --------------------------
+//
+// The shipped placements stay 6″ (owner default). This resolves a SYNTHETIC 8″
+// placement set through the real `resolvePlacementList`/registries and runs the
+// same class of invariants as the DT2 block above, so the 8″ path — and the
+// three-field swap recipe documented in `placements.data.json`'s `_note` — is
+// exercised by the suite even though no 8″ row ships.
+describe('a synthetic 8″ dueling-tree placement set (DT3, not shipped)', () => {
+  const WIDTH_IN = 8;
+  const SWING_8 = duelingTreeSwingM(inchesToMeters(WIDTH_IN));
+  const REST_X_8 = TREE_POST_X_M - SWING_8 / 2; // matches the DT3 swap recipe: -3.1597
+
+  function synthetic8InRaws(): RawPlacement[] {
+    return Array.from({ length: DUELING_TREE_PADDLE_COUNT }, (_, i) => ({
+      id: `synthetic-tree-8-${i + 1}`,
+      typeId: 'dueling-tree-paddle',
+      mountId: 'dueling-tree-arm-8',
+      groupId: 'synthetic-dueling-tree-8',
+      distanceYards: 80,
+      xOffsetM: REST_X_8,
+      widthInches: WIDTH_IN,
+      centreYM: duelingTreePaddleYM(i),
+    }));
+  }
+
+  it("matches the plan's documented swap recipe (widthInches, mountId, xOffsetM)", () => {
+    // The literal the plan's DT3 table and placements.data.json's `_note` both
+    // promise: swapping all three fields on the shipped 6″ rows reproduces
+    // exactly this xOffsetM.
+    expect(REST_X_8).toBeCloseTo(-3.1597, 4);
+  });
+
+  it('resolves, sharing one groupId, one distance and one mount, at duelingTreePaddleYM centres', () => {
+    const tree8 = resolvePlacementList('dueling-tree-dt3-synthetic', synthetic8InRaws());
+    expect(tree8).toHaveLength(DUELING_TREE_PADDLE_COUNT);
+    for (const p of tree8) {
+      expect(p.groupId).toBe('synthetic-dueling-tree-8');
+      expect(p.mount.id).toBe('dueling-tree-arm-8');
+      expect(p.widthM).toBeCloseTo(inchesToMeters(WIDTH_IN), 12);
+      expect(p.zNudgeM).toBe(0);
+    }
+    tree8.forEach((p, i) => expect(p.centreYM).toBeCloseTo(duelingTreePaddleYM(i), 12));
+  });
+
+  it('clears the post at both stops', () => {
+    const arm = SWING_8 / 2;
+    const paddleRadiusM = inchesToMeters(WIDTH_IN) / 2;
+    expect(arm - paddleRadiusM).toBeGreaterThanOrEqual(DUELING_TREE_POST_RADIUS_M);
+  });
+
+  it('resolves a shot at each paddle to that paddle — not a neighbour — at BOTH of its stops', () => {
+    const tree8 = resolvePlacementList('dueling-tree-dt3-synthetic', synthetic8InRaws());
+    const BULLET_D_M = 0.0067056; // .264
+    const basePlates: ShotPlate[] = tree8.map((p, instanceId) => ({
+      instanceId,
+      position: { x: p.xOffsetM, y: p.centreYM! },
+      diameterM: p.widthM,
+      typeId: p.type.id,
+    }));
+    function firstHit(plates: ShotPlate[], impact: { x: number; y: number }) {
+      for (const plate of plates) {
+        const zone = hitTargetZone(impact, plate, BULLET_D_M);
+        if (zone) return zone;
+      }
+      return null;
+    }
+    for (let i = 0; i < tree8.length; i++) {
+      const stops = [tree8[i].xOffsetM, tree8[i].xOffsetM + SWING_8];
+      for (const stopX of stops) {
+        const plates = basePlates.map((p) => ({ ...p }));
+        plates[i] = { ...plates[i], position: { x: stopX, y: tree8[i].centreYM! } };
+        const hit = firstHit(plates, { x: stopX, y: tree8[i].centreYM! });
+        expect(hit, `8″ paddle ${tree8[i].id} is unreachable at x=${stopX}`).not.toBeNull();
         expect(hit!.instanceId, `stop at x=${stopX} resolved to a different paddle`).toBe(i);
         expect(hit!.zoneId).toBe('paddle');
       }
