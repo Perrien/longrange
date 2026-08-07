@@ -9,9 +9,13 @@
 // the WASM module; what matters here is the orchestration, and a fake is what lets
 // "settles after N steps" and "delete() called exactly once" be asserted at all.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
-import { createSteelReactions, type SteelReactionFactory } from './steel-reactions';
+import {
+  createSteelReactions,
+  type SteelReactionController,
+  type SteelReactionFactory,
+} from './steel-reactions';
 import { PLATE_THICKNESS_M, type PlateInstance } from '../range/RangeScene';
 import { PLATE_LAYER_BYTES } from '../range/plate-surface';
 import type { SteelSceneApi } from '../range/steel-scene-api';
@@ -24,6 +28,7 @@ import {
   STAR_PLATE_WIDTH_M,
   starArmOffsetM,
   starCarrierRotationZ,
+  starHingeRadiusM,
 } from '../range/targets/popper-star';
 
 /** A stand-in for one C++ SteelTarget. Records what the controller did to it. */
@@ -1118,5 +1123,288 @@ describe('popper star rotor', () => {
     controller.update(1 / 60, 5);
     expect(before).toBe(0);
     expect(controller.rotorPositionAt(0, 5, 0.1)).toBeNull();
+  });
+});
+
+describe('popper star — fold, latch and reset switch', () => {
+  const HUB = { x: 1.19, y: 1.2 };
+  const STAR_Z = -82.296;
+  /** A frame at 60 fps. */
+  const DT = 1 / 60;
+
+  function starScene() {
+    built.length = 0;
+    const scene = fakeScene(6);
+    const arms = Array.from({ length: STAR_ARM_COUNT }, (_, i) => {
+      const { dx, dy } = starArmOffsetM(i, 0);
+      return plate({
+        rackId: `arm-${i + 1}`,
+        instanceId: i,
+        distanceM: 82.296,
+        diameterM: STAR_PLATE_WIDTH_M,
+        position: new THREE.Vector3(HUB.x + dx, HUB.y + dy, STAR_Z),
+        targetTypeId: 'star-popper',
+        mountId: 'star-arm',
+        groupId: 'test-star-arms',
+        swings: false,
+      });
+    });
+    const hub = plate({
+      rackId: 'hub',
+      instanceId: 5,
+      distanceM: 82.296,
+      diameterM: STAR_HUB_PLATE_WIDTH_M,
+      position: new THREE.Vector3(HUB.x, HUB.y, STAR_Z),
+      targetTypeId: 'star-hub-plate',
+      mountId: 'star-hub-reset',
+      resetsGroupId: 'test-star-arms',
+      swings: false,
+    });
+    scene.plates.push(...arms, hub);
+    const controller = createSteelReactions(scene, fakeFactory);
+    return { scene, controller, arms, hub };
+  }
+
+  /** Strike a plate dead centre at the pose it currently holds. */
+  function hit(controller: SteelReactionController, p: PlateInstance) {
+    controller.onImpact({
+      plate: p,
+      impactWorld: { x: p.position.x, y: p.position.y, z: STAR_Z },
+      impactVel: IMPACT.impactVel,
+      bulletMassKg: IMPACT.bulletMassKg,
+      bulletDiameterM: IMPACT.bulletDiameterM,
+    });
+  }
+
+  /** Run `seconds` of frames at a fixed rate, advancing the carrier too. */
+  function run(controller: SteelReactionController, seconds: number, fromT = 0) {
+    const frames = Math.round(seconds / DT);
+    for (let f = 1; f <= frames; f++) controller.update(DT, fromT + f * DT);
+    return fromT + frames * DT;
+  }
+
+  it('folds a struck plate and latches it DOWN, then leaves it there', () => {
+    const { controller, arms } = starScene();
+    controller.update(DT, 0);
+    expect(controller.isStanding(arms[0].instanceId)).toBe(true);
+
+    hit(controller, arms[0]);
+    // Falls quickly — a 10" plate hinged at its rim is a short rod.
+    const t = run(controller, 1, 0);
+    expect(controller.isStanding(arms[0].instanceId)).toBe(false);
+
+    // …and STAYS down: six more revolutions of the carrier, still out of play. This is
+    // the owner's "plates stay down when shot", asserted over a real span rather than
+    // trusted to the Infinity constant.
+    run(controller, 60, t);
+    expect(controller.isStanding(arms[0].instanceId)).toBe(false);
+  });
+
+  it('keeps a folded plate riding round on its arm', () => {
+    // A latched plate is out of play, but the carrier under it does not stop — so it
+    // must keep travelling. Freezing it in place would read as the arm passing through
+    // a plate stuck in mid-air.
+    const { controller, arms } = starScene();
+    hit(controller, arms[0]);
+    const t = run(controller, 1, 0);
+    const downAt = arms[0].position.clone();
+    const later = run(controller, STAR_PERIOD_S / 4, t);
+    expect(arms[0].position.distanceTo(downAt)).toBeGreaterThan(0.5);
+    // Still exactly on its arm — the fold changes the plate's ANGLE, not its radius.
+    expect(Math.hypot(arms[0].position.x - HUB.x, arms[0].position.y - HUB.y)).toBeCloseTo(
+      STAR_ARM_LENGTH_M,
+      6,
+    );
+    expect(later).toBeGreaterThan(t);
+  });
+
+  it('leaves the other four arms standing when one is shot', () => {
+    const { controller, arms } = starScene();
+    hit(controller, arms[2]);
+    run(controller, 1, 0);
+    expect(controller.isStanding(arms[2].instanceId)).toBe(false);
+    for (const i of [0, 1, 3, 4]) expect(controller.isStanding(arms[i].instanceId)).toBe(true);
+  });
+
+  it('raises every downed arm when the hub plate is struck', () => {
+    const { controller, arms, hub } = starScene();
+    for (const arm of arms) hit(controller, arm);
+    const t = run(controller, 1, 0);
+    for (const arm of arms) expect(controller.isStanding(arm.instanceId)).toBe(false);
+
+    hit(controller, hub);
+    // Immediately back in play — a reset is mechanical, not a fall to wait out.
+    for (const arm of arms) expect(controller.isStanding(arm.instanceId)).toBe(true);
+    // And re-shootable.
+    hit(controller, arms[0]);
+    run(controller, 1, t);
+    expect(controller.isStanding(arms[0].instanceId)).toBe(false);
+  });
+
+  it('puts a raised plate back on its arm, not at its authored position', () => {
+    // The reset re-poses at the CURRENT carrier time. Re-posing at t=0 would snap the
+    // plate to where it was authored, which after a few seconds is nowhere near its arm.
+    const { controller, arms, hub } = starScene();
+    hit(controller, arms[0]);
+    const t = run(controller, 3.5, 0);
+    hit(controller, hub);
+    const { dx, dy } = starArmOffsetM(0, t);
+    expect(arms[0].position.x).toBeCloseTo(HUB.x + dx, 6);
+    expect(arms[0].position.y).toBeCloseTo(HUB.y + dy, 6);
+  });
+
+  it('takes paint on the hub plate as well as resetting', () => {
+    // It is steel, not a button: a hit marks it like any other plate.
+    const { scene, controller, hub } = starScene();
+    hit(controller, hub);
+    expect(scene.writes.some((w) => w.layer === hub.instanceId)).toBe(true);
+  });
+
+  it('resets the star from COMMIT too, via the no-group call', () => {
+    const { controller, arms } = starScene();
+    for (const arm of arms) hit(controller, arm);
+    run(controller, 1, 0);
+    controller.resetDownTargets(); // what ScopeView's COMMIT calls
+    for (const arm of arms) expect(controller.isStanding(arm.instanceId)).toBe(true);
+  });
+
+  it('resets ONLY the named group (owner decision D2)', () => {
+    // The hub is not a range master switch: a knockdown belonging to another piece of
+    // furniture must be left alone.
+    const { controller, arms, hub } = starScene();
+    const otherPopper = plate({
+      rackId: 'popper-elsewhere',
+      instanceId: 6,
+      mountId: 'hinge-stem',
+      groupId: 'test-poppers',
+      pivotYM: 0,
+      swings: false,
+    });
+    hit(controller, arms[0]);
+    controller.onImpact({ plate: otherPopper, ...IMPACT });
+    run(controller, 1, 0);
+    expect(controller.isStanding(arms[0].instanceId)).toBe(false);
+    expect(controller.isStanding(otherPopper.instanceId)).toBe(false);
+
+    hit(controller, hub);
+    expect(controller.isStanding(arms[0].instanceId)).toBe(true);
+    expect(controller.isStanding(otherPopper.instanceId)).toBe(false); // untouched
+  });
+
+  it('folds harder for a rim hit than for one on the hinge line', () => {
+    // The moment arm is RADIAL along the arm, not height above a base — that is the
+    // whole difference from a ground popper. A hit at the hinge imparts no rotation.
+    const { controller, arms } = starScene();
+    controller.update(DT, 0);
+    const arm = arms[0]; // straight up at t=0, so radially outward is +y
+    const hingeY = HUB.y + starHingeRadiusM(STAR_ARM_LENGTH_M, STAR_PLATE_WIDTH_M);
+
+    // On the hinge line: no impulse, so no fall.
+    controller.onImpact({
+      plate: arm,
+      impactWorld: { x: arm.position.x, y: hingeY, z: STAR_Z },
+      impactVel: IMPACT.impactVel,
+      bulletMassKg: IMPACT.bulletMassKg,
+      bulletDiameterM: IMPACT.bulletDiameterM,
+    });
+    run(controller, 0.5, 0);
+    expect(controller.isStanding(arm.instanceId)).toBe(true);
+
+    // At the outer rim: maximum moment arm, so it goes over.
+    const outerY = HUB.y + STAR_ARM_LENGTH_M + STAR_PLATE_WIDTH_M / 2;
+    controller.onImpact({
+      plate: arm,
+      impactWorld: { x: arm.position.x, y: outerY, z: STAR_Z },
+      impactVel: IMPACT.impactVel,
+      bulletMassKg: IMPACT.bulletMassKg,
+      bulletDiameterM: IMPACT.bulletDiameterM,
+    });
+    run(controller, 1, 0.5);
+    expect(controller.isStanding(arm.instanceId)).toBe(false);
+  });
+
+  it('warns rather than throwing if a reset switch names no group', () => {
+    built.length = 0;
+    const scene = fakeScene(1);
+    const orphan = plate({
+      instanceId: 0,
+      targetTypeId: 'star-hub-plate',
+      mountId: 'star-hub-reset',
+      swings: false,
+    });
+    scene.plates.push(orphan);
+    const controller = createSteelReactions(scene, fakeFactory);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(() => controller.onImpact({ plate: orphan, ...IMPACT })).not.toThrow();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(built[0].strikes).toBe(1); // still took the paint
+    warn.mockRestore();
+  });
+});
+
+describe('popper star — a folded plate goes DOWNRANGE, on every arm', () => {
+  // The scene-level counterpart to `popper-star.test.ts`'s fold-axis test: this one runs
+  // through the real matrix composition in `poseStar`, so it catches a mistake in the
+  // conjugation or the multiply order that pure geometry cannot see.
+  //
+  // Worth having because the PS3 fold tests above (isStanding, still-on-its-arm) all
+  // PASSED with a fold axis that sent two of the five plates toward the shooter — they
+  // asked "did it fall?" and "is it still attached?", never "which way did it go?".
+  const HUB = { x: 1.19, y: 1.2 };
+  const STAR_Z = -82.296;
+
+  it('drives every arm plate to negative z when it latches', () => {
+    for (let armIndex = 0; armIndex < STAR_ARM_COUNT; armIndex++) {
+      built.length = 0;
+      const scene = fakeScene(STAR_ARM_COUNT);
+      const arms = Array.from({ length: STAR_ARM_COUNT }, (_, i) => {
+        const { dx, dy } = starArmOffsetM(i, 0);
+        return plate({
+          rackId: `arm-${i + 1}`,
+          instanceId: i,
+          distanceM: 82.296,
+          diameterM: STAR_PLATE_WIDTH_M,
+          position: new THREE.Vector3(HUB.x + dx, HUB.y + dy, STAR_Z),
+          targetTypeId: 'star-popper',
+          mountId: 'star-arm',
+          groupId: 'test-star-arms',
+          swings: false,
+        });
+      });
+      scene.plates.push(...arms);
+      const controller = createSteelReactions(scene, fakeFactory);
+
+      // Hold the carrier at t = 0 so each arm is tested at its own rest angle — which is
+      // exactly what varied in the bug.
+      controller.update(1 / 60, 0);
+      const target = arms[armIndex];
+      const before = new THREE.Matrix4();
+      scene.plateMesh.getMatrixAt(armIndex, before);
+      const zBefore = new THREE.Vector3().setFromMatrixPosition(before).z;
+
+      controller.onImpact({
+        plate: target,
+        impactWorld: { x: target.position.x, y: target.position.y, z: STAR_Z },
+        impactVel: IMPACT.impactVel,
+        bulletMassKg: IMPACT.bulletMassKg,
+        bulletDiameterM: IMPACT.bulletDiameterM,
+      });
+      for (let f = 0; f < 60; f++) controller.update(1 / 60, 0); // latch, carrier held still
+
+      expect(controller.isStanding(target.instanceId), `arm ${armIndex} never latched`).toBe(false);
+      const after = new THREE.Matrix4();
+      scene.plateMesh.getMatrixAt(armIndex, after);
+      const posed = new THREE.Vector3().setFromMatrixPosition(after);
+
+      // DOWNRANGE, never toward the shooter. This is the assertion that failed for arms
+      // 2 and 3 before the axis was fixed.
+      expect(posed.z, `arm ${armIndex} folded toward the shooter`).toBeLessThan(zBefore - 0.05);
+      // Still hinged at its inner rim, so its centre stays within a plate radius of
+      // where it started — it folds, it does not fly off.
+      const travel = Math.hypot(posed.x - target.position.x, posed.y - target.position.y);
+      expect(travel, `arm ${armIndex} left its hinge`).toBeLessThan(STAR_PLATE_WIDTH_M);
+      // The hit-test plane is untouched: only the visual folds.
+      expect(target.position.z).toBe(STAR_Z);
+    }
   });
 });

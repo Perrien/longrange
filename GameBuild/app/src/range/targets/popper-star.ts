@@ -314,6 +314,35 @@ export function starArmOffsetM(
 }
 
 /**
+ * The FOLD HINGE AXIS for an arm at `angleRad` — the unit vector tangential to the
+ * carrier, perpendicular to the arm.
+ *
+ * ── WHY THIS EXISTS AS ITS OWN FUNCTION ─────────────────────────────────────────
+ * The first implementation folded every plate about the carrier frame's fixed X axis,
+ * on the reasoning that doing the fold in the carrier's frame made the hinge tangential
+ * "for free". It does not: X is only tangential for the arm that happens to be
+ * vertical. Measured against a 10″ plate at an 80° latch, folding about X gave
+ *
+ *     arm 0 (  0°): correct
+ *     arm 1 ( 72°): 31 mm sideways off the hinge line, only 39 mm of the 125 mm downrange
+ *     arm 2 (144°): 50 mm sideways and **+101 mm — folding TOWARD the shooter**
+ *     arm 3 (216°): 50 mm sideways and **+101 mm — toward the shooter**
+ *     arm 4 (288°): 31 mm sideways, 39 mm downrange
+ *
+ * i.e. two of the five plates folded the wrong way. About this axis all five fold
+ * identically 125 mm downrange with zero sideways drift, which is what
+ * `popper-star.test.ts` asserts for every arm rather than for one.
+ *
+ * `(cos φ, −sin φ)` is `(sin φ, cos φ)` — the radial direction — turned a quarter turn.
+ * The sign pairs with `Rx(−α)`'s convention in `poseKnockdown`: with `r × t = −ẑ`,
+ * Rodrigues gives `r_rot = r·cos θ + ẑ·sin θ`, so a NEGATIVE angle is what carries the
+ * outer rim to −z, i.e. downrange.
+ */
+export function starArmTangentUnit(angleRad: number): { dx: number; dy: number } {
+  return { dx: Math.cos(angleRad), dy: -Math.sin(angleRad) };
+}
+
+/**
  * The hub centre, recovered from a group's plate positions.
  *
  * EXACT for evenly-spaced arms: `Σ (sin φᵢ, cos φᵢ) = 0` over a full ring, so the

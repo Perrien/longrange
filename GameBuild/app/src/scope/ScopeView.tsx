@@ -1219,6 +1219,33 @@ export function ScopeView({
           // (or before the field's loaded), which the HUD reads as "nothing
           // new to show" and just displays the dialed mean instead.
           setLastEffectiveWind(solved.effectiveWind ?? null);
+          // Time of flight, needed BEFORE the rack is built (see `leadOf`). It also
+          // schedules every at-the-target effect further down; declared once here so the
+          // pose the shot is tested against and the pose the effects land on cannot
+          // disagree.
+          const timeOfFlightS = Math.max(0, solved.timeOfFlightS);
+          /**
+           * Where a plate will be when the bullet ARRIVES, for a plate on a rotating
+           * carrier; `null` for everything else.
+           *
+           * ── WHY THE HIT TEST USES THE ARRIVAL POSE ──────────────────────────────
+           * A shot resolved against where a moving plate was at the trigger break would
+           * need no lead at all — the plate would obligingly wait for the bullet. At
+           * 36°/s a popper-star plate travels ~4 cm during a 90 yd flight, a sixth of a
+           * 10″ face, so this is the difference between a target that has to be led and
+           * one that does not.
+           *
+           * This changes NOTHING on any other range: `rotorPositionAt` returns `null`
+           * for a plate that is not on a carrier, so every existing plate keeps using
+           * its live position and its numbers are unchanged.
+           *
+           * Note the impact point itself is not adjusted, and must not be — expanding
+           * `resolveShot` shows the aimed plate's centre cancels out of it entirely
+           * (`impact = crosshair + (dial − required)·d + scatter`). Only CONTAINMENT
+           * moves, which is exactly where the lead requirement should come from.
+           */
+          const leadOf = (instanceId: number) =>
+            steelReactions?.rotorPositionAt(instanceId, st.t, timeOfFlightS) ?? null;
           const rackPlates: ShotPlate[] = range.plates
             .filter((pl) => pl.distanceM === rangeM)
             // A knocked-down target is out of play (task T6). Filtered HERE, before
@@ -1228,7 +1255,7 @@ export function ScopeView({
             .filter((pl) => steelReactions?.isStanding(pl.instanceId) ?? true)
             .map((pl) => ({
               instanceId: pl.instanceId,
-              position: { x: pl.position.x, y: pl.position.y },
+              position: leadOf(pl.instanceId) ?? { x: pl.position.x, y: pl.position.y },
               diameterM: pl.diameterM,
               typeId: pl.targetTypeId,
               heightM: pl.heightM,
@@ -1270,14 +1297,35 @@ export function ScopeView({
           // engaged plate's centre. Called against the plate the shot was aimed
           // at (`aimed`) — once 1.6c2 wires commitTarget this will be the same
           // plate whenever the player commits to the one under the crosshair.
-          setLastCall(callImpact(result, { x: aimed.position.x, y: aimed.position.y }));
+          // For a plate on a rotating carrier the reference is its ARRIVAL centre, the
+          // same one the hit test used: a clock read against where the plate no longer
+          // is would call a centre hit low-left.
+          setLastCall(
+            callImpact(
+              result,
+              leadOf(aimed.instanceId) ?? { x: aimed.position.x, y: aimed.position.y },
+            ),
+          );
+
+          // Lead readout (DEV only). The arrival-pose hit test is otherwise invisible —
+          // it changes no pixel — so this is what makes it checkable by hand: hold dead
+          // centre on a crossing plate and the miss should trail it by about this much.
+          if (import.meta.env.DEV) {
+            const led = leadOf(aimed.instanceId);
+            if (led) {
+              const cm = Math.hypot(led.x - aimed.position.x, led.y - aimed.position.y) * 100;
+              console.log(
+                `[popper-star] lead: plate ${aimed.rackId} advanced ${cm.toFixed(1)} cm during ${timeOfFlightS.toFixed(3)} s TOF`,
+              );
+            }
+          }
 
           // Everything that happens *at the target* — the plate swing, the dust
           // puff, the steel ring — is created only when the bullet arrives, i.e.
           // after its time of flight. Capture the fire-time eye and schedule those
           // effects at st.t + TOF so they land with the tracer, not at the trigger
           // pull. The muzzle report (below) is the one thing that fires now.
-          const timeOfFlightS = Math.max(0, solved.timeOfFlightS);
+          // (`timeOfFlightS` is declared above the rack build — the hit test needs it.)
           const eyeX = camera.position.x;
           const eyeY = camera.position.y;
           const eyeZ = camera.position.z;

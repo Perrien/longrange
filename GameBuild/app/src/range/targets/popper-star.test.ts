@@ -45,7 +45,10 @@ import {
   starArmOf,
   starArmOffsetAt,
   starArmOffsetM,
+  starArmTangentUnit,
   starCarrierRotationZ,
+  starFoldCfg,
+  starFoldMomentArmM,
   starHingeRadiusM,
   starHubFrom,
 } from './popper-star';
@@ -560,5 +563,147 @@ describe('popper star — the drawn arms line up with the plates they carry', ()
 
   it('hides the boss behind the hub plate rather than around it', () => {
     expect(STAR_HUB_BOSS_RADIUS_M).toBeLessThan(STAR_HUB_PLATE_WIDTH_M / 2);
+  });
+});
+
+describe('popper star — the fold', () => {
+  it('builds a KnockdownSpec that never auto-resets, whatever the arm spec says', () => {
+    const cfg = starFoldCfg(STAR_ARM_SPEC, STAR_PLATE_WIDTH_M);
+    expect(cfg.downDwellS).toBe(STAR_LATCH_UNTIL_RESET);
+    expect(cfg.fallAngleDeg).toBe(STAR_ARM_SPEC.fallAngleDeg);
+    expect(cfg.resetRateDegS).toBe(STAR_ARM_SPEC.resetRateDegS);
+    // The rod is the PLATE'S WIDTH: hinged at one rim, mass centre at L/2 — the
+    // uniform-rod-about-one-end model `stepKnockdown` solves. Taking a mount stem
+    // length here would make a 10" plate fall at the rate of a 1 m popper.
+    expect(cfg.stemLengthM).toBeCloseTo(STAR_PLATE_WIDTH_M, 12);
+  });
+
+  it('measures the moment arm RADIALLY along the arm, not vertically', () => {
+    // This is the whole difference from a ground popper, whose moment arm is height
+    // above a hinge at its base. Take arm 1 (72°, up and to the right) so a vertical
+    // measurement would give a visibly different answer from a radial one.
+    const angle = STAR_ARM_PITCH_RAD;
+    const radial = starArmOffsetAt(angle, 1);
+    const hingeOff = starArmOffsetAt(angle, starHingeRadiusM());
+    const hinge = { x: HUB.x + hingeOff.dx, y: HUB.y + hingeOff.dy };
+
+    // A hit on the hinge line imparts nothing.
+    expect(starFoldMomentArmM(hinge, hinge, radial)).toBeCloseTo(0, 12);
+
+    // A hit at the plate's outer rim gives the full plate width.
+    const rimOff = starArmOffsetAt(angle, STAR_ARM_LENGTH_M + STAR_PLATE_WIDTH_M / 2);
+    const rim = { x: HUB.x + rimOff.dx, y: HUB.y + rimOff.dy };
+    expect(starFoldMomentArmM(hinge, rim, radial)).toBeCloseTo(STAR_PLATE_WIDTH_M, 9);
+
+    // A dead-centre hit gives half of it.
+    const centreOff = starArmOffsetAt(angle, STAR_ARM_LENGTH_M);
+    const centre = { x: HUB.x + centreOff.dx, y: HUB.y + centreOff.dy };
+    expect(starFoldMomentArmM(hinge, centre, radial)).toBeCloseTo(STAR_PLATE_WIDTH_M / 2, 9);
+  });
+
+  it('ignores the TANGENTIAL component of a hit entirely', () => {
+    // Off-centre left/right on the face is a hit on the same fold lever — only radial
+    // distance turns the plate about a tangential hinge.
+    const angle = 0; // arm straight up: radial is +y, tangential is +x
+    const radial = starArmOffsetAt(angle, 1);
+    const hinge = { x: HUB.x, y: HUB.y + starHingeRadiusM() };
+    const centreY = HUB.y + STAR_ARM_LENGTH_M;
+    const straight = starFoldMomentArmM(hinge, { x: HUB.x, y: centreY }, radial);
+    const offToTheSide = starFoldMomentArmM(hinge, { x: HUB.x + 0.1, y: centreY }, radial);
+    expect(offToTheSide).toBeCloseTo(straight, 12);
+  });
+
+  it('clamps a hit inboard of the hinge to zero rather than folding it backwards', () => {
+    // Geometrically unreachable on a real plate, but a negative moment arm would seed a
+    // NEGATIVE fall rate and drive the plate the wrong way through its own arm.
+    const radial = starArmOffsetAt(0, 1);
+    const hinge = { x: HUB.x, y: HUB.y + starHingeRadiusM() };
+    const inboard = { x: HUB.x, y: HUB.y }; // at the hub, well inside the hinge
+    expect(starFoldMomentArmM(hinge, inboard, radial)).toBe(0);
+  });
+});
+
+describe('popper star — the fold axis is per-arm', () => {
+  /** Rodrigues, so the test does not depend on THREE's matrix ordering. */
+  function rotate(
+    v: readonly [number, number, number],
+    axis: readonly [number, number, number],
+    th: number,
+  ): [number, number, number] {
+    const [ax, ay, az] = axis;
+    const [x, y, z] = v;
+    const c = Math.cos(th);
+    const s = Math.sin(th);
+    const dot = ax * x + ay * y + az * z;
+    return [
+      x * c + (ay * z - az * y) * s + ax * dot * (1 - c),
+      y * c + (az * x - ax * z) * s + ay * dot * (1 - c),
+      z * c + (ax * y - ay * x) * s + az * dot * (1 - c),
+    ];
+  }
+
+  const LATCH = (STAR_ARM_SPEC.fallAngleDeg * Math.PI) / 180;
+
+  it('folds all five arms IDENTICALLY downrange, with no sideways drift', () => {
+    // THE TEST THAT MATTERS. The first implementation folded every plate about the
+    // carrier frame's fixed X axis, which is tangential only for a vertical arm: arms 2
+    // and 3 folded TOWARD the shooter and arms 1 and 4 dragged ~3 cm sideways off their
+    // hinge lines. Asserting one arm — or asserting "it moved" — would have passed.
+    //
+    // The invariant: in the carrier frame, a folded plate's offset from its hinge must
+    // keep the SAME radial length it had before folding (scaled by cos), pick up a
+    // NEGATIVE z (downrange), and acquire NO tangential component at all — the plate
+    // folds along its own arm, not across it.
+    const zs: number[] = [];
+    for (let i = 0; i < STAR_ARM_COUNT; i++) {
+      const phi = i * STAR_ARM_PITCH_RAD;
+      const radial = starArmOffsetAt(phi, 1);
+      const tangent = starArmTangentUnit(phi);
+      // Hinge → plate centre, i.e. one plate radius outward along the arm.
+      const lever = starArmOffsetAt(phi, STAR_PLATE_WIDTH_M / 2);
+
+      const folded = rotate(
+        [lever.dx, lever.dy, 0],
+        [tangent.dx, tangent.dy, 0],
+        -LATCH, // negative carries the outer rim to −z; see starArmTangentUnit
+      );
+
+      const alongTangent = folded[0] * tangent.dx + folded[1] * tangent.dy;
+      const alongRadial = folded[0] * radial.dx + folded[1] * radial.dy;
+
+      expect(alongTangent, `arm ${i} drifted sideways off its hinge`).toBeCloseTo(0, 9);
+      // Downrange, never toward the shooter — the bug arms 2 and 3 had.
+      expect(folded[2], `arm ${i} folded the wrong way in z`).toBeLessThan(0);
+      // Radially foreshortened by cos(latch), as a hinged plate must be.
+      expect(alongRadial).toBeCloseTo((STAR_PLATE_WIDTH_M / 2) * Math.cos(LATCH), 9);
+      // The lever never stretches — it is a rotation.
+      expect(Math.hypot(...folded)).toBeCloseTo(STAR_PLATE_WIDTH_M / 2, 9);
+      zs.push(folded[2]);
+    }
+    // Every arm folds by the same amount: the star has one hardware latch angle, not
+    // five behaviours that depend on where an arm happens to be pointing.
+    for (const z of zs) expect(z).toBeCloseTo(zs[0], 9);
+  });
+
+  it('gives the tangent axis as a unit vector perpendicular to the arm', () => {
+    for (let i = 0; i < STAR_ARM_COUNT; i++) {
+      const phi = i * STAR_ARM_PITCH_RAD;
+      const radial = starArmOffsetAt(phi, 1);
+      const tangent = starArmTangentUnit(phi);
+      expect(Math.hypot(tangent.dx, tangent.dy)).toBeCloseTo(1, 12);
+      expect(tangent.dx * radial.dx + tangent.dy * radial.dy).toBeCloseTo(0, 12);
+    }
+  });
+
+  it('is the carrier X axis for a vertical arm, and only for that one', () => {
+    // Why the bug survived a first look: arm 0 is genuinely correct about X, so a
+    // spot-check of the top plate shows nothing wrong.
+    const top = starArmTangentUnit(0);
+    expect(top.dx).toBeCloseTo(1, 12);
+    expect(top.dy).toBeCloseTo(0, 12);
+    for (let i = 1; i < STAR_ARM_COUNT; i++) {
+      const t = starArmTangentUnit(i * STAR_ARM_PITCH_RAD);
+      expect(Math.abs(t.dx - 1) + Math.abs(t.dy)).toBeGreaterThan(0.1);
+    }
   });
 });

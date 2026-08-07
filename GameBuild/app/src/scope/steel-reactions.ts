@@ -68,8 +68,10 @@ import {
   starArmAngleAt,
   starArmOf,
   starArmOffsetAt,
+  starArmTangentUnit,
   starCarrierRotationZ,
   starFoldCfg,
+  starFoldMomentArmM,
   starHingeRadiusM,
   starHubFrom,
 } from '../range/targets/popper-star';
@@ -279,7 +281,9 @@ export function createSteelReactions(
   // four of them at once and the knockdown/flip loops may be mid-use. Every star plate
   // is posed every frame, so nothing here may allocate.
   const CARRIER_AXIS = new THREE.Vector3(0, 0, 1);
-  const HINGE_AXIS = new THREE.Vector3(1, 0, 0);
+  /** The fold hinge, set per arm each pose — TANGENTIAL to the carrier, not a fixed
+   *  axis. See `starArmTangentUnit`. */
+  const foldAxis = new THREE.Vector3();
   const IDENTITY_QUAT = new THREE.Quaternion();
   const starQuat = new THREE.Quaternion();
   const starPos = new THREE.Vector3();
@@ -520,22 +524,28 @@ export function createSteelReactions(
     entry.plate.position.y = entry.hub.y + centre.dy;
 
     // In the CARRIER's frame the arm sits at `restAngleRad` and the carrier rotation is
-    // applied on top. Folding in this frame is what makes the hinge tangential for
-    // free — there is no per-arm axis to compute. The hinge is at the plate's inner rim
-    // IN THE PLATE'S OWN PLANE (z = 0), not at the drawn arm's slight downrange offset:
-    // the plate is hinged to the arm along its own face, and using the arm's z here
-    // would shove the plate 3 cm downrange as it folded.
+    // applied on top. The hinge is at the plate's inner rim IN THE PLATE'S OWN PLANE
+    // (z = 0), not at the drawn arm's slight downrange offset: the plate is hinged to the
+    // arm along its own face, and using the arm's z would shove the plate 3 cm downrange
+    // as it folded.
+    //
+    // THE AXIS IS PER-ARM. It is the TANGENTIAL direction (`starArmTangentUnit`), not the
+    // carrier frame's fixed X — folding every arm about X sent arms 2 and 3 toward the
+    // shooter and dragged 1 and 4 sideways off their hinge lines. See that function's
+    // docstring for the measured numbers.
     const hingeR = starHingeRadiusM(entry.radiusM, entry.plate.diameterM);
     const hinge = starArmOffsetAt(entry.restAngleRad, hingeR);
     const rest = starArmOffsetAt(entry.restAngleRad, entry.radiusM);
+    const tangent = starArmTangentUnit(entry.restAngleRad);
 
     starHubT.makeTranslation(entry.hub.x, entry.hub.y, entry.hub.z);
     starQuat.setFromAxisAngle(CARRIER_AXIS, starCarrierRotationZ(timeS, entry.spec));
     starCarrier.makeRotationFromQuaternion(starQuat);
     starToHinge.makeTranslation(-hinge.dx, -hinge.dy, 0);
     starFromHinge.makeTranslation(hinge.dx, hinge.dy, 0);
+    foldAxis.set(tangent.dx, tangent.dy, 0);
     starFold
-      .makeRotationAxis(HINGE_AXIS, -entry.state.angleRad)
+      .makeRotationAxis(foldAxis, -entry.state.angleRad)
       .premultiply(starFromHinge)
       .multiply(starToHinge);
     starPos.set(rest.dx, rest.dy, 0);
@@ -637,6 +647,35 @@ export function createSteelReactions(
     scene.plateSurface.writeEngineLayer(plate.instanceId, reaction.getTexture(), plate.paintColor);
   }
 
+  /**
+   * Stand every knocked-down target back up — optionally only one group's.
+   *
+   * A plain function rather than only a method, because there are now TWO callers: the
+   * controller's own `resetDownTargets` (which COMMIT uses to re-arm the range) and the
+   * `'reset-switch'` strike branch, where the popper star's hub plate re-arms its arms.
+   * A method calling itself through `this` would work but ties the branch to how the
+   * object happens to be constructed.
+   */
+  function resetDown(groupId?: string): void {
+    // Omitted groupId ⇒ every knockdown on the range. A group is one piece of
+    // furniture, so resetting by group stands a whole plate rack up together.
+    for (const [id, entry] of knocked) {
+      if (groupId !== undefined && entry.plate.groupId !== groupId) continue;
+      if (entry.state.phase === 'standing') continue;
+      entry.state = resetKnockdown();
+      poseKnockdown(id, entry);
+    }
+    // Star arms latch down forever (`STAR_LATCH_UNTIL_RESET`), so this is the ONLY way
+    // one comes back up. Re-posed at the last known carrier time so a raised plate
+    // appears on its arm rather than at its authored t=0 position.
+    for (const [id, entry] of stars) {
+      if (groupId !== undefined && entry.plate.groupId !== groupId) continue;
+      if (entry.state.phase === 'standing') continue;
+      entry.state = resetKnockdown();
+      poseStar(id, entry, starTimeS);
+    }
+  }
+
   // Rotors are the one thing that must exist before anything is shot, so the scan runs
   // now rather than on first impact.
   scanStarRotors();
@@ -644,6 +683,28 @@ export function createSteelReactions(
   return {
     onImpact({ plate, impactWorld, impactVel, bulletMassKg, bulletDiameterM }): void {
       const mode = reactionModeOf(plate);
+
+      // RESET SWITCH — the popper star's hub plate. Bolted steel that takes paint like
+      // any other plate, plus one side effect: it re-arms a group.
+      //
+      // The group comes from the PLATE, not the mount (`resetsGroupId`), which is what
+      // keeps this mount reusable for a second star or a future plate rack. A switch
+      // with no group named is a data error the placement loader already rejects, so
+      // reaching here without one means something bypassed it — take the paint and warn
+      // rather than throw mid-engagement.
+      if (mode === 'reset-switch') {
+        const reaction = targetFor(plate);
+        reaction.strike(impactWorld, impactVel, bulletMassKg, bulletDiameterM);
+        paint(plate, reaction);
+        if (plate.resetsGroupId === undefined) {
+          console.warn(
+            `steel-reactions: reset-switch plate '${plate.rackId}' has no resetsGroupId, so a hit resets nothing`,
+          );
+          return;
+        }
+        resetDown(plate.resetsGroupId);
+        return;
+      }
 
       // STAR ARM. The plate takes paint like any other, but two corrections have to be
       // applied first, because the engine's target believes it is still sitting at the
@@ -687,6 +748,26 @@ export function createSteelReactions(
           bulletDiameterM,
         );
         paint(plate, reaction);
+        // (3) THE FOLD. Reuses `knockdown.ts` unchanged; what differs from a ground
+        // popper is only the MOMENT ARM — radial along the arm from the hinge at the
+        // plate's inner rim, not height above a hinge at its base. A hit on the hinge
+        // line imparts no rotation, one at the outer rim the most.
+        const angle = starArmAngleAt(entry.restAngleRad, starTimeS, entry.spec);
+        const hingeOff = starArmOffsetAt(angle, starHingeRadiusM(entry.radiusM, plate.diameterM));
+        const speed = Math.hypot(impactVel.x, impactVel.y, impactVel.z);
+        entry.state = strikeKnockdown(
+          entry.state,
+          seedFallRate({
+            impulseNs: bulletMassKg * speed,
+            impactHeightM: starFoldMomentArmM(
+              { x: entry.hub.x + hingeOff.dx, y: entry.hub.y + hingeOff.dy },
+              impactWorld,
+              starArmOffsetAt(angle, 1),
+            ),
+            massKg: steelPlateMassKg(plate.diameterM, plate.diameterM, PLATE_THICKNESS_M),
+            stemLengthM: entry.cfg.stemLengthM,
+          }),
+        );
         return;
       }
 
@@ -811,7 +892,14 @@ export function createSteelReactions(
       // integration of `dt` — which is what keeps them locked to the drawn arms
       // `TestRangeScene` spins from the same value.
       starTimeS = timeS;
-      for (const [id, entry] of stars) poseStar(id, entry, timeS);
+      for (const [id, entry] of stars) {
+        // Advance the FOLD before posing, so the pose uses this frame's angle. A latched
+        // plate is a no-op here (`stepKnockdown` cannot leave `down` at an infinite
+        // dwell) but still gets re-posed, because the carrier under it keeps turning —
+        // a folded plate rides round on its arm rather than stopping with it.
+        entry.state = stepKnockdown(entry.state, dt, entry.cfg);
+        poseStar(id, entry, timeS);
+      }
       // Knockdowns advance independently of the swing set — different physics, and a
       // knocked target keeps animating (dwell, then rise) with nothing "moving".
       for (const [id, entry] of knocked) {
@@ -866,14 +954,7 @@ export function createSteelReactions(
     },
 
     resetDownTargets(groupId?: string): void {
-      // Omitted groupId ⇒ every knockdown on the range. A group is one piece of
-      // furniture, so resetting by group stands a whole plate rack up together.
-      for (const [id, entry] of knocked) {
-        if (groupId !== undefined && entry.plate.groupId !== groupId) continue;
-        if (entry.state.phase === 'standing') continue;
-        entry.state = resetKnockdown();
-        poseKnockdown(id, entry);
-      }
+      resetDown(groupId);
     },
 
     resetFlipTargets(): void {
@@ -895,6 +976,11 @@ export function createSteelReactions(
     },
 
     isStanding(instanceId: number): boolean {
+      // A folded star arm is out of play exactly as a downed popper is — ScopeView reads
+      // this before `resolveShot`, so the plate leaves both the hit test AND the
+      // aimed-plate pick while it is down.
+      const star = stars.get(instanceId);
+      if (star) return isStandingPhase(star.state.phase);
       const entry = knocked.get(instanceId);
       // A plate with no knockdown state has never been knocked (or cannot be), so it
       // is standing — which is what keeps every non-knockdown plate in play.
