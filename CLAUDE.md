@@ -129,6 +129,7 @@ LongRange/
 │   ├── feature-catalog.md                  ← LIVING feature list + build-status tracker (built-w/-date vs not-built-w/-notes) + hard constraints
 │   ├── build-plan.md                       ← AUTHORITATIVE architecture / stack / reuse / sequencing plan
 │   ├── btk-assessment-and-path-forward.md  ← engine assessment + web/PWA decision (evidence record)
+│   ├── toolchain-glossary.md               ← plain-language reference: every tool in the stack, why it's here, whether the owner needs to hold it
 │   ├── execution/                          ← agent working rules + live task log (no active increment plan — see archive/)
 │   │   ├── execution-protocol.md           ← agent working rules, guardrails, stop rules, offline-env rules
 │   │   └── PROGRESS.md                     ← task state, environment capabilities, owner install queue
@@ -225,3 +226,31 @@ is validated against, and the source material for in-game teaching.
   arbiter** (or the discrepancy is logged) — this is how we validate the engine.
 - Prefer clarity for a newcomer over jargon; define terms on first use and link
   to the glossary.
+
+## Explaining the tech (owner knows the domain, not the toolchain)
+
+The owner knows the **ballistics domain** deeply and the **build toolchain** barely.
+Optimize explanations for decisions, not for completeness. Reference:
+[`Design/toolchain-glossary.md`](./Design/toolchain-glossary.md).
+
+- **Lead with the consequence.** Open with what it means for the project, or what the
+  owner has to decide. Mechanism comes second, and only as far as the decision needs.
+- **Place every tool in the chain on first mention** — one line: what it is, what it
+  feeds, who consumes its output. Not just its name.
+- **Say explicitly when something is safe to ignore.** Most of the toolchain is
+  set-and-forget. Distinguish "you need to understand this to decide" from "this is
+  plumbing I'll handle — here's the one symptom to watch for."
+- **Describe risks as symptoms, not mechanisms.** Not "float codegen may diverge" —
+  "the oracle check prints something other than 0.000e+0, and drop numbers shift
+  slightly."
+- **Corrections only if they change a decision.** Fixing the record for accuracy is
+  not worth the owner's attention; if a correction changes nothing actionable, cut it
+  or keep it to a clause.
+- **Prefer analogies to known things** over precise-but-opaque phrasing.
+- **No jargon on first use without a definition in the same sentence.** This is the
+  rule the Wiki already follows (above) — it applies to conversation about the stack
+  too, which is the one place the owner *is* the newcomer.
+- The owner may say **"what does that mean for me"** or **"too deep"** — treat either
+  as an instruction to re-answer in decision terms only.
+- When a glossary entry turns out to be wrong, missing, or written at the wrong level,
+  fix `Design/toolchain-glossary.md` rather than re-explaining it in conversation.

@@ -650,7 +650,7 @@ implied by "Vite + Vitest". Flagged for owner awareness.
 | general internet (registry.npmjs.org, github.com) | FAIL (not blocking) | 2026-07-13 | Public `registry.npmjs.org` / `github.com` still return HTTP 403 from the local sandbox proxy ("Apple Claude Code security sandbox", `HTTPS_PROXY=http://localhost:4373`) — not a DNS/network-down failure, just not on the allowlist. **Not currently blocking anything:** npm installs go through the internal mirror (`npm.apple.com`, works — see npm row), and the owner pushes to GitHub owner-side. |
 | npm registry (npm.apple.com, configured default) | **PASS (resolved 2026-07-13)** | 2026-07-13 | Initial `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` failure is **fixed** via `npm config set cafile` — full writeup in Resolved escalations. (Same subject as the `npm` row below.) |
 | git remote (push/fetch) | PASS (owner-side) | 2026-07-13 | Owner created the GitHub repo and pushed `main` (CLAUDE.md, .gitignore, Design/) successfully on 2026-07-13. Pushing is done **owner-side** — github.com is 403-blocked from the agent sandbox, so the agent cannot `git push` directly. |
-| emcc / emsdk | **PASS (emscripten 6.0.2)** | 2026-07-13 | Installed via `brew install emscripten` per owner decision (6.0.2 replaces the 4.0.17 pin — see decisions log). Homebrew's postinstall failed to write the toolchain config, so the agent fixed `/opt/homebrew/Cellar/emscripten/6.0.2/libexec/.emscripten`: set `LLVM_ROOT=/opt/homebrew/opt/emscripten/libexec/llvm/bin`, `BINARYEN_ROOT=/opt/homebrew/opt/emscripten/libexec/binaryen` (were `/usr/bin`,`/usr/local`). Smoke test: `emcc t.cpp -o t.js` + `node t.js` → `wasm ok: 42`. `emcc`/`emcmake`/`emmake` all on PATH. |
+| emcc / emsdk | **PASS (emscripten 6.0.6 since 2026-08-07)** | 2026-08-07 | Installed via `brew install emscripten`. **Upgraded 6.0.2 → 6.0.6 on 2026-08-07** (see decisions log) — golden vectors verified bit-identical, no regeneration needed. Homebrew's postinstall fails to write the toolchain config **on both versions**: on 6.0.2 the agent fixed existing wrong paths; on 6.0.6 the file **did not exist at all** and was hand-written. Expect this on any future emscripten install. Both kegs now pin `LLVM_ROOT`/`BINARYEN_ROOT` to their **own versioned Cellar paths** (`/opt/homebrew/Cellar/emscripten/<ver>/libexec/{llvm/bin,binaryen}`) rather than the `/opt/homebrew/opt/emscripten` symlink — the symlink follows whichever version is linked, so the old formulation silently pointed 6.0.2 at 6.0.6's LLVM after the upgrade. The 6.0.2 keg was retained as a working fallback (`HOMEBREW_NO_INSTALL_CLEANUP=1`; a bare `brew upgrade` would have deleted it). Each keg is self-contained (own LLVM — clang-23 on 6.0.2 — plus Binaryen and sysroot cache). Smoke test both: `emcc t.cpp -o t.js` + `node t.js` → `wasm ok: 42`. `emcc`/`emcmake`/`emmake` on PATH. |
 | cmake ≥3.16 | **PASS** | 2026-07-13 | Owner ran `brew install cmake` → 4.4.0. `make` 3.81 and `g++`/`clang` (Apple clang 21, Xcode CLT) also present — native build path is now viable once GoogleTest wiring (0.3) is attempted. |
 | GoogleTest | **PASS** | 2026-07-13 | Owner ran `brew install googletest` → 1.17.0. No CLI binary (`googletest --version` doesn't exist — that's expected, GTest is a library not a tool); confirmed present via `find_package(GTest)` config at `/opt/homebrew/lib/cmake/GTest/GTestConfig.cmake` and static libs at `/opt/homebrew/lib/libgtest*.a`. |
 | C++17 compiler | PASS | 2026-07-13 | Apple clang version 21.0.0 (Xcode CLT at `/Applications/Xcode.app/Contents/Developer`). |
@@ -1071,6 +1071,34 @@ fix this environment-wide for all Node tools without the per-tool `cafile` worka
 - (none — all Increment 0 tooling in place as of 2026-07-13)
 
 ## Owner decisions log
+- 2026-08-07: **Emscripten pin moved 6.0.2 → 6.0.6 — measured, not assumed.** Raised
+  while planning the migration to a new (personal, unmanaged) machine: `brew info`
+  showed Homebrew's stable had moved to **6.0.6** with no versioned formula, so
+  `brew install emscripten` could no longer deliver the 6.0.2 pin at all. Owner asked
+  the right question — *why keep an older version?* — and the answer is that the pin
+  was never about 6.0.2 being better, only about local, CI, and the golden vectors
+  agreeing on **one** version. So the bump was tested **on this machine, which has a
+  known-good baseline the new machine would not have.** Procedure: save the
+  6.0.2-built artifact as a control (247 898 B, sha256 `96ec0cd3…`) → pin the 6.0.2
+  keg's `.emscripten` to its own versioned paths so it survives as a fallback →
+  `HOMEBREW_NO_INSTALL_CLEANUP=1 brew upgrade emscripten` (the env var is
+  load-bearing: the dry run showed a bare upgrade would run `brew cleanup` and
+  **delete the 6.0.2 keg**) → hand-write 6.0.6's missing `.emscripten` → **delete
+  `build-wasm/`** and reconfigure (a stale `CMakeCache.txt` holds the old toolchain
+  paths and would have made the result meaningless) → rebuild → measure.
+  **Result: `run.mjs` reports 36 cases, worst rel diff 0.000e+0** — no vector
+  regeneration required. Full gate green at the same time: ctest **30/30**, tsc clean,
+  vitest **1514/88**, app build with 33 precache entries. The binary DID change
+  (247 898 → 248 754 B, sha256 `f7ec754f…`), so LLVM chose differently; it just did
+  not move a result — which under `-O3 -ffast-math` is a thing to verify, never
+  assume. **Consequence for the migration:** the new machine needs only
+  `brew install emscripten`; the emsdk clone/activate/PATH route is dropped.
+  **Not yet proven:** CI uses emsdk's 6.0.6 on ubuntu x86, a different build of the
+  same version on a different platform — verified on next push, and a failure there
+  is loud and harmless. 13 brew dependencies moved alongside, incl. node
+  26.5.0 → 26.7.0 (still within CI's `node-version: '26'`; cannot affect results,
+  since WASM float arithmetic is deterministic per spec and the `-ffast-math`
+  rewrites are baked in at compile time).
 - 2026-07-31: **Execution protocol amended — plan-declared pause points replace the
   per-task owner stop; the ~400-line limit becomes planning guidance.** Owner: work is
   almost always plan-driven, so the agent authoring a plan now decides where the pause

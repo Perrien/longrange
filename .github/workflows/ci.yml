@@ -2,9 +2,13 @@
 # Jobs: native engine tests (ctest) · engine WASM + app build/tests · deploy to
 # GitHub Pages (push to main only).
 #
-# Toolchain pins (owner decision 2026-07-13): Emscripten 6.0.2 — the SAME version
-# used for local builds and golden-vector generation. Do not bump one without the
-# others (see Design/execution/PROGRESS.md decisions log).
+# Toolchain pins (owner decision 2026-08-07): Emscripten 6.0.6 — the SAME version
+# used for local builds. Do not bump one without the others (see
+# Design/execution/PROGRESS.md decisions log).
+#
+# The golden vectors were GENERATED under 6.0.2 and were verified bit-identical
+# (worst rel diff 0.000e+0) when rebuilt under 6.0.6 on 2026-08-07, so the bump
+# needed no vector regeneration. See GameBuild/validation/ORACLE_VERSION.
 #
 # NOTE: pristine BallisticsToolkit/ is git-ignored/local-only (owner decision), so
 # the engine-vs-pristine match check (GameBuild/validation/match-check.mjs) runs
@@ -47,10 +51,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Emscripten (pinned 6.0.2)
+      - name: Setup Emscripten (pinned 6.0.6)
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: '6.0.2'
+          version: '6.0.6'
 
       - name: Build engine WASM
         run: |

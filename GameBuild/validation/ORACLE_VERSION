@@ -2,9 +2,35 @@
 # (execution-protocol §4.1; increment-0 task 0.7)
 btk-commit: 29d43c13f4945cb9caf4e73d2041c22645ebf4e7   # pristine BallisticsToolkit/, 2026-07-07
 oracle-patches: (none)
-emscripten: 6.0.2   # owner decision 2026-07-13 — same version for local, CI, and vector generation
+emscripten: 6.0.2 (generated) · 6.0.6 (verified identical, 2026-08-07 — see Toolchain compatibility below)
 tolerance: 1e-4 relative (expected: ~0; engine is an unmodified copy)
 vectors: vectors/golden.json (regenerate: node GameBuild/validation/run.mjs --generate — requires local pristine BTK build)
+
+# --- Toolchain compatibility ----------------------------------------------
+# 2026-08-07 — **Emscripten 6.0.2 → 6.0.6 verified as a no-op on these vectors.**
+#   These vectors were GENERATED under emcc 6.0.2 (Homebrew, arm64 macOS). They were
+#   NOT regenerated for the 6.0.6 bump, because they did not need to be: the engine
+#   was rebuilt from scratch under Homebrew's 6.0.6 (build-wasm/ deleted and
+#   reconfigured, so no stale CMake toolchain paths) and check mode reported
+#   **36 cases, worst rel diff 0.000e+0** — every row bit-identical.
+#
+#   Worth recording that the BINARY did change: ballistics_toolkit_wasm.js went
+#   247 898 B (sha256 96ec0cd3…) -> 248 754 B (sha256 f7ec754f…). So LLVM made
+#   different codegen choices; they simply did not move any result. That is not a
+#   safe assumption in general — this build uses -O3 -ffast-math, which licenses the
+#   compiler to rewrite float arithmetic — which is exactly why it was MEASURED
+#   rather than assumed. Full gate at the same time: ctest 30/30, tsc clean,
+#   vitest 1514/88, app build green.
+#
+#   SCOPE OF THE PROOF: Homebrew's 6.0.6 on arm64 macOS. CI uses emsdk's 6.0.6 on
+#   ubuntu x86 (mymindstorm/setup-emsdk@v14) — a different build of the same version
+#   on a different platform. That is verified by CI on push, not by this run.
+#
+#   The 6.0.2 keg was deliberately retained as a fallback
+#   (/opt/homebrew/Cellar/emscripten/6.0.2, kept via HOMEBREW_NO_INSTALL_CLEANUP=1)
+#   with its .emscripten pinned to its own versioned LLVM/Binaryen paths so it still
+#   works while 6.0.6 is the linked version. A copy of the 6.0.2-built artifact is at
+#   CCode/NewUnit/emcc-baseline/ (local-only) as the control build.
 
 # --- Matrix extensions (NOT oracle changes) -------------------------------
 # The oracle IDENTITY above is unchanged by these. Extending the sampled matrix
