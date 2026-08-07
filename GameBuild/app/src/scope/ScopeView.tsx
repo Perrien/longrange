@@ -35,6 +35,15 @@ import {
   type SceneCost,
 } from './perf-hud';
 import { pickAimedPlate, resolveTargetPlate } from './aim-pick';
+import {
+  ARM_KEY,
+  disarm,
+  initialMouseTrigger,
+  onArmKey,
+  onTriggerPointerCancel,
+  onTriggerPointerDown,
+  onTriggerPointerUp,
+} from './mouse-trigger';
 import { easeSightOffset, sightOffset, type SightOffset } from './turret-view';
 
 import type { SteelSceneApi } from '../range/steel-scene-api';
@@ -176,6 +185,18 @@ const BREATH_DEPLETE_S = 10;
 const BREATH_RECOVER_S = 5;
 const BREATH_COMFORT = 0.3; // below this remaining fraction the hold degrades
 const BREATH_DEBT_FACTOR = 1.5; // wobble multiplier out of air (oxygen debt)
+
+/**
+ * Is this key event coming from somewhere the player is TYPING? Used by the arm-key
+ * listener (mouse-release-fire) so that typing an `f` into the wind speed, a lot
+ * name or a DOPE note never arms the rifle. Text fields live in SettingsScreen,
+ * DopePanel and BuildScreen, all of which can be open over the scope.
+ */
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+}
 
 export function ScopeView({
   onOpenMenu,
@@ -337,6 +358,64 @@ export function ScopeView({
   const wobbleAmpRef = useRef(0);
   // Breath-hold flag: shared between the HOLD button (JSX) and the render loop.
   const holdingRef = useRef(false);
+
+  // Desktop trigger (mouse-release-fire, 2026-08-07): hold F, release the left
+  // mouse button, the shot fires. The rule itself lives in `scope/mouse-trigger.ts`
+  // (pure + unit-tested); this is a ref because the pointer handlers that feed it
+  // are inside the mount-once render effect below and must see live state.
+  const triggerRef = useRef(initialMouseTrigger());
+  // Mirror of `triggerRef.current.armed`, for the ARMED indicator only. Can only
+  // ever be true on a device with a keyboard, so the touch layout is unaffected
+  // and no device detection is needed anywhere in this feature.
+  const [armed, setArmed] = useState(false);
+  // `outOfRounds` as the render effect can read it, so a key-fire is gated
+  // exactly like a FIRE-button press (the button reads the render-scope const).
+  const outOfRoundsRef = useRef(outOfRounds);
+  useEffect(() => {
+    outOfRoundsRef.current = outOfRounds;
+  }, [outOfRounds]);
+
+  // The app's ONLY keyboard listener. Deliberately narrow: it arms and disarms,
+  // nothing else, and it never calls preventDefault — a bare `f` has no default
+  // action worth suppressing, and swallowing it would break typing.
+  //
+  // The blur/visibilitychange half is not optional. A page that loses focus stops
+  // receiving key events, so the key-up during a ⌘-Tab is never delivered; without
+  // disarming there, the rifle comes back armed and the next click fires a shot
+  // the player did not ask for.
+  useEffect(() => {
+    function apply(next: ReturnType<typeof initialMouseTrigger>) {
+      triggerRef.current = next;
+      setArmed(next.armed);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.code !== ARM_KEY) return; // cheap reject before touching the DOM
+      apply(
+        onArmKey(triggerRef.current, {
+          code: e.code,
+          down: e.type === 'keydown',
+          modifiers: e.ctrlKey || e.metaKey || e.altKey,
+          editableTarget: isEditableTarget(e.target),
+        }),
+      );
+    }
+    function onLostFocus() {
+      apply(disarm(triggerRef.current));
+    }
+    function onVisibility() {
+      if (document.hidden) onLostFocus();
+    }
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+    window.addEventListener('blur', onLostFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKey);
+      window.removeEventListener('blur', onLostFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 
   const fireRef = useRef<() => void>(() => {});
   // Turret click sound (task 1.6c, D5): the ± buttons call this; it reaches
@@ -891,6 +970,7 @@ export function ScopeView({
     function onPointerDown(e: PointerEvent) {
       canvas.setPointerCapture(e.pointerId);
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      triggerRef.current = onTriggerPointerDown(triggerRef.current, e);
       if (pointers.size === 2) {
         pinch = { startDist: spread(), startMag: store().session.scope.magnification };
         dragLocked = true;
@@ -917,6 +997,19 @@ export function ScopeView({
       pointers.delete(e.pointerId);
       if (pointers.size < 2) pinch = null;
       if (pointers.size === 0) dragLocked = false;
+      // Desktop trigger (mouse-release-fire): THIS is where a mouse shot breaks —
+      // left button up with F held. Same listener serves `pointercancel`, which
+      // must never fire, hence the split. Deliberately reuses `fireRef` and adds
+      // no guards of its own, so an empty lot / spent budget / dead WASM module
+      // blocks a key-fire exactly as it blocks the FIRE button, and reports the
+      // reason in the same red banner.
+      if (e.type === 'pointercancel') {
+        triggerRef.current = onTriggerPointerCancel(triggerRef.current);
+        return;
+      }
+      const { state: nextTrigger, fire } = onTriggerPointerUp(triggerRef.current, e);
+      triggerRef.current = nextTrigger;
+      if (fire && !outOfRoundsRef.current) fireRef.current();
     }
     function onWheel(e: WheelEvent) {
       e.preventDefault();
@@ -2374,6 +2467,33 @@ export function ScopeView({
           HOLD
         </button>
       </div>
+      {/* ARMED chip (mouse-release-fire) — sits directly above FIRE, right-aligned
+          with it. Only ever visible while the arm key is physically held, which a
+          touch-only device cannot do, so this never appears on iPad and needs no
+          device check. It also makes a dead arm key self-diagnosing: no chip means
+          the keydown never reached us (focus in a text field, a modifier held),
+          rather than the shot silently failing somewhere downstream. */}
+      {armed && (
+        <div
+          style={{
+            position: 'absolute',
+            right: 'calc(24px + env(safe-area-inset-right))',
+            bottom: 'calc(114px + env(safe-area-inset-bottom))',
+            padding: '3px 9px',
+            borderRadius: 5,
+            background: 'rgba(70,50,0,0.75)',
+            border: '1px solid #ffd24a',
+            color: '#ffd24a',
+            fontFamily: 'monospace',
+            fontSize: 11,
+            letterSpacing: 0.5,
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+          }}
+        >
+          ARMED · RELEASE TO FIRE
+        </div>
+      )}
       <button
         onPointerDown={(e) => {
           e.preventDefault();
@@ -2391,7 +2511,9 @@ export function ScopeView({
           width: 84,
           height: 84,
           borderRadius: '50%',
-          border: '3px solid #e8eef4',
+          // Amber ring while the desktop trigger is armed — the button itself
+          // still works, this only says "a mouse release will also fire".
+          border: `3px solid ${armed && !outOfRounds ? '#ffd24a' : '#e8eef4'}`,
           background: outOfRounds ? 'rgba(120,120,120,0.6)' : 'rgba(180,40,40,0.85)',
           color: '#fff',
           fontFamily: 'monospace',

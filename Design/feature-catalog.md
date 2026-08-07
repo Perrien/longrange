@@ -751,6 +751,27 @@ Live believed come-up table for the active rifle+lot, readable mid-session.
 **Built** for every screen that exists today (DOPE panel, HUD, scope). A full audit
 across every future screen is planned as an Increment 6 task, once all screens exist.
 
+#### Desktop trigger — fire on mouse-button release
+On a mouse, aiming and firing are one gesture: hold **F**, drag the sight picture,
+release the left button and the shot breaks. Removes the desktop-only awkwardness of
+having to leave the aim to go press the FIRE button. `F` is read **at the moment of
+release**, so letting it go before releasing is a clean "come off the trigger", and a
+release *without* `F` never fires however far it dragged — which is why the feature
+needs no setting to switch off: holding the key is itself the safety.
+**Built** — 2026-08-07 (`Design/Plans/mouse-release-fire.md`). New pure
+`scope/mouse-trigger.ts` + tests hold the whole rule; `scope/ScopeView.tsx` gained the
+app's only keyboard listener (arm/disarm, incl. disarm on blur so a key-up lost to a
+⌘-Tab cannot leave the rifle armed) and one branch in its existing `onPointerUp`,
+reusing `fireRef` so both fire paths, every range, and all the existing FIRE guards +
+the red "FIRE blocked" diagnostic apply unchanged. ARMED chip + amber FIRE ring show
+the state. **iPad/touch is bit-for-bit unaffected** and no device detection exists
+anywhere in the feature — `pointerType` gates the trigger to a real mouse, and a
+touch-only device cannot produce the keydown that arms it. No persisted state (no
+schema bump, no migration). Owner decisions: no Settings toggle; drag or click both
+fire; the right mouse button plays no part; breath hold deliberately untouched.
+*Deferred:* a keyboard binding for HOLD (breath), which is what desktop would need to
+steady and fire at once — out of scope while the owner keeps wobble off.
+
 ---
 
 ## K. Explicitly the planning model's call — [MODEL]

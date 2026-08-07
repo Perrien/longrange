@@ -27,8 +27,10 @@ const PANEL_BG = '#1a222c';
 const FG = '#e8eef4';
 const DIVIDER = '1px solid rgba(232,238,244,0.18)';
 
-/** A labelled settings row: title on the left, control(s) on the right. */
-function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+/** A labelled settings row: title on the left, control(s) on the right.
+ *  `children` is optional so a row can be pure text — a reference note with
+ *  nothing to set (see "Desktop trigger"). */
+function Row({ label, hint, children }: { label: string; hint?: string; children?: ReactNode }) {
   return (
     <div
       style={{
@@ -143,6 +145,15 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
             style={{ width: 180 }}
           />
         </Row>
+
+        {/* Reference, not a control (mouse-release-fire): nothing here to switch
+            off, because holding the key IS the safety. Listed so the key is
+            discoverable — on touch there is no keyboard, so the row simply never
+            applies. */}
+        <Row
+          label="Desktop trigger"
+          hint="Hold F and release the left mouse button to fire. The FIRE button still works."
+        />
 
         <Row label="Bullet trace" hint="Show the in-scope tracer on each shot">
           <Seg active={traceEnabled} onClick={() => setTraceEnabled(true)}>

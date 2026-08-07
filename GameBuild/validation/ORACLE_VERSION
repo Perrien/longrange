@@ -22,9 +22,11 @@ vectors: vectors/golden.json (regenerate: node GameBuild/validation/run.mjs --ge
 #   rather than assumed. Full gate at the same time: ctest 30/30, tsc clean,
 #   vitest 1514/88, app build green.
 #
-#   SCOPE OF THE PROOF: Homebrew's 6.0.6 on arm64 macOS. CI uses emsdk's 6.0.6 on
-#   ubuntu x86 (mymindstorm/setup-emsdk@v14) — a different build of the same version
-#   on a different platform. That is verified by CI on push, not by this run.
+#   SCOPE OF THE PROOF — now covers both platforms. Verified first on Homebrew's
+#   6.0.6 / arm64 macOS (locally), then on emsdk's 6.0.6 / ubuntu x86 in CI
+#   (mymindstorm/setup-emsdk@v14) — **CI green 2026-08-07**. So these vectors match
+#   bit-identically across two independent builds of 6.0.6 on two platforms, which is
+#   a stronger portability result than the pre-bump state had.
 #
 #   The 6.0.2 keg was deliberately retained as a fallback
 #   (/opt/homebrew/Cellar/emscripten/6.0.2, kept via HOMEBREW_NO_INSTALL_CLEANUP=1)
