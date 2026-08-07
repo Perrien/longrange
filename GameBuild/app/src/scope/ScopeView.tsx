@@ -766,13 +766,39 @@ export function ScopeView({
     // teardown all live in `scope/steel-reactions.ts` now. Built lazily on the first
     // impact, because it needs both a steel scene and the WASM module.
     let steelReactions: SteelReactionController | null = null;
-    const ensureSteelReactions = (scene: SteelSceneApi): SteelReactionController | null => {
-      if (!steelReactions && engineModule) {
-        const mod = engineModule;
-        steelReactions = createSteelReactions(scene, (spec) => createSteelReaction(mod, spec));
+    const ensureSteelReactions = (scene: SteelSceneApi): SteelReactionController => {
+      if (!steelReactions) {
+        // ── THE MODULE IS RESOLVED AT STRIKE TIME, NOT AT CONSTRUCTION ─────────────
+        // This used to read `if (!steelReactions && engineModule)`, which was wrong in a
+        // way nothing reported: `engineModule` is assigned in a `.then()`, so the
+        // controller could not be built during setup at all, and the first thing to ask
+        // for it was the first bullet impact. The popper star's rotor entries are built
+        // in the constructor, so the star's plates sat frozen at their authored
+        // positions while the drawn arms turned behind them until something was shot
+        // (owner, on device 2026-08-07).
+        //
+        // Constructing a controller genuinely needs nothing from the engine — only
+        // BUILDING A NATIVE TARGET does, and that happens on a strike. So the factory
+        // closes over the mutable binding and reads it when called, which lets the
+        // controller (and therefore the rotors) come up on the first frame.
+        //
+        // The throw is unreachable, and is a programming-error guard rather than a case
+        // to handle: the sole `onImpact` call site is inside `fireSteel`'s
+        // `if (engineModule)` block, and `engineModule` is only ever assigned — never
+        // set back to null — so a scheduled impact implies a loaded module.
+        steelReactions = createSteelReactions(scene, (spec) => {
+          if (!engineModule)
+            throw new Error('steel reaction requested before the ballistics engine loaded');
+          return createSteelReaction(engineModule, spec);
+        });
       }
       return steelReactions;
     };
+    // NOTE: the controller is brought up by the RENDER LOOP, not here — see the
+    // `update` call there. Doing it in this effect would work now that construction no
+    // longer waits on the engine, but the loop needs a live controller every frame
+    // anyway, so making that the single place it can come from leaves no ordering
+    // question to get wrong a second time.
     // Impacts land at the target only after the bullet's time of flight. The plate
     // swing + dust puff are queued here at FIRE and run when the loop clock reaches
     // their due time, so they coincide with the tracer arriving (not the trigger
@@ -1277,7 +1303,7 @@ export function ScopeView({
                   // the strike, the swing/bolted branch, the persistent mark — lives
                   // in the reaction controller (task T5). This closure only decides
                   // WHEN.
-                  ensureSteelReactions(steel)?.onImpact({
+                  ensureSteelReactions(steel).onImpact({
                     plate: hitPlate,
                     impactWorld,
                     impactVel,
@@ -1809,8 +1835,18 @@ export function ScopeView({
         }
       }
       // Reactive steel (task T5): advance each swinging plate's physics, mirror the
-      // pose into the scene, retire on settle. All of it in the controller.
-      steelReactions?.update(dt);
+      // pose into the scene, retire on settle. All of it in the controller. `st.t` is
+      // passed because the popper star's rotor poses from ABSOLUTE time, not from `dt`
+      // — the same value `range.update` below spins its drawn arms with, which is what
+      // keeps the plates locked to the metalwork.
+      //
+      // ENSURED HERE, EVERY FRAME, rather than once at setup. The controller's
+      // constructor is what builds the popper star's rotor entries, so the star cannot
+      // turn until it exists — and this is the one place guaranteed to run before the
+      // first frame is drawn, whatever else changes about setup order. Cost is one
+      // already-created check per frame; `ensureSteelReactions` is idempotent.
+      const reactions = range ? ensureSteelReactions(range) : steelReactions;
+      reactions?.update(dt, st.t);
       // Wind field (task 1.7a): advance the live curl-noise field's clock once
       // per frame while in Realistic mode (monotonic — never rewound). Built
       // lazily by `ensureWindField()` the first time it's needed. Skipped on the

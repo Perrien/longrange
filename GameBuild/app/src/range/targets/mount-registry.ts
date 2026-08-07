@@ -20,6 +20,7 @@ import {
 } from '../../engine-bridge/steel-target';
 import { inchesToMeters } from '../../units';
 import { duelingTreeSwingM } from './dueling-tree';
+import { STAR_ARM_SPEC } from './popper-star';
 
 /**
  * A plate hung on chains from a rack beam — the shipped behaviour of Range A, the
@@ -214,6 +215,48 @@ const DUELING_TREE_ARM_8: MountType = {
   },
 };
 
+/**
+ * One arm of the popper star's rotating carrier (`Design/Plans/popper-star.md`).
+ *
+ * The spec is IMPORTED from `popper-star.ts` rather than re-typed here, for the same
+ * reason `CHAIN_BEAM` imports its anchor values from `engine-bridge/steel-target.ts`:
+ * the kinematics functions default to that object, so a copy here could silently
+ * disagree with the numbers that actually pose the plates.
+ *
+ * Note there is no `knockdown` spec even though the plate falls. A star arm's fold is
+ * built from `StarArmSpec` plus `STAR_LATCH_UNTIL_RESET` (it never auto-resets), and
+ * `validateMountType` rejects a `knockdown` spec here precisely so the two cannot
+ * become competing sources for one behaviour.
+ */
+const STAR_ARM: MountType = {
+  id: 'star-arm',
+  name: 'Rotating star arm',
+  reaction: 'star-arm',
+  furniture: 'star-hub',
+  needsBeamHeight: false,
+  star: STAR_ARM_SPEC,
+};
+
+/**
+ * The popper star's hub plate: bolted steel that RE-ARMS its star when struck.
+ *
+ * `furniture: 'none'` because the hub boss it bolts to is already drawn by the arm
+ * group's `'star-hub'` furniture — the same "explicit no-op" reasoning the hostage
+ * clamps' `'pivot-post'` case uses.
+ *
+ * WHICH GROUP IT RESETS IS NOT HERE. It comes from the PLACEMENT
+ * (`RawPlacement.resetsGroupId`), so this mount stays reusable: a second star, or any
+ * future plate rack wanting a shoot-to-reset button, gets it without a new mount. A
+ * group id baked into a mount type would be a placement constant in the wrong file.
+ */
+const STAR_HUB_RESET: MountType = {
+  id: 'star-hub-reset',
+  name: 'Star hub (reset switch)',
+  reaction: 'reset-switch',
+  furniture: 'none',
+  needsBeamHeight: false,
+};
+
 /** Every mount the game knows about. */
 const REGISTERED: readonly MountType[] = [
   CHAIN_BEAM,
@@ -223,6 +266,8 @@ const REGISTERED: readonly MountType[] = [
   HOSTAGE_CLAMP_3WAY,
   DUELING_TREE_ARM_6,
   DUELING_TREE_ARM_8,
+  STAR_ARM,
+  STAR_HUB_RESET,
 ];
 
 for (const m of REGISTERED) validateMountType(m);

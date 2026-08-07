@@ -61,10 +61,16 @@ export function plateCentreYM(p: ResolvedPlacement): number {
     case 'stake':
     case 'pivot-post':
     case 'tree-post':
+    case 'star-hub':
     case 'none':
       // Nothing to derive it from — a stake's (or a hostage clamp's, or a
       // dueling-tree post's) height is not the plate's centre. These MUST
       // author `centreYM`.
+      //
+      // A `star-hub` plate is the same case for a different reason: its centre is
+      // hub + arm offset, and the hub itself is RECOVERED from these authored
+      // positions (`popper-star.ts`'s `starHubFrom`). Deriving the centre from the
+      // hub here would make the derivation circular.
       throw new Error(
         `test-range-targets: '${p.id}' on furniture '${p.mount.furniture}' must specify centreYM`,
       );
@@ -104,6 +110,7 @@ export function buildTestRangePlates(
       mountId: p.mount.id,
       heightM: p.heightM,
       groupId: p.groupId,
+      resetsGroupId: p.resetsGroupId,
       // Bolted and knockdown mounts do not swing. Written explicitly (rather than left
       // to `reactionModeOf`) so a plate is self-describing to anything reading the
       // legacy field.

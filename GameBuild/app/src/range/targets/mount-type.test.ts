@@ -22,6 +22,20 @@ import {
 } from '../../engine-bridge/steel-target';
 import { RANGE_A_RACKS } from '../range-a-config';
 import { mountFor, solveLayout, stationsFor, type FiringPoint } from '../elr-range-config';
+import { STAR_ARM_SPEC, STAR_PERIOD_S } from './popper-star';
+
+/** A minimal valid star-arm mount; `over` patches fields for the failure cases. */
+function starMount(over: Partial<MountType> = {}): MountType {
+  return {
+    id: 'test-star',
+    name: 'Test star arm',
+    reaction: 'star-arm',
+    furniture: 'star-hub',
+    needsBeamHeight: false,
+    star: { periodS: 10, sense: -1, fallAngleDeg: 80, resetRateDegS: 60 },
+    ...over,
+  };
+}
 
 /** A minimal valid swing mount; `over` patches fields for the failure cases. */
 function swingMount(over: Partial<MountType> = {}): MountType {
@@ -46,6 +60,8 @@ describe('mount registry', () => {
       'hostage-clamp-3way',
       'dueling-tree-arm-6',
       'dueling-tree-arm-8',
+      'star-arm',
+      'star-hub-reset',
     ]);
     expect(hasMountType('chain-beam')).toBe(true);
     expect(hasMountType('no-such-mount')).toBe(false);
@@ -99,6 +115,31 @@ describe('mount registry', () => {
     expect(m.reaction).toBe('flip');
     expect(m.flip!.positions.map((p) => p.id)).toEqual(['center', 'right', 'center', 'left']);
     expect(m.flip!.positions[0].xOffsetM).toBe(0);
+  });
+
+  it('gives the star arm a carrier spec and no competing knockdown spec', () => {
+    const m = getMountType('star-arm');
+    expect(m.reaction).toBe('star-arm');
+    expect(m.furniture).toBe('star-hub');
+    expect(m.needsBeamHeight).toBe(false);
+    expect(m.star).toEqual(STAR_ARM_SPEC); // the same object the kinematics default to
+    expect(m.star!.periodS).toBe(STAR_PERIOD_S);
+    expect(m.star!.sense).toBe(-1); // clockwise as the shooter sees it (D5)
+    // A star arm's fold is StarArmSpec + STAR_LATCH_UNTIL_RESET. A knockdown spec here
+    // would be a second source for one behaviour, and `validateMountType` forbids it.
+    expect(m.knockdown).toBeUndefined();
+    expect(m.flip).toBeUndefined();
+  });
+
+  it('gives the star hub a reset-switch reaction with no motion of its own', () => {
+    const m = getMountType('star-hub-reset');
+    expect(m.reaction).toBe('reset-switch');
+    // No furniture: the hub boss it bolts to is drawn by the ARM group's 'star-hub'
+    // case, so drawing anything here would double it.
+    expect(m.furniture).toBe('none');
+    expect(m.star).toBeUndefined();
+    expect(m.knockdown).toBeUndefined();
+    expect(m.anchor).toBeUndefined();
   });
 
   it('every registered mount passes validation', () => {
@@ -182,6 +223,64 @@ describe('validateMountType', () => {
     expect(() => kd({ fallAngleDeg: 120 })).toThrow(/fallAngleDeg must be in \(0, 90]/);
     expect(() => kd({ resetRateDegS: 0 })).toThrow(/resetRateDegS must be > 0/);
     expect(() => kd({ stemLengthM: 0 })).toThrow(/stemLengthM must be > 0/);
+  });
+
+  it('requires a star spec for a star-arm mount, and forbids one anywhere else', () => {
+    expect(() => validateMountType(starMount())).not.toThrow();
+    expect(() => validateMountType(starMount({ star: undefined }))).toThrow(
+      /'star-arm' mount needs a star spec/,
+    );
+    // A star spec on anything but a star arm. Carried on a BOLTED mount, so the swing
+    // rules above cannot fire first and mask the one under test.
+    expect(() =>
+      validateMountType(
+        starMount({
+          reaction: 'bolted',
+          furniture: 'stake',
+          star: { periodS: 10, sense: -1, fallAngleDeg: 80, resetRateDegS: 60 },
+        }),
+      ),
+    ).toThrow(/only a 'star-arm' mount can carry a star spec/);
+    // The fold is derived from StarArmSpec + STAR_LATCH_UNTIL_RESET, so a knockdown
+    // spec here would be a second, contradictory source for the same behaviour.
+    expect(() =>
+      validateMountType(
+        starMount({ knockdown: { fallAngleDeg: 80, downDwellS: 2, resetRateDegS: 90, stemLengthM: 1 } }),
+      ),
+    ).toThrow(/'star-arm' mount cannot carry a knockdown spec/);
+  });
+
+  it('rejects degenerate star numbers', () => {
+    const star = (over: Partial<MountType['star']>) =>
+      validateMountType(
+        starMount({ star: { periodS: 10, sense: -1, fallAngleDeg: 80, resetRateDegS: 60, ...over } }),
+      );
+    // A zero period divides by zero in starCarrierRotationZ; a non-finite one poses
+    // every plate at NaN, which reads as "the star vanished" rather than as a bad number.
+    expect(() => star({ periodS: 0 })).toThrow(/star periodS must be a finite number > 0/);
+    expect(() => star({ periodS: Number.POSITIVE_INFINITY })).toThrow(
+      /star periodS must be a finite number > 0/,
+    );
+    expect(() => star({ sense: 0 as 1 })).toThrow(/star sense must be 1 or -1/);
+    expect(() => star({ fallAngleDeg: 0 })).toThrow(/star fallAngleDeg must be in \(0, 90]/);
+    expect(() => star({ fallAngleDeg: 91 })).toThrow(/star fallAngleDeg must be in \(0, 90]/);
+    expect(() => star({ resetRateDegS: 0 })).toThrow(/star resetRateDegS must be > 0/);
+  });
+
+  it('forbids motion specs on a reset switch', () => {
+    const resetSwitch = (over: Partial<MountType> = {}): MountType =>
+      starMount({ id: 'test-reset', reaction: 'reset-switch', furniture: 'none', star: undefined, ...over });
+    expect(() => validateMountType(resetSwitch())).not.toThrow();
+    expect(() =>
+      validateMountType(
+        resetSwitch({ knockdown: { fallAngleDeg: 80, downDwellS: 2, resetRateDegS: 90, stemLengthM: 1 } }),
+      ),
+    ).toThrow(/'reset-switch' mount cannot carry a knockdown spec/);
+    expect(() =>
+      validateMountType(
+        resetSwitch({ anchor: { angleRad: 0.6, outwardOffsetM: 0.05, splayFraction: 0.5 } }),
+      ),
+    ).toThrow(/'reset-switch' mount cannot carry anchor geometry/);
   });
 });
 

@@ -28,6 +28,19 @@
 //               plate's HIT-TESTABLE position (`game/shot.ts` reads
 //               `PlateInstance.position` directly, never a mesh matrix) — that
 //               mutation happens immediately on strike, before the swing animates.
+//   star-arm  — a plate on the popper star's ROTATING carrier
+//               (`Design/Plans/popper-star.md`). The first reaction here whose REST
+//               FRAME is a function of time: every mode above poses a plate against a
+//               matrix captured once, while a star arm's rest matrix is recomputed
+//               every frame from the scene clock. Two consequences worth stating
+//               plainly, because they are what makes this mode different rather than
+//               just longer:
+//                 • its entries are built EAGERLY, at controller construction, not
+//                   lazily on first hit — a rotating target has to move from frame 0.
+//                 • it is the SOLE WRITER of its plates' instance matrices AND of
+//                   `plate.position` (x/y only, never z). `TestRangeScene` spins the
+//                   drawn arms from the same `timeS`, so the metalwork and the plates
+//                   cannot drift; but nothing else may write those matrices.
 //
 // WHAT DELIBERATELY STAYS IN ScopeView: `pendingImpacts`. That is time-of-flight
 // SCHEDULING — when an effect happens — which is a different concern from what the
@@ -51,7 +64,16 @@ import {
   type KnockdownState,
 } from '../range/targets/knockdown';
 import { resetFlip, restFlipState, strikeFlip, type FlipState } from '../range/targets/flip';
-import type { FlipSpec, KnockdownSpec } from '../range/targets/mount-type';
+import {
+  starArmAngleAt,
+  starArmOf,
+  starArmOffsetAt,
+  starCarrierRotationZ,
+  starFoldCfg,
+  starHingeRadiusM,
+  starHubFrom,
+} from '../range/targets/popper-star';
+import type { FlipSpec, KnockdownSpec, StarArmSpec } from '../range/targets/mount-type';
 
 /**
  * How a native steel target gets built.
@@ -78,8 +100,16 @@ export interface SteelImpact {
 export interface SteelReactionController {
   /** A bullet has ARRIVED (already time-of-flight delayed by the caller). */
   onImpact(impact: SteelImpact): void;
-  /** Advance every moving reaction and mirror its pose into the scene. */
-  update(dt: number): void;
+  /**
+   * Advance every moving reaction and mirror its pose into the scene.
+   *
+   * `timeS` is the scene's ABSOLUTE clock (ScopeView's `st.t`), needed by the star
+   * rotor — its pose is a pure function of time, not an integration of `dt`, which is
+   * exactly what lets `TestRangeScene` spin the drawn arms from the same value without
+   * the two ever drifting. Defaulted so the callers and tests that predate rotors keep
+   * working unchanged; production MUST pass the real clock or the star stands still.
+   */
+  update(dt: number, timeS?: number): void;
   /** Stand knocked-down targets back up (task T6). Omit `groupId` for every
    *  knockdown on the range; pass one to reset a single piece of furniture, e.g. a
    *  plate rack, together. */
@@ -93,6 +123,17 @@ export interface SteelReactionController {
    *  down or resetting; true for everything else, including any plate that has never
    *  been struck. */
   isStanding(instanceId: number): boolean;
+  /**
+   * Where a rotor plate's centre will be `aheadS` seconds after `timeS`, or `null` if
+   * the plate is not on a rotating carrier.
+   *
+   * Exists for time-of-flight: a shot resolved against where a moving plate WAS at
+   * trigger break would need no lead at all. At 36°/s and a ~0.11 s flight a 10″ plate
+   * moves about a fifth of its own width, so the containment test uses this instead of
+   * the live position. Returns `null` — rather than the live position — so the caller
+   * has to decide explicitly, and every non-rotor range keeps its exact old numbers.
+   */
+  rotorPositionAt(instanceId: number, timeS: number, aheadS: number): { x: number; y: number } | null;
   /** Release every native handle. Idempotent. */
   dispose(): void;
 }
@@ -163,6 +204,40 @@ interface FlipEntry {
   enginePos: THREE.Vector3;
 }
 
+/**
+ * One plate on the popper star's rotating carrier.
+ *
+ * Built EAGERLY (see `scanStarRotors`), unlike every other entry type here — a
+ * rotating target has to move before anything has been shot.
+ *
+ * Everything geometric is DERIVED from the authored plate positions rather than
+ * carried alongside them: `hub` is the group's centroid, and `restAngleRad`/`radiusM`
+ * come from `starArmOf` against it. So there is no hub coordinate in this struct that
+ * could disagree with the placements — see `popper-star.ts`'s header.
+ */
+interface StarEntry {
+  plate: PlateInstance;
+  spec: StarArmSpec;
+  /** Carrier centre in world space. Shared by every member of the group. */
+  hub: THREE.Vector3;
+  /** The arm's angle at t = 0 (rad), clockwise from straight up. */
+  restAngleRad: number;
+  /** Plate-centre radius (m) — the arm's length. */
+  radiusM: number;
+  /** Instance scale, decomposed once from the plate's build matrix. */
+  scale: THREE.Vector3;
+  /** Fold state. `standing` until struck; latches `down` forever (the spec's dwell is
+   *  `STAR_LATCH_UNTIL_RESET`) until `resetDownTargets` raises it. */
+  state: KnockdownState;
+  /** The fold's `KnockdownSpec`, built once from `spec` + the plate's own width. */
+  cfg: KnockdownSpec;
+  /** Where the C++ target believes it is — see `FlipEntry.enginePos` for the full
+   *  reasoning. It matters far more here: a star plate is ALWAYS somewhere other than
+   *  its build position, so without this correction every splat on every arm would
+   *  clamp to the rim. */
+  enginePos: THREE.Vector3;
+}
+
 export function createSteelReactions(
   scene: SteelSceneApi,
   makeReaction: SteelReactionFactory,
@@ -183,6 +258,9 @@ export function createSteelReactions(
   /** Plates on a flip mount (a hostage paddle), once struck. Kept for the whole
    *  session, same reasoning as `knocked`. */
   const flipped = new Map<number, FlipEntry>();
+  /** Plates on a rotating star carrier. Built EAGERLY below — every other map here
+   *  fills on first hit, but a star has to turn from frame 0. */
+  const stars = new Map<number, StarEntry>();
 
   // Scratch, reused per frame rather than allocated in the loop.
   const pos = new THREE.Vector3();
@@ -197,6 +275,30 @@ export function createSteelReactions(
   const toPivot = new THREE.Matrix4();
   const fromPivot = new THREE.Matrix4();
   const spin = new THREE.Matrix4();
+  // Star scratch. Kept separate from the matrices above because a star pose composes
+  // four of them at once and the knockdown/flip loops may be mid-use. Every star plate
+  // is posed every frame, so nothing here may allocate.
+  const CARRIER_AXIS = new THREE.Vector3(0, 0, 1);
+  const HINGE_AXIS = new THREE.Vector3(1, 0, 0);
+  const IDENTITY_QUAT = new THREE.Quaternion();
+  const starQuat = new THREE.Quaternion();
+  const starPos = new THREE.Vector3();
+  const starCarrier = new THREE.Matrix4();
+  const starFold = new THREE.Matrix4();
+  const starToHinge = new THREE.Matrix4();
+  const starFromHinge = new THREE.Matrix4();
+  const starRest = new THREE.Matrix4();
+  const starHubT = new THREE.Matrix4();
+  /**
+   * The scene time the star rotors were last posed at.
+   *
+   * `onImpact` needs the carrier angle to push down as the plate's orientation, but a
+   * bullet arrival carries no clock of its own — it is scheduled by ScopeView's
+   * time-of-flight queue, which runs immediately before `update` each frame. So the
+   * last posed time IS the pose the arriving bullet is hitting, to within one frame
+   * (~7 mm of arm travel at this rate).
+   */
+  let starTimeS = 0;
   let deleted = false;
 
   /** The native target for a plate, created on first use. */
@@ -314,6 +416,137 @@ export function createSteelReactions(
     return entry;
   }
 
+  /**
+   * Find every rotating-star plate in the scene and build its entry, ONCE, now.
+   *
+   * ── WHY EAGERLY, AND WHY HERE ────────────────────────────────────────────────────
+   * Every other entry map in this file fills lazily on a plate's first hit, which is
+   * right for a reaction: nothing has happened yet, so there is nothing to remember.
+   * A rotating carrier is the opposite — it has to be turning on frame 0, before
+   * anything is shot. Doing the scan inside the constructor (rather than exposing a
+   * `registerRotors` method for ScopeView to call) means a future caller cannot forget
+   * it; the only thing ScopeView has to get right is creating the controller early,
+   * which it does at scene setup.
+   *
+   * GROUPING: one star is one `groupId`. The hub is the centroid of the group's plate
+   * positions and each arm's angle/radius comes from `starArmOf` against it, so a
+   * star's geometry is entirely recovered from its authored placements — see
+   * `popper-star.ts`'s header for why that is worth the indirection.
+   *
+   * A star-arm plate with no `groupId` is skipped rather than guessed at: with nothing
+   * to take a centroid over, its hub would have to be invented.
+   */
+  function scanStarRotors(): void {
+    const groups = new Map<string, PlateInstance[]>();
+    for (const plate of scene.plates) {
+      if (reactionModeOf(plate) !== 'star-arm') continue;
+      if (plate.groupId === undefined) {
+        console.warn(
+          `steel-reactions: star-arm plate '${plate.rackId}' has no groupId, so its hub cannot be derived — skipped`,
+        );
+        continue;
+      }
+      const list = groups.get(plate.groupId);
+      if (list) list.push(plate);
+      else groups.set(plate.groupId, [plate]);
+    }
+
+    for (const members of groups.values()) {
+      const hub2d = starHubFrom(members.map((p) => ({ x: p.position.x, y: p.position.y })));
+      // The carrier is coplanar with its plates, so z is the group's own (shared, by
+      // the placement loader's group invariant).
+      const hub = new THREE.Vector3(hub2d.x, hub2d.y, members[0].position.z);
+      for (const plate of members) {
+        const spec = getMountType(plate.mountId!).star!;
+        const { restAngleRad, radiusM } = starArmOf(hub2d, {
+          x: plate.position.x,
+          y: plate.position.y,
+        });
+        const slot = plateMeshSlot(scene, plate.instanceId);
+        const rest = new THREE.Matrix4();
+        slot.mesh.getMatrixAt(slot.index, rest);
+        const scale = new THREE.Vector3();
+        rest.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+        stars.set(plate.instanceId, {
+          plate,
+          spec,
+          hub,
+          restAngleRad,
+          radiusM,
+          scale,
+          state: standingState(),
+          cfg: starFoldCfg(spec, plate.diameterM),
+          // The native target is built from `plate.position` on this plate's first hit
+          // (`targetFor`), and `plate.position` is rewritten every frame from here on —
+          // so capture the build-time value NOW, while it is still the authored one.
+          enginePos: plate.position.clone(),
+        });
+      }
+    }
+  }
+
+  /**
+   * Write one star plate's pose into the scene, and its centre into `plate.position`.
+   *
+   * THE COMPOSITION, outermost first:
+   *
+   *   M = T(hub) · Rz(carrierθ) · [T(hinge) · Rx(−fold) · T(−hinge)] · T(0, R, 0) · S
+   *
+   * Read right to left: put the plate at radius R up the arm; fold it about the hinge
+   * at its inner rim (the bracketed conjugation is `poseKnockdown`'s rotate-about-a-
+   * point idiom, and `Rx(−α)` is its sign convention too, which is what sends the
+   * outer rim DOWNRANGE rather than toward the shooter); spin the whole arm to the
+   * carrier's current angle; translate to the hub.
+   *
+   * `Rz(carrierθ)` keeps the plate's face normal along Z — it still faces the shooter
+   * at every point in the revolution — while rotating the plate about its own centre
+   * axis, which is what a plate rigidly bolted to a turning arm actually does. That
+   * rotation is why `onImpact` must push the same angle down via `setOrientation`, or
+   * splats land on the wrong part of the face.
+   *
+   * WRITING `plate.position` IS THE POINT, not a side effect: `game/shot.ts` and
+   * `scope/aim-pick.ts` both read it directly and never look at a mesh matrix, so this
+   * one assignment is what makes a moving target aimable and hittable at all. Only x
+   * and y — z is the plate's rack plane, which `ScopeView`'s exact-distance rack filter
+   * depends on and which a coplanar carrier never changes.
+   */
+  function poseStar(id: number, entry: StarEntry, timeS: number): void {
+    const angle = starArmAngleAt(entry.restAngleRad, timeS, entry.spec);
+    const centre = starArmOffsetAt(angle, entry.radiusM);
+
+    // Hit-test / aim-pick position. Written before the matrix so an exception in the
+    // THREE work below can never leave the two disagreeing.
+    entry.plate.position.x = entry.hub.x + centre.dx;
+    entry.plate.position.y = entry.hub.y + centre.dy;
+
+    // In the CARRIER's frame the arm sits at `restAngleRad` and the carrier rotation is
+    // applied on top. Folding in this frame is what makes the hinge tangential for
+    // free — there is no per-arm axis to compute. The hinge is at the plate's inner rim
+    // IN THE PLATE'S OWN PLANE (z = 0), not at the drawn arm's slight downrange offset:
+    // the plate is hinged to the arm along its own face, and using the arm's z here
+    // would shove the plate 3 cm downrange as it folded.
+    const hingeR = starHingeRadiusM(entry.radiusM, entry.plate.diameterM);
+    const hinge = starArmOffsetAt(entry.restAngleRad, hingeR);
+    const rest = starArmOffsetAt(entry.restAngleRad, entry.radiusM);
+
+    starHubT.makeTranslation(entry.hub.x, entry.hub.y, entry.hub.z);
+    starQuat.setFromAxisAngle(CARRIER_AXIS, starCarrierRotationZ(timeS, entry.spec));
+    starCarrier.makeRotationFromQuaternion(starQuat);
+    starToHinge.makeTranslation(-hinge.dx, -hinge.dy, 0);
+    starFromHinge.makeTranslation(hinge.dx, hinge.dy, 0);
+    starFold
+      .makeRotationAxis(HINGE_AXIS, -entry.state.angleRad)
+      .premultiply(starFromHinge)
+      .multiply(starToHinge);
+    starPos.set(rest.dx, rest.dy, 0);
+    starRest.compose(starPos, IDENTITY_QUAT, entry.scale);
+
+    mat.copy(starHubT).multiply(starCarrier).multiply(starFold).multiply(starRest);
+    const slot = plateMeshSlot(scene, id);
+    slot.mesh.setMatrixAt(slot.index, mat);
+    slot.mesh.instanceMatrix.needsUpdate = true;
+  }
+
   /** Write a knockdown entry's current angle into the scene. */
   function poseKnockdown(id: number, entry: KnockdownEntry): void {
     const slot = plateMeshSlot(scene, id);
@@ -404,9 +637,58 @@ export function createSteelReactions(
     scene.plateSurface.writeEngineLayer(plate.instanceId, reaction.getTexture(), plate.paintColor);
   }
 
+  // Rotors are the one thing that must exist before anything is shot, so the scan runs
+  // now rather than on first impact.
+  scanStarRotors();
+
   return {
     onImpact({ plate, impactWorld, impactVel, bulletMassKg, bulletDiameterM }): void {
       const mode = reactionModeOf(plate);
+
+      // STAR ARM. The plate takes paint like any other, but two corrections have to be
+      // applied first, because the engine's target believes it is still sitting at the
+      // authored position with no rotation — and a star plate is essentially NEVER
+      // there. Without both, every splat on every arm lands wrong.
+      if (mode === 'star-arm') {
+        const entry = stars.get(plate.instanceId);
+        // No entry means the scan skipped it (a star-arm plate with no groupId). Take
+        // the paint and nothing else rather than throwing mid-engagement.
+        if (!entry) {
+          const reaction = targetFor(plate);
+          reaction.strike(impactWorld, impactVel, bulletMassKg, bulletDiameterM);
+          paint(plate, reaction);
+          return;
+        }
+        const reaction = targetFor(plate);
+        // (1) ORIENTATION: the plate is bolted to a turning arm, so its own frame is
+        // rotated by the carrier angle. `recordImpact` picks the texture half from
+        // `vel · normal_` and stores the impact at `inverse(orientation_)·(impact −
+        // position_)`, so without this the splat is placed as if the plate had never
+        // turned — the same defect `poseFlip`'s `setOrientation` call fixed for paddles.
+        starQuat.setFromAxisAngle(CARRIER_AXIS, starCarrierRotationZ(starTimeS, entry.spec));
+        reaction.setOrientation({
+          x: starQuat.x,
+          y: starQuat.y,
+          z: starQuat.z,
+          w: starQuat.w,
+        });
+        // (2) POSITION: there is no `setPosition` on the native target, so the IMPACT
+        // moves into the frame the engine still believes it occupies. A star plate is
+        // up to 1.2 m from its build position, so on a 25 cm face this is the
+        // difference between a mark where the bullet hit and one clamped to the rim.
+        reaction.strike(
+          {
+            x: impactWorld.x - (plate.position.x - entry.enginePos.x),
+            y: impactWorld.y - (plate.position.y - entry.enginePos.y),
+            z: impactWorld.z - (plate.position.z - entry.enginePos.z),
+          },
+          impactVel,
+          bulletMassKg,
+          bulletDiameterM,
+        );
+        paint(plate, reaction);
+        return;
+      }
 
       // KNOCKDOWN. The plate still gets a native target — that is what records the
       // splat — but it is never stepped or posed by the engine; its pose is the TS
@@ -523,7 +805,13 @@ export function createSteelReactions(
       paint(plate, entry.reaction);
     },
 
-    update(dt: number): void {
+    update(dt: number, timeS = 0): void {
+      // Star rotors first, and unconditionally: they turn whether or not anything has
+      // been struck, and their pose is a pure function of `timeS` rather than an
+      // integration of `dt` — which is what keeps them locked to the drawn arms
+      // `TestRangeScene` spins from the same value.
+      starTimeS = timeS;
+      for (const [id, entry] of stars) poseStar(id, entry, timeS);
       // Knockdowns advance independently of the swing set — different physics, and a
       // knocked target keeps animating (dwell, then rise) with nothing "moving".
       for (const [id, entry] of knocked) {
@@ -613,6 +901,14 @@ export function createSteelReactions(
       return entry ? isStandingPhase(entry.state.phase) : true;
     },
 
+    rotorPositionAt(instanceId, timeS, aheadS) {
+      const entry = stars.get(instanceId);
+      if (!entry) return null;
+      const angle = starArmAngleAt(entry.restAngleRad, timeS + aheadS, entry.spec);
+      const centre = starArmOffsetAt(angle, entry.radiusM);
+      return { x: entry.hub.x + centre.dx, y: entry.hub.y + centre.dy };
+    },
+
     dispose(): void {
       if (deleted) return;
       deleted = true;
@@ -621,6 +917,7 @@ export function createSteelReactions(
       moving.clear();
       knocked.clear();
       flipped.clear();
+      stars.clear();
       for (const target of targets.values()) target.delete();
       targets.clear();
     },

@@ -322,7 +322,8 @@ describe('registry', () => {
     // can never pass vacuously against an empty registry (which is what this assertion
     // guarded when T1 shipped it). Each new type deliberately updates this line:
     // `idpa-silhouette` T7, `popper` T8, `hanging-gong` T9a, `idpa-hostage-silhouette`
-    // and `hostage-paddle` (hostage-target plan).
+    // and `hostage-paddle` (hostage-target plan), `star-popper` and `star-hub-plate`
+    // (popper-star plan).
     expect(listTargetTypes().map((t) => t.id)).toEqual([
       'hanging-gong',
       'idpa-silhouette',
@@ -330,6 +331,8 @@ describe('registry', () => {
       'idpa-hostage-silhouette',
       'hostage-paddle',
       'dueling-tree-paddle',
+      'star-popper',
+      'star-hub-plate',
     ]);
   });
 

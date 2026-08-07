@@ -99,6 +99,18 @@ export interface PlateInstance {
    * `resetDownTargets(groupId)`, which stands a whole plate rack back up together.
    */
   groupId?: string;
+  /**
+   * Which `groupId` a strike on THIS plate re-arms (`Design/Plans/popper-star.md`).
+   * Omitted ⇒ it is not a reset switch, which is every plate but the popper star's
+   * hub.
+   *
+   * Read by `scope/steel-reactions.ts`'s `'reset-switch'` branch, which turns a hit
+   * into `resetDownTargets(resetsGroupId)`. Deliberately NOT the plate's own
+   * `groupId`: a group's members must share a mount (`placements.ts`), and a reset
+   * switch is bolted while the targets it raises are knockdowns — so the switch can
+   * never be inside the group it resets.
+   */
+  resetsGroupId?: string;
 }
 
 /**

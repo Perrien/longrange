@@ -15,8 +15,21 @@
 //
 // Pure: no THREE, no engine, no DOM.
 
-/** What a hit does to the target, given how it is mounted. */
-export type ReactionMode = 'swing' | 'bolted' | 'knockdown' | 'flip';
+/**
+ * What a hit does to the target, given how it is mounted.
+ *
+ * `'star-arm'` and `'reset-switch'` are the popper star's pair
+ * (`Design/Plans/popper-star.md`). They are separate modes rather than one because
+ * they are genuinely different behaviours on one machine: the arm plate falls, the
+ * hub plate is bolted and re-arms the arms.
+ */
+export type ReactionMode =
+  | 'swing'
+  | 'bolted'
+  | 'knockdown'
+  | 'flip'
+  | 'star-arm'
+  | 'reset-switch';
 
 /** The physical furniture a scene builds for this mount. `'none'` is for a target
  *  that needs no structure of its own (e.g. bolted directly to a backer panel the
@@ -28,6 +41,7 @@ export type MountFurniture =
   | 'hinge-stem'
   | 'pivot-post'
   | 'tree-post'
+  | 'star-hub'
   | 'none';
 
 /** Hanging-chain geometry. Defaults come from `engine-bridge/steel-target.ts`,
@@ -70,6 +84,32 @@ export interface FlipSpec {
   transitionS: number;
 }
 
+/**
+ * Rotating-carrier behaviour, consumed by the star branch of `scope/steel-reactions.ts`
+ * and by the kinematics in `targets/popper-star.ts`.
+ *
+ * WHY THE PERIOD LIVES ON THE MOUNT and not on the target: the arm is the mount. A
+ * plate does not know it is turning; the thing holding it does — the same split that
+ * puts a chain's anchor geometry and a popper's latch angle here.
+ *
+ * There is deliberately NO `downDwellS`. A star arm never resets itself (owner: the
+ * plates "stay down when shot"), so the dwell is not a tuning knob — the reaction
+ * builds its `KnockdownSpec` with `STAR_LATCH_UNTIL_RESET`, and offering a field here
+ * would only invite it to be set to something that quietly breaks that rule.
+ */
+export interface StarArmSpec {
+  /** Seconds per revolution of the carrier. */
+  periodS: number;
+  /** Rotation sense SEEN BY THE SHOOTER: -1 = clockwise, +1 = counter-clockwise.
+   *  The shooter looks down −Z, so their clockwise is a NEGATIVE rotation about
+   *  world +Z — see `popper-star.ts`'s `starCarrierRotationZ`. */
+  sense: 1 | -1;
+  /** Angle off the arm's rest plane at which a struck plate latches folded (deg). */
+  fallAngleDeg: number;
+  /** Reset rise rate (deg/s) — a reset actuator is mechanical, so constant. */
+  resetRateDegS: number;
+}
+
 export interface MountType {
   id: string;
   name: string;
@@ -81,6 +121,7 @@ export interface MountType {
   anchor?: ChainAnchorSpec;
   knockdown?: KnockdownSpec;
   flip?: FlipSpec;
+  star?: StarArmSpec;
 }
 
 /** The minimum a plate has to expose for `reactionModeOf` — kept structural so
@@ -114,6 +155,21 @@ export function validateMountType(m: MountType): void {
     throw new Error(`${where}: a 'flip' mount needs a flip spec`);
   if (m.reaction !== 'flip' && m.flip)
     throw new Error(`${where}: only a 'flip' mount can carry a flip spec`);
+  // A star arm's motion is entirely in its spec, so it cannot be omitted; and its
+  // fold is built from `StarArmSpec` + `STAR_LATCH_UNTIL_RESET`, so a `knockdown`
+  // spec here would be a second, contradictory source for the same behaviour.
+  if (m.reaction === 'star-arm' && !m.star)
+    throw new Error(`${where}: a 'star-arm' mount needs a star spec`);
+  if (m.reaction !== 'star-arm' && m.star)
+    throw new Error(`${where}: only a 'star-arm' mount can carry a star spec`);
+  if (m.reaction === 'star-arm' && m.knockdown)
+    throw new Error(`${where}: a 'star-arm' mount cannot carry a knockdown spec`);
+  // A reset switch is bolted steel that happens to re-arm a group. It has no motion
+  // of its own, so any reaction spec on it is an authoring error.
+  if (m.reaction === 'reset-switch' && m.knockdown)
+    throw new Error(`${where}: a 'reset-switch' mount cannot carry a knockdown spec`);
+  if (m.reaction === 'reset-switch' && m.anchor)
+    throw new Error(`${where}: a 'reset-switch' mount cannot carry anchor geometry`);
   if (m.anchor) {
     const a = m.anchor;
     if (!(a.angleRad > 0)) throw new Error(`${where}: anchor angleRad must be > 0`);
@@ -135,5 +191,19 @@ export function validateMountType(m: MountType): void {
     if (f.positions[0].xOffsetM !== 0)
       throw new Error(`${where}: flip position 0 (rest) must have xOffsetM 0`);
     if (!(f.transitionS > 0)) throw new Error(`${where}: flip transitionS must be > 0`);
+  }
+  if (m.star) {
+    const s = m.star;
+    // A zero or negative period is a division by zero in `starCarrierRotationZ`, and
+    // a non-finite one poses every plate at NaN — invisible until the star vanishes.
+    if (!(s.periodS > 0) || !Number.isFinite(s.periodS))
+      throw new Error(`${where}: star periodS must be a finite number > 0, got ${s.periodS}`);
+    if (s.sense !== 1 && s.sense !== -1)
+      throw new Error(`${where}: star sense must be 1 or -1, got ${s.sense}`);
+    // Same bounds the knockdown latch takes: a fold past 90° would carry the plate
+    // back up the other side, and a zero-rate reset would never finish rising.
+    if (!(s.fallAngleDeg > 0 && s.fallAngleDeg <= 90))
+      throw new Error(`${where}: star fallAngleDeg must be in (0, 90]`);
+    if (!(s.resetRateDegS > 0)) throw new Error(`${where}: star resetRateDegS must be > 0`);
   }
 }

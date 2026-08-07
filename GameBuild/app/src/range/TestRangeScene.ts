@@ -35,6 +35,20 @@ import { browserFaceDeps, rasterizeFace } from './targets/face-raster';
 import { holeRings, outlinePolygon } from './targets/target-geometry';
 import type { ResolvedPlacement } from './targets/placements';
 import { DUELING_TREE_POST_HEIGHT_M, DUELING_TREE_POST_RADIUS_M } from './targets/dueling-tree';
+import {
+  STAR_ARM_RADIUS_M,
+  STAR_HUB_BOSS_LENGTH_M,
+  STAR_HUB_BOSS_RADIUS_M,
+  STAR_HUB_BOSS_Z_OFFSET_M,
+  STAR_POST_RADIUS_M,
+  STAR_POST_Z_OFFSET_M,
+  starArmMeshLengthM,
+  starArmMeshPose,
+  starArmOf,
+  starCarrierRotationZ,
+  starHubFrom,
+} from './targets/popper-star';
+import type { StarArmSpec } from './targets/mount-type';
 
 const FRAME_COLOR = 0xaaaaaa; // galvanised posts/beam
 const CHAIN_COLOR = 0x4a4a4a; // dark galvanised chain
@@ -52,6 +66,10 @@ export class TestRangeScene implements SteelSceneApi {
   /** Which mesh row holds each global instanceId (SteelSceneApi's `meshFor`). */
   private readonly slots = new Map<number, { mesh: THREE.InstancedMesh; index: number }>();
   private placements: readonly ResolvedPlacement[] = [];
+  /** Rotating star carriers (hub boss + arms), one per star group. Spun in `update`
+   *  from the scene clock; the plates they carry are posed by
+   *  `scope/steel-reactions.ts` from that same clock. */
+  private readonly starCarriers: { group: THREE.Group; spec: StarArmSpec }[] = [];
   private disposed = false;
   private readonly scene: THREE.Scene;
   private readonly env: EnvironmentHandle;
@@ -205,6 +223,9 @@ export class TestRangeScene implements SteelSceneApi {
         case 'tree-post':
           this.addTreePost(members, placement, mat);
           break;
+        case 'star-hub':
+          this.addStarHub(members, placement, mat);
+          break;
         case 'pivot-post':
           // Deliberately draws nothing: the hostage clamps are hidden behind the
           // silhouette. Written as an explicit no-op so the default arm below can
@@ -303,8 +324,81 @@ export class TestRangeScene implements SteelSceneApi {
     this.add(post);
   }
 
-  // --- hanging chains (two slots per plate, ALWAYS) --------------------------
-  // The reaction loop indexes `chainRest[id*2+ci]` unconditionally, so every plate
+  /**
+   * The popper star: a static post, plus a rotating CARRIER carrying the hub boss and
+   * five arms (`Design/Plans/popper-star.md` §3.5).
+   *
+   * THE HUB IS RECOVERED, NOT AUTHORED. Five evenly-spaced arm vectors sum to zero,
+   * so the centroid of the group's plate positions IS the hub (`starHubFrom`) — the
+   * same "derive it from the data you already have" move `addTreePost` makes for the
+   * dueling tree's post x. Nothing here re-states a coordinate the placements own.
+   *
+   * WHAT THIS DELIBERATELY DOES NOT DRAW: the plates. They live in the shared
+   * `InstancedMesh` so they keep their paint-atlas layer (layer == `instanceId`), and
+   * `scope/steel-reactions.ts` is their single matrix writer. Parenting them here
+   * would give one transform two owners, which is the one thing a rotating target
+   * cannot survive.
+   */
+  private addStarHub(
+    members: readonly PlateInstance[],
+    placement: ResolvedPlacement,
+    mat: THREE.Material,
+  ): void {
+    const hub = starHubFrom(members.map((p) => ({ x: p.position.x, y: p.position.y })));
+    const z = -placement.distanceM;
+
+    // Ground to the hub — static, so it is NOT a child of the carrier. Pushed
+    // DOWNRANGE by `STAR_POST_Z_OFFSET_M`: at the plate plane its 3.8 cm radius stood
+    // proud of the plates and drew in front of the whole star, centre plate included
+    // (owner, on device). See the depth stack in `popper-star.ts`.
+    const postGeo = this.track(
+      new THREE.CylinderGeometry(STAR_POST_RADIUS_M, STAR_POST_RADIUS_M, hub.y, 10),
+    );
+    const post = new THREE.Mesh(postGeo, mat);
+    post.position.set(hub.x, hub.y / 2, z + STAR_POST_Z_OFFSET_M);
+    this.add(post);
+
+    const carrier = new THREE.Group();
+    carrier.position.set(hub.x, hub.y, z);
+
+    // The boss sits DOWNRANGE of the hub plane so it does not z-fight the coplanar
+    // 12" hub plate (see STAR_HUB_BOSS_Z_OFFSET_M).
+    const bossGeo = this.track(
+      new THREE.CylinderGeometry(
+        STAR_HUB_BOSS_RADIUS_M,
+        STAR_HUB_BOSS_RADIUS_M,
+        STAR_HUB_BOSS_LENGTH_M,
+        12,
+      ),
+    );
+    const boss = new THREE.Mesh(bossGeo, mat);
+    boss.rotation.x = Math.PI / 2; // a cylinder runs along +Y; the boss runs along Z
+    boss.position.set(0, 0, STAR_HUB_BOSS_Z_OFFSET_M);
+    carrier.add(boss);
+
+    // One arm per member, drawn out to the plate's INNER rim — where the fold hinge
+    // is — so an arm never pokes through a plate face. `starArmMeshPose` owns the
+    // placement (and its sign convention) because it is testable there and this is not.
+    const armLength = starArmMeshLengthM(members[0].diameterM);
+    const armGeo = this.track(
+      new THREE.CylinderGeometry(STAR_ARM_RADIUS_M, STAR_ARM_RADIUS_M, armLength, 8),
+    );
+    for (const member of members) {
+      const { restAngleRad } = starArmOf(hub, { x: member.position.x, y: member.position.y });
+      const pose = starArmMeshPose(restAngleRad, members[0].diameterM);
+      const arm = new THREE.Mesh(armGeo, mat);
+      arm.rotation.z = pose.rotationZ;
+      arm.position.set(pose.x, pose.y, pose.z);
+      carrier.add(arm);
+    }
+
+    // Held so `update` can spin it. Its rotation is a pure function of the scene
+    // clock, exactly as the plate poses are, so the two cannot drift apart.
+    this.starCarriers.push({ group: carrier, spec: placement.mount.star! });
+    this.add(carrier);
+  }
+
+  // --- hanging chains (two slots per plate, ALWAYS) --------------------------  // The reaction loop indexes `chainRest[id*2+ci]` unconditionally, so every plate
   // gets a pair. A plate that does not hang gets a COLLAPSED (zero-length) pair —
   // invisible, and safe to read — which is what ELR's stake plates already do.
   private addChains(): void {
@@ -386,13 +480,21 @@ export class TestRangeScene implements SteelSceneApi {
   }
 
   /** Delegates to the environment handle (Stage 4 adds cloud drift there;
-   *  a no-op until then). */
+   *  a no-op until then), and spins any popper-star carrier.
+   *
+   *  The star's rotation is a pure function of `timeS` — NOT an accumulation of `dt` —
+   *  because `scope/steel-reactions.ts` poses the plates from the same value on the
+   *  same frame. Two clocks integrating separately would drift the plates off their
+   *  arms over a session; one shared function of absolute time cannot. */
   update(
     dt: number,
     timeS: number,
     windVec: { x: number; y: number; z: number },
     sampleWindAt?: (p: { x: number; y: number; z: number }) => { x: number; y: number; z: number },
   ): void {
+    for (const rotor of this.starCarriers) {
+      rotor.group.rotation.z = starCarrierRotationZ(timeS, rotor.spec);
+    }
     this.env.update(dt, timeS, windVec, sampleWindAt);
   }
 
@@ -409,6 +511,7 @@ export class TestRangeScene implements SteelSceneApi {
   dispose(): void {
     this.disposed = true;
     this.slots.clear();
+    this.starCarriers.length = 0;
     this.env.dispose();
     for (const o of this.objects) this.scene.remove(o);
     for (const d of this.disposables) d.dispose();

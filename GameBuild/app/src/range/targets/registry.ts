@@ -13,6 +13,7 @@ import { HOSTAGE_PADDLE } from './hostage-paddle';
 import { IDPA_SILHOUETTE } from './idpa';
 import { IDPA_HOSTAGE_SILHOUETTE } from './idpa-hostage';
 import { POPPER } from './popper';
+import { STAR_HUB_PLATE, STAR_POPPER } from './popper-star';
 import { validateTargetType, type TargetType } from './target-type';
 
 /**
@@ -27,6 +28,8 @@ const REGISTERED: readonly TargetType[] = [
   IDPA_HOSTAGE_SILHOUETTE,
   HOSTAGE_PADDLE,
   DUELING_TREE_PADDLE,
+  STAR_POPPER,
+  STAR_HUB_PLATE,
 ];
 
 // Fail at import, not at render. A malformed type is a build-time bug.

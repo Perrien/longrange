@@ -71,8 +71,31 @@ const HINGE_STEM: MountType = {
   knockdown: { fallAngleDeg: 80, downDwellS: 2, resetRateDegS: 90, stemLengthM: 1 },
 };
 
-const TYPES = new Map([GONG, POPPER].map((t) => [t.id, t]));
-const MOUNTS = new Map([CHAIN_BEAM, BOLT_STAKE, HINGE_STEM].map((m) => [m.id, m]));
+/** A plate whose only mount is the reset switch — the popper star's hub plate. Kept
+ *  a separate fixture rather than widening GONG's `compatibleMounts`, which other
+ *  tests assert verbatim in the pairing-error message. */
+const HUB_PLATE: TargetType = {
+  ...GONG,
+  id: 'hub-plate',
+  name: 'Hub plate',
+  compatibleMounts: ['reset-switch'],
+  defaultMount: 'reset-switch',
+};
+
+/** A bolted plate that re-arms a group when struck — the popper star's hub. Its
+ *  target group id is a PLACEMENT field, which is what these tests pin down. */
+const RESET_SWITCH: MountType = {
+  id: 'reset-switch',
+  name: 'Reset switch',
+  reaction: 'reset-switch',
+  furniture: 'none',
+  needsBeamHeight: false,
+};
+
+const TYPES = new Map([GONG, POPPER, HUB_PLATE].map((t) => [t.id, t]));
+const MOUNTS = new Map(
+  [CHAIN_BEAM, BOLT_STAKE, HINGE_STEM, RESET_SWITCH].map((m) => [m.id, m]),
+);
 
 const DEPS: PlacementDeps = {
   hasTargetType: (id) => TYPES.has(id),
@@ -125,6 +148,12 @@ describe('placements: the data file itself', () => {
       'test-tree-3',
       'test-tree-4',
       'test-tree-5',
+      'test-star-arm-1',
+      'test-star-arm-2',
+      'test-star-arm-3',
+      'test-star-arm-4',
+      'test-star-arm-5',
+      'test-star-hub',
     ]);
     const gong = list[0];
     expect(gong.type.id).toBe('hanging-gong');
@@ -247,6 +276,18 @@ describe('placements: validation', () => {
     expect(() => resolve(entry({ palette: { face: 1.5 } }))).toThrow(/must be a 0xRRGGBB integer/);
   });
 
+  it('requires resetsGroupId on a reset-switch mount, and forbids it elsewhere', () => {
+    // Both directions are silent failures on device if unchecked: a switch with
+    // nothing to reset is a dead button, and a reset id on a mount that cannot act on
+    // it does nothing at all.
+    expect(() =>
+      resolve({ id: 'hub', typeId: 'hub-plate', distanceM: 82, xOffsetM: 1.19 }),
+    ).toThrow(/mount 'reset-switch' is a reset switch and requires resetsGroupId/);
+    expect(() => resolve(entry({ resetsGroupId: 'arms' }))).toThrow(
+      /resetsGroupId is only meaningful on a 'reset-switch' mount, and 'chain-beam' reacts 'swing'/,
+    );
+  });
+
   it('names the range and entry in every message', () => {
     expect(() => resolve(entry({ typeId: 'nope' }))).toThrow(/^placements\[test-range\/gong-100\]:/);
   });
@@ -289,6 +330,29 @@ describe('placements: cross-entry invariants', () => {
         { id: 'g2', typeId: 'gong', groupId: 'g', mountId: 'bolt-stake', distanceM: 50, xOffsetM: 1.5 },
       ]),
     ).toThrow(/group 'g' members disagree on mount \('chain-beam' vs 'bolt-stake'\)/);
+  });
+
+  it('accepts a reset switch naming a group that exists on the range', () => {
+    const out = list([
+      { id: 'p1', typeId: 'popper', groupId: 'arms', distanceM: 82, xOffsetM: 1, widthM: 0.2 },
+      { id: 'p2', typeId: 'popper', groupId: 'arms', distanceM: 82, xOffsetM: 1.5, widthM: 0.2 },
+      { id: 'hub', typeId: 'hub-plate', distanceM: 82, xOffsetM: 1.25, resetsGroupId: 'arms' },
+    ]);
+    expect(out[2].resetsGroupId).toBe('arms');
+    // The switch is NOT in the group it resets — it cannot be, since a group's members
+    // must share a mount and the switch is bolted while the arms are knockdowns.
+    expect(out[2].groupId).toBeUndefined();
+  });
+
+  it('rejects a reset switch naming a group that does not exist', () => {
+    // The failure mode this guards is the worst kind: a plate that takes hits and
+    // silently does nothing, which on device reads as broken physics, not a typo.
+    expect(() =>
+      list([
+        { id: 'p1', typeId: 'popper', groupId: 'arms', distanceM: 82, xOffsetM: 1, widthM: 0.2 },
+        { id: 'hub', typeId: 'hub-plate', distanceM: 82, xOffsetM: 1.25, resetsGroupId: 'armz' },
+      ]),
+    ).toThrow(/resetsGroupId 'armz' is not a groupId on this range \(has: arms\)/);
   });
 
   it('leaves ungrouped entries alone', () => {

@@ -16,6 +16,15 @@ import { PLATE_THICKNESS_M, type PlateInstance } from '../range/RangeScene';
 import { PLATE_LAYER_BYTES } from '../range/plate-surface';
 import type { SteelSceneApi } from '../range/steel-scene-api';
 import type { SteelReaction } from '../engine-bridge/steel-target';
+import {
+  STAR_ARM_COUNT,
+  STAR_ARM_LENGTH_M,
+  STAR_HUB_PLATE_WIDTH_M,
+  STAR_PERIOD_S,
+  STAR_PLATE_WIDTH_M,
+  starArmOffsetM,
+  starCarrierRotationZ,
+} from '../range/targets/popper-star';
 
 /** A stand-in for one C++ SteelTarget. Records what the controller did to it. */
 class FakeReaction {
@@ -871,5 +880,243 @@ describe('flip plates (hostage paddles)', () => {
     controller.dispose();
     controller.dispose();
     for (const r of built) expect(r.deletes).toBe(1);
+  });
+});
+
+describe('popper star rotor', () => {
+  // A star's five arms, authored exactly as `placements.data.json` does: hub +
+  // `starArmOffsetM(i, 0)`. The hub is never stated to the controller — it is
+  // recovered from these positions, which is the thing most worth pinning down.
+  const HUB = { x: 1.19, y: 1.2 };
+  const STAR_Z = -82.296;
+
+  function starScene() {
+    built.length = 0;
+    const scene = fakeScene(6);
+    const arms = Array.from({ length: STAR_ARM_COUNT }, (_, i) => {
+      const { dx, dy } = starArmOffsetM(i, 0);
+      return plate({
+        rackId: `arm-${i + 1}`,
+        instanceId: i,
+        distanceM: 82.296,
+        diameterM: STAR_PLATE_WIDTH_M,
+        position: new THREE.Vector3(HUB.x + dx, HUB.y + dy, STAR_Z),
+        targetTypeId: 'star-popper',
+        mountId: 'star-arm',
+        groupId: 'test-star-arms',
+        swings: false,
+      });
+    });
+    const hub = plate({
+      rackId: 'hub',
+      instanceId: 5,
+      distanceM: 82.296,
+      diameterM: STAR_HUB_PLATE_WIDTH_M,
+      position: new THREE.Vector3(HUB.x, HUB.y, STAR_Z),
+      targetTypeId: 'star-hub-plate',
+      mountId: 'star-hub-reset',
+      groupId: undefined,
+      resetsGroupId: 'test-star-arms',
+      swings: false,
+    });
+    // `plates` must be populated BEFORE construction: the rotor scan runs in the
+    // constructor, which is what lets the star turn from frame 0.
+    scene.plates.push(...arms, hub);
+    const controller = createSteelReactions(scene, fakeFactory);
+    return { scene, controller, arms, hub };
+  }
+
+  /** The translation THREE actually has for a plate, so the composed matrix can be
+   *  compared against the position the hit test uses. */
+  function meshPos(scene: FakeScene, id: number) {
+    const m = new THREE.Matrix4();
+    scene.plateMesh.getMatrixAt(id, m);
+    return new THREE.Vector3().setFromMatrixPosition(m);
+  }
+
+  it('builds its entries EAGERLY, so the star turns before anything is shot', () => {
+    const { scene, controller } = starScene();
+    // No impacts at all, and no native targets built — a rotor is not a reaction.
+    expect(built).toHaveLength(0);
+    const before = scene.plates[0].position.clone();
+    controller.update(1 / 60, 2.5);
+    expect(scene.plates[0].position.distanceTo(before)).toBeGreaterThan(0.5);
+    expect(built).toHaveLength(0);
+  });
+
+  it('rewrites plate.position every frame — the hit test reads that, not a matrix', () => {
+    const { scene, controller } = starScene();
+    for (const t of [0, 1.3, 4.4, 7.9, 12.6]) {
+      controller.update(1 / 60, t);
+      for (let i = 0; i < STAR_ARM_COUNT; i++) {
+        const { dx, dy } = starArmOffsetM(i, t);
+        expect(scene.plates[i].position.x).toBeCloseTo(HUB.x + dx, 9);
+        expect(scene.plates[i].position.y).toBeCloseTo(HUB.y + dy, 9);
+        // z is the rack plane — ScopeView's exact-distance rack filter depends on it,
+        // and a coplanar carrier must never touch it.
+        expect(scene.plates[i].position.z).toBe(STAR_Z);
+      }
+    }
+  });
+
+  it('poses the mesh at the same point the hit test uses', () => {
+    // The real check on the whole compose chain: T(hub)·Rz(θ)·fold·T(0,R,0). If the
+    // matrix and `plate.position` disagree, the player shoots at one place and hits
+    // another — the single worst failure mode this target can have, and invisible in
+    // a screenshot.
+    //
+    // Compared to 5 dp, not 9: `instanceMatrix` is a Float32Array, so a value near
+    // 1.19 quantises at ~6e-8 no matter how exact the math is. 1e-5 m is 10 µm —
+    // three orders of magnitude under a bullet radius, so it cannot mask a real
+    // disagreement while still leaving room for the storage.
+    const { scene, controller } = starScene();
+    for (const t of [0, 0.7, 3.3, 6.1, 9.8]) {
+      controller.update(1 / 60, t);
+      for (let i = 0; i < STAR_ARM_COUNT; i++) {
+        const posed = meshPos(scene, i);
+        expect(posed.x).toBeCloseTo(scene.plates[i].position.x, 5);
+        expect(posed.y).toBeCloseTo(scene.plates[i].position.y, 5);
+        expect(posed.z).toBeCloseTo(STAR_Z, 4);
+      }
+    }
+  });
+
+  it('keeps the hub recovered and the arms rigid through a whole revolution', () => {
+    const { scene, controller } = starScene();
+    for (let step = 0; step <= 40; step++) {
+      const t = (step / 40) * STAR_PERIOD_S;
+      controller.update(1 / 60, t);
+      const xs = scene.plates.slice(0, STAR_ARM_COUNT).map((p) => p.position.x);
+      const ys = scene.plates.slice(0, STAR_ARM_COUNT).map((p) => p.position.y);
+      // The centroid is still the hub: the carrier is rigid, not drifting.
+      expect(xs.reduce((a, b) => a + b, 0) / STAR_ARM_COUNT).toBeCloseTo(HUB.x, 9);
+      expect(ys.reduce((a, b) => a + b, 0) / STAR_ARM_COUNT).toBeCloseTo(HUB.y, 9);
+      for (let i = 0; i < STAR_ARM_COUNT; i++) {
+        expect(Math.hypot(xs[i] - HUB.x, ys[i] - HUB.y)).toBeCloseTo(STAR_ARM_LENGTH_M, 9);
+      }
+    }
+  });
+
+  it('leaves the fixed hub plate exactly where it was authored', () => {
+    const { scene, controller } = starScene();
+    for (const t of [0, 2.2, 5.5, 8.8]) controller.update(1 / 60, t);
+    expect(scene.plates[5].position.x).toBe(HUB.x);
+    expect(scene.plates[5].position.y).toBe(HUB.y);
+  });
+
+  it('returns to the same pose one period later, and not half a period later', () => {
+    const { scene, controller } = starScene();
+    controller.update(1 / 60, 3.4);
+    const at34 = scene.plates[0].position.clone();
+    controller.update(1 / 60, 3.4 + STAR_PERIOD_S / 2);
+    expect(scene.plates[0].position.distanceTo(at34)).toBeGreaterThan(1);
+    controller.update(1 / 60, 3.4 + STAR_PERIOD_S);
+    expect(scene.plates[0].position.distanceTo(at34)).toBeLessThan(1e-9);
+  });
+
+  it('leads the target: rotorPositionAt looks ahead by the time of flight', () => {
+    const { controller } = starScene();
+    const now = controller.rotorPositionAt(0, 4, 0)!;
+    const ahead = controller.rotorPositionAt(0, 4, 0.113)!;
+    expect(ahead).not.toBeNull();
+    // It agrees with the kinematics at the later time…
+    const { dx, dy } = starArmOffsetM(0, 4.113);
+    expect(ahead.x).toBeCloseTo(HUB.x + dx, 9);
+    expect(ahead.y).toBeCloseTo(HUB.y + dy, 9);
+    // …and the travel is a real fraction of a 10" plate, which is the whole reason
+    // the lead matters: tangential speed 0.6 m * 0.628 rad/s = 0.377 m/s.
+    const moved = Math.hypot(ahead.x - now.x, ahead.y - now.y);
+    expect(moved).toBeGreaterThan(0.03);
+    expect(moved / STAR_PLATE_WIDTH_M).toBeGreaterThan(0.1);
+  });
+
+  it('returns null from rotorPositionAt for a plate that is not on a carrier', () => {
+    // The caller must decide explicitly, so every non-rotor range keeps its old
+    // numbers rather than silently routing through rotor code.
+    const { controller } = starScene();
+    expect(controller.rotorPositionAt(5, 4, 0.1)).toBeNull(); // the fixed hub plate
+    expect(controller.rotorPositionAt(99, 4, 0.1)).toBeNull(); // not a plate at all
+  });
+
+  it('tells the engine the carrier angle BEFORE recording the strike', () => {
+    // `recordImpact` reads the body's own orientation to choose the texture half and
+    // to localise the mark, so a plate that has turned must say so first — the same
+    // defect `poseFlip`'s setOrientation call fixed for hostage paddles.
+    const { scene, controller } = starScene();
+    const t = 2.5;
+    controller.update(1 / 60, t);
+    const arm = scene.plates[0];
+    controller.onImpact({
+      plate: arm,
+      impactWorld: { x: arm.position.x, y: arm.position.y, z: STAR_Z },
+      impactVel: IMPACT.impactVel,
+      bulletMassKg: IMPACT.bulletMassKg,
+      bulletDiameterM: IMPACT.bulletDiameterM,
+    });
+    expect(built).toHaveLength(1);
+    expect(built[0].orientations).toHaveLength(1);
+    const expected = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 0, 1),
+      starCarrierRotationZ(t),
+    );
+    expect(built[0].orientations[0].z).toBeCloseTo(expected.z, 9);
+    expect(built[0].orientations[0].w).toBeCloseTo(expected.w, 9);
+    expect(built[0].strikes).toBe(1);
+  });
+
+  it('re-expresses the impact in the frame the engine still believes it occupies', () => {
+    // There is no `setPosition` on the native target, and a star plate is essentially
+    // never at its build position. Uncorrected, a dead-centre hit on a 25 cm face
+    // would land up to a metre off and clamp to the rim.
+    const { scene, controller } = starScene();
+    const arm = scene.plates[0];
+    const buildPos = arm.position.clone(); // captured at construction as `enginePos`
+    controller.update(1 / 60, STAR_PERIOD_S / 4); // quarter turn away
+    expect(arm.position.distanceTo(buildPos)).toBeGreaterThan(0.5);
+    // A dead-centre hit at the plate's CURRENT position…
+    controller.onImpact({
+      plate: arm,
+      impactWorld: { x: arm.position.x, y: arm.position.y, z: STAR_Z },
+      impactVel: IMPACT.impactVel,
+      bulletMassKg: IMPACT.bulletMassKg,
+      bulletDiameterM: IMPACT.bulletDiameterM,
+    });
+    // …must reach the engine as a dead-centre hit at the position it knows about.
+    const seen = built[0].strikeAt[0];
+    expect(seen.x).toBeCloseTo(buildPos.x, 9);
+    expect(seen.y).toBeCloseTo(buildPos.y, 9);
+    expect(seen.z).toBeCloseTo(buildPos.z, 9);
+  });
+
+  it('still paints a star-arm plate that has no group, rather than throwing', () => {
+    // A star arm with no groupId has no centroid to derive a hub from, so the scan
+    // skips it. It must degrade to "ordinary steel that takes marks", not to a crash
+    // mid-engagement.
+    built.length = 0;
+    const scene = fakeScene(1);
+    const orphan = plate({
+      instanceId: 0,
+      diameterM: STAR_PLATE_WIDTH_M,
+      targetTypeId: 'star-popper',
+      mountId: 'star-arm',
+      groupId: undefined,
+      swings: false,
+    });
+    scene.plates.push(orphan);
+    const controller = createSteelReactions(scene, fakeFactory);
+    expect(controller.rotorPositionAt(0, 0, 0)).toBeNull();
+    expect(() => controller.onImpact({ plate: orphan, ...IMPACT })).not.toThrow();
+    expect(built[0].strikes).toBe(1);
+    expect(scene.writes).toEqual([{ layer: 0, paintHex: 0xf0f0ea }]);
+  });
+
+  it('does not touch a scene with no rotors at all', () => {
+    // The guarantee that every shipped range is unchanged: no star plates means no
+    // rotor entries, and `update` with a clock is a no-op for them.
+    const { scene, controller } = setup();
+    const before = scene.plates.length;
+    controller.update(1 / 60, 5);
+    expect(before).toBe(0);
+    expect(controller.rotorPositionAt(0, 5, 0.1)).toBeNull();
   });
 });

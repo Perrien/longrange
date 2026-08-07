@@ -71,6 +71,18 @@ export interface RawPlacement {
    * would put the paddle in front and its swing would sweep through the plate.
    */
   zNudgeM?: number;
+  /**
+   * Which `groupId` this target's strike RE-ARMS — the popper star's hub plate
+   * (`Design/Plans/popper-star.md`).
+   *
+   * Lives on the placement rather than on the mount so a `'reset-switch'` mount stays
+   * reusable: a second star, or a future plate rack with a shoot-to-reset button,
+   * needs no new mount type. Required exactly when the mount's reaction is
+   * `'reset-switch'`, and the named group must exist in the same range — a typo'd id
+   * would otherwise be a button that silently does nothing, which is invisible on
+   * device and indistinguishable from a physics bug.
+   */
+  resetsGroupId?: string;
   palette?: Record<string, number>;
 }
 
@@ -93,6 +105,8 @@ export interface ResolvedPlacement {
   centreYM?: number;
   /** Forward render-only nudge (m). See `RawPlacement.zNudgeM`. */
   zNudgeM: number;
+  /** The `groupId` a strike on this target re-arms. See `RawPlacement.resetsGroupId`. */
+  resetsGroupId?: string;
   /** The type's palette with the entry's overrides applied. */
   palette: Record<string, number>;
 }
@@ -175,6 +189,20 @@ export function resolvePlacement(
   if (raw.zNudgeM !== undefined && !Number.isFinite(raw.zNudgeM))
     fail(rangeId, id, `zNudgeM must be a finite number, got ${raw.zNudgeM}`);
 
+  // A reset switch with nothing to reset is a dead button, and a reset id on a mount
+  // that cannot act on it is a silent no-op. Both are invisible on device, so both are
+  // authoring errors here. (Which group it names is checked across the whole range in
+  // `resolvePlacementList` — it cannot be known from one entry.)
+  const isResetSwitch = mount.reaction === 'reset-switch';
+  if (isResetSwitch && raw.resetsGroupId === undefined)
+    fail(rangeId, id, `mount '${mountId}' is a reset switch and requires resetsGroupId`);
+  if (!isResetSwitch && raw.resetsGroupId !== undefined)
+    fail(
+      rangeId,
+      id,
+      `resetsGroupId is only meaningful on a 'reset-switch' mount, and '${mountId}' reacts '${mount.reaction}'`,
+    );
+
   // A palette override keyed on a slot the type does not define is a silent no-op
   // otherwise — the most likely authoring typo, and the least visible.
   const palette = { ...type.paint.palette };
@@ -204,6 +232,7 @@ export function resolvePlacement(
     beamHeightM,
     centreYM: raw.centreYM,
     zNudgeM: raw.zNudgeM ?? 0,
+    resetsGroupId: raw.resetsGroupId,
     palette,
   };
 }
@@ -220,6 +249,21 @@ export function resolvePlacementList(
   for (const p of out) {
     if (seen.has(p.id)) fail(rangeId, p.id, 'duplicate placement id');
     seen.add(p.id);
+  }
+
+  // A reset switch must name a group that actually exists on this range. Checked here
+  // rather than per entry because a group is only visible across the whole list — and
+  // checked at all because the failure mode is a plate that takes hits and does
+  // nothing, which reads as broken physics rather than as a typo.
+  const groupIds = new Set(out.map((p) => p.groupId).filter((g): g is string => g !== undefined));
+  for (const p of out) {
+    if (p.resetsGroupId === undefined) continue;
+    if (!groupIds.has(p.resetsGroupId))
+      fail(
+        rangeId,
+        p.id,
+        `resetsGroupId '${p.resetsGroupId}' is not a groupId on this range (has: ${[...groupIds].join(', ') || 'none'})`,
+      );
   }
 
   // A GROUP is one piece of furniture carrying several targets (a plate rack, a
