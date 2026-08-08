@@ -29,7 +29,7 @@
 //               `PlateInstance.position` directly, never a mesh matrix) — that
 //               mutation happens immediately on strike, before the swing animates.
 //   star-arm  — a plate on the popper star's ROTATING carrier
-//               (`Design/Plans/popper-star.md`). The first reaction here whose REST
+//               (`Design/archive/popper-star-plan.md`). The first reaction here whose REST
 //               FRAME is a function of time: every mode above poses a plate against a
 //               matrix captured once, while a star arm's rest matrix is recomputed
 //               every frame from the scene clock. Two consequences worth stating

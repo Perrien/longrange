@@ -326,7 +326,7 @@ export class TestRangeScene implements SteelSceneApi {
 
   /**
    * The popper star: a static post, plus a rotating CARRIER carrying the hub boss and
-   * five arms (`Design/Plans/popper-star.md` §3.5).
+   * five arms (`Design/archive/popper-star-plan.md` §3.5).
    *
    * THE HUB IS RECOVERED, NOT AUTHORED. Five evenly-spaced arm vectors sum to zero,
    * so the centroid of the group's plate positions IS the hub (`starHubFrom`) — the

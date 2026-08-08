@@ -1,6 +1,6 @@
 # Popper Star — build plan
 
-`Status: **APPROVED 2026-08-07. PS1 + PS2 owner-confirmed. PS3 BUILT — awaiting owner verification (final stop).**` · `Date: 2026-08-07` · `Plan slug: popper-star`
+`Status: **DONE — all three tasks built, owner-confirmed on device, archived 2026-08-07.**` · `Date: 2026-08-07` · `Plan slug: popper-star`
 `Audience: the executing coding agent` · `Owner decisions: locked below (§6)`
 
 > Read `Design/execution/execution-protocol.md` first. This plan declares its own

@@ -1,5 +1,5 @@
 // The popper star — a rotating 5-arm carrier with fold-back plates and a hub reset
-// switch (`Design/Plans/popper-star.md`).
+// switch (`Design/archive/popper-star-plan.md`).
 //
 // A SIMPLIFIED Texas star. The real thing drops its plates out of a cradle, and the
 // lost mass unbalances the wheel so it accelerates; the owner asked for "a bit more

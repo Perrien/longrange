@@ -19,7 +19,7 @@
  * What a hit does to the target, given how it is mounted.
  *
  * `'star-arm'` and `'reset-switch'` are the popper star's pair
- * (`Design/Plans/popper-star.md`). They are separate modes rather than one because
+ * (`Design/archive/popper-star-plan.md`). They are separate modes rather than one because
  * they are genuinely different behaviours on one machine: the arm plate falls, the
  * hub plate is bolted and re-arms the arms.
  */

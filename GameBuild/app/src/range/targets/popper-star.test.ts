@@ -1,4 +1,4 @@
-// Tests for the popper star's geometry and kinematics (`Design/Plans/popper-star.md`,
+// Tests for the popper star's geometry and kinematics (`Design/archive/popper-star-plan.md`,
 // task PS1). Pure — no THREE, no DOM, no clock.
 //
 // TWO ASSERTIONS HERE CARRY REAL WEIGHT, and the rest are guardrails around them.

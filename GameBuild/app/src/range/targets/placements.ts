@@ -73,7 +73,7 @@ export interface RawPlacement {
   zNudgeM?: number;
   /**
    * Which `groupId` this target's strike RE-ARMS — the popper star's hub plate
-   * (`Design/Plans/popper-star.md`).
+   * (`Design/archive/popper-star-plan.md`).
    *
    * Lives on the placement rather than on the mount so a `'reset-switch'` mount stays
    * reusable: a second star, or a future plate rack with a shoot-to-reset button,

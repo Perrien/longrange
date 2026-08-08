@@ -100,7 +100,7 @@ export interface PlateInstance {
    */
   groupId?: string;
   /**
-   * Which `groupId` a strike on THIS plate re-arms (`Design/Plans/popper-star.md`).
+   * Which `groupId` a strike on THIS plate re-arms (`Design/archive/popper-star-plan.md`).
    * Omitted ⇒ it is not a reset switch, which is every plate but the popper star's
    * hub.
    *

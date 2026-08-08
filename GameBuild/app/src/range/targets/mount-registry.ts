@@ -216,7 +216,7 @@ const DUELING_TREE_ARM_8: MountType = {
 };
 
 /**
- * One arm of the popper star's rotating carrier (`Design/Plans/popper-star.md`).
+ * One arm of the popper star's rotating carrier (`Design/archive/popper-star-plan.md`).
  *
  * The spec is IMPORTED from `popper-star.ts` rather than re-typed here, for the same
  * reason `CHAIN_BEAM` imports its anchor values from `engine-bridge/steel-target.ts`:

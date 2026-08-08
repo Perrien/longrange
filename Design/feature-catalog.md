@@ -379,7 +379,22 @@ carrying 5 round paddles all resting on one side, reusing the hostage-paddle fli
 mechanism unchanged (same 180° swing-away-from-shooter) — the new part was the
 arrangement, not the reaction. Two size-specific arm mounts (6″ shipped default, 8″
 built/tested but not shipped — a documented three-field data swap, not a runtime
-toggle). **Not built:** plate racks, swingers/spinners, dropping plates, Texas star.
+toggle). **Popper star** (a simplified Texas star) built and owner-confirmed 2026-08-07
+(`Design/archive/popper-star-plan.md`): five 60 cm arms on a hub at 90 yd turning 1 rev/
+10 s, each carrying a 10″ purple plate that folds back on a radial hinge and **latches
+down until the 12″ hub plate is shot** — a new `reset-switch` reaction whose target group
+comes from the placement, so the mount stays reusable. **This is the first target in the
+game that MOVES CONTINUOUSLY**, and the capability rather than the target is the point:
+every earlier reaction poses a plate against a rest matrix captured once, while a star
+arm's rest frame is recomputed every frame (`targets/popper-star.ts` owns the kinematics,
+`scope/steel-reactions.ts` poses the plates and rewrites their live hit-test position from
+the same clock the scene spins the drawn arms with). It also settled the question the
+dueling-tree build deferred — **hit-testing against a moving pose**: a shot now resolves
+against where a rotor plate will be at BULLET ARRIVAL, so a crossing target has to be led
+(`rotorPositionAt`; `null` for every non-rotor plate, so no other range moved). A swinger
+or a spinner is now mostly a data entry on this machinery. **Not built:** plate racks,
+swingers/spinners, dropping plates, a true Texas star (plates that DROP out of a cradle
+and unbalance the wheel — logged as a fidelity gap, owner asked for "a bit more basic").
 
 #### Human silhouettes + IDPA zone scoring
 Head/torso zones; realistic or IDPA-style scoring; no-shoot plates share this scoring path.
