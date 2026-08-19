@@ -173,8 +173,8 @@ Three things the executor must get right:
 
 | # | Task | Status | Then | Commit | Note |
 |---|---|---|---|---|---|
-| T1 | Plate material: metalness 0, roughness 0.45 | awaiting owner | **owner stop** | commit | |
-| T2 | Backer panel goes bright orange | not started | **owner stop** | commit | |
+| T1 | Plate material: metalness 0, roughness 0.45 | completed | **owner stop** | commit | |
+| T2 | Backer panel goes bright orange | awaiting owner | **owner stop** | commit | |
 | T3 | ELR light rig + warm sky/fog colour | not started | **owner stop** | commit + push | |
 | T4 | Close out | not started | **owner stop** | commit + push | |
 

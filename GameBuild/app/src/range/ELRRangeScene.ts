@@ -230,9 +230,11 @@ export class ELRRangeScene implements SteelSceneApi {
    * Target furniture, per mount (owner, 2026-07-29).
    *
    * The LOW line gets Range A's hanging rack — beam, two legs, plate on chains,
-   * nothing behind it. The HIGH line keeps the frame-and-dark-panel build,
-   * because the panel's contrast advantage is measured and real once fog bites
-   * (plan §4.2 / D4). `station.mount` decides; both share the post material.
+   * nothing behind it. The HIGH line keeps the frame-and-panel build: the panel
+   * still exists to give the light plate contrast, but it is now bright orange
+   * (D6) so the board itself is findable through fog at 2000 m (owner,
+   * 2026-08-13, from a device screenshot). `station.mount` decides; both share
+   * the post material.
    */
   private addFramesAndPanels(): void {
     const panelMat = this.track(

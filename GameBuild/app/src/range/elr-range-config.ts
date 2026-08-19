@@ -100,7 +100,7 @@ export const FRAME_GROUND_CLEARANCE_M = 0.3;
 export const TARGET_CENTER_Y_M = 1.0;
 export const PLATE_HEX = 0xf2efe6;
 export const RING_HEX = 0x2f6fd0;
-export const PANEL_HEX = 0x2a2a28;
+export const PANEL_HEX = 0xff7a1a;
 export const RING_FRACTIONS = { centre: 1 / 3, middle: 2 / 3, outer: 1 } as const;
 
 /** Target centre height ABOVE LOCAL GROUND, so the frame's bottom edge clears it. */
