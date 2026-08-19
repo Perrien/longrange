@@ -16,7 +16,7 @@ import { createPlateDiscGeometry } from './plate-geometry';
 import { createPlateSurface, createPlateMaterial, type PlateSurface } from './plate-surface';
 import { buildBullseyeLayer } from './bullseye-texture';
 import type { SteelSceneApi } from './steel-scene-api';
-import type { TreePlacement } from './environment/environment-config';
+import { sunDirection, type TreePlacement } from './environment/environment-config';
 import { buildTrees } from './environment/trees';
 import { buildGrassTuftMesh } from './environment/ground-cover';
 import { loadPbrMaterial } from './environment/texture-loader';
@@ -122,10 +122,16 @@ export class ELRRangeScene implements SteelSceneApi {
   }
 
   private addLights(): void {
-    const hemi = new THREE.HemisphereLight(0xbcd2e8, 0x6b6558, 1.1);
+    const { sunHex, sunIntensity, hemiSkyHex, hemiGroundHex, hemiIntensity } =
+      WOODED_ZERO_ENVIRONMENT.lighting;
+    const hemi = new THREE.HemisphereLight(hemiSkyHex, hemiGroundHex, hemiIntensity);
     this.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffe9c8, 1.25);
-    sun.position.set(-318, 97, 223);
+    const sun = new THREE.DirectionalLight(sunHex, sunIntensity);
+    // Only the DIRECTION matters to a DirectionalLight; 400 matches
+    // `environment/lighting.ts:28`, which does not export it.
+    const SUN_DISTANCE_M = 400;
+    const dir = sunDirection(WOODED_ZERO_ENVIRONMENT);
+    sun.position.set(dir.x * SUN_DISTANCE_M, dir.y * SUN_DISTANCE_M, dir.z * SUN_DISTANCE_M);
     this.add(sun);
   }
 

@@ -231,8 +231,12 @@ export const OFFSET_SAMPLES = 61;
 export const FIRING_POINT_CLEAR_RADIUS_M = 30;
 
 // --- scene -----------------------------------------------------------------
-export const FOG_DENSITY = 1.7e-4;
-export const SKY_HEX = 0xdfe3e8;
+// Ceiling from D10: adopting the shared rig's 7.45e-4 puts 89% haze on the
+// 2000 m gong and deletes the range's whole job. Within that ceiling the exact
+// value is a tuned dial — lowered 1.7e-4 -> 1.19e-4 (-30%, owner call
+// 2026-08-19, after seeing the rig on device): ~11% -> ~5.5% haze at 2000 m.
+export const FOG_DENSITY = 1.19e-4;
+export const SKY_HEX = 0xe6dcc8;
 export const CAMERA_NEAR_M = 10;
 export const CAMERA_FAR_M = 12000;
 

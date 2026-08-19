@@ -12,6 +12,8 @@ import {
 } from './elr-range-config';
 import { generateRangeTreePlacements, MAX_TREES } from './elr-range-trees';
 import { occludingTreeIndices, marginForPlate } from './sight-clearance';
+import { sunDirection } from './environment/environment-config';
+import { WOODED_ZERO_ENVIRONMENT } from './wooded-zero-environment';
 
 describe('groundY', () => {
   it('starts at zero and rises to the full rise at the span', () => {
@@ -447,5 +449,18 @@ describe('near-station stakes (owner, 2026-07-29)', () => {
       );
       expect(blocking).toHaveLength(0);
     }
+  });
+});
+
+describe('ELR light rig reads the shared 24 deg / -125 deg sun', () => {
+  it('sunDirection(WOODED_ZERO_ENVIRONMENT) scaled by 400 matches the new hardcoded position', () => {
+    // Mechanical check that the 24 deg rig is actually in effect. 14 deg / -125
+    // deg x 400 reproduces the OLD hardcoded (-318, 97, 223); this asserts the
+    // new one.
+    const dir = sunDirection(WOODED_ZERO_ENVIRONMENT);
+    const SUN_DISTANCE_M = 400;
+    expect(dir.x * SUN_DISTANCE_M).toBeCloseTo(-299.3, 1);
+    expect(dir.y * SUN_DISTANCE_M).toBeCloseTo(162.7, 1);
+    expect(dir.z * SUN_DISTANCE_M).toBeCloseTo(209.6, 1);
   });
 });

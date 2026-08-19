@@ -63,7 +63,7 @@ so consuming the shared lighting values is an established pattern here, not new 
 | D7 | ELR's light rig takes the shared rig's values: sun elevation **24°**, azimuth **−125°**, `sunHex 0xffe3ba`, `sunIntensity 1.6`, `hemiSkyHex 0x93b4e0`, `hemiGroundHex 0x4a5236`, `hemiIntensity 0.75`. ELR was never given the owner's 2026-07-26 correction that raised the shared sun; this applies it. |
 | D8 | ELR reads those values from `WOODED_ZERO_ENVIRONMENT.lighting` and computes the sun position with the shared `sunDirection()` — **it does not copy the numbers in**, so there is one source of truth. It does **not** call `buildLighting()`: that would allocate a 2048 shadow map ELR can never use (D10) and add lights via `scene.add` outside ELR's own disposal tracking. |
 | D9 | `SKY_HEX = 0xdfe3e8 → 0xe6dcc8` (warm cream, the shared rig's fog colour). One constant drives **both** `scene.background` and the fog colour (`ELRRangeScene.ts:109-110`) and they must stay equal — a fog colour that differs from the sky it fades into shows a seam at the horizon. Change the constant; do not split them. |
-| D10 | **`FOG_DENSITY` stays `1.7e-4` and `usesShadows` stays `false`.** Adopting the shared density of `7.45e-4` would put **89 % haze on the 2000 m gong** and delete the range's whole job. This is a hard negative requirement. |
+| D10 | **`FOG_DENSITY` stays well below the shared rig's `7.45e-4`, and `usesShadows` stays `false`.** Adopting the shared density outright would put **89 % haze on the 2000 m gong** and delete the range's whole job — that ceiling is still a hard negative requirement. Within that ceiling the exact value is an owner-tuned dial: lowered `1.7e-4 → 1.19e-4` (−30 %, owner call 2026-08-19, after seeing T3 on device) — **~11 % → ~5.5 % haze at 2000 m** (`FogExp2`'s squared falloff: `1 − e^(−(density·depth)²)`). |
 | D11 | The code comment at `ELRRangeScene.ts:234-235` justifies the dark panel and is falsified by D6. It gets rewritten in the same task, because a comment asserting the opposite of the code is how the next reader reverts it. |
 
 ## Tickets closed by this plan
@@ -106,7 +106,8 @@ cache key stays valid.
 
 - `:103` (`export const PANEL_HEX = 0x2a2a28;`) → `0xff7a1a` (T2).
 - `:235` (`export const SKY_HEX = 0xdfe3e8;`) → `0xe6dcc8` (T3).
-- `:234` (`export const FOG_DENSITY = 1.7e-4;`) — **unchanged.** Do not touch.
+- `:234` (`export const FOG_DENSITY = 1.7e-4;`) → `1.19e-4` (T3, added 2026-08-19 —
+  see amended D10). Stay well clear of the shared rig's `7.45e-4` ceiling.
 
 Both constants are consumed only by `ELRRangeScene` (verified by repo-wide grep: `PANEL_HEX` at
 `ELRRangeScene.ts:33`/`:239`, `SKY_HEX` at `:38`/`:109`/`:110`, and nowhere else).
@@ -165,7 +166,8 @@ Three things the executor must get right:
 - **The committed-target chip rename** (`target: #7` → `target: popper`). UI text, not lighting.
 - **An environment map, and an emissive lift on plate faces.** Both were deliberately held in reserve,
   to be revisited only if the cheap fix still reads flat on device.
-- **Changing `FOG_DENSITY`, or enabling shadows on ELR.** See D10 — negative requirements, not omissions.
+- **Enabling shadows on ELR.** See D10 — a negative requirement, not an omission.
+  (`FOG_DENSITY` itself is now a tuned dial within D10's ceiling, added 2026-08-19 — see above.)
 - **Redesigning Range A, the Test Range or the Wooded Zero.** Their plates change via D5 and nothing
   else about them is touched.
 
@@ -174,8 +176,8 @@ Three things the executor must get right:
 | # | Task | Status | Then | Commit | Note |
 |---|---|---|---|---|---|
 | T1 | Plate material: metalness 0, roughness 0.45 | completed | **owner stop** | commit | |
-| T2 | Backer panel goes bright orange | awaiting owner | **owner stop** | commit | |
-| T3 | ELR light rig + warm sky/fog colour | not started | **owner stop** | commit + push | |
+| T2 | Backer panel goes bright orange | completed | **owner stop** | commit | |
+| T3 | ELR light rig + warm sky/fog colour | awaiting owner | **owner stop** | commit + push | Material alteration 2026-08-19: FOG_DENSITY lowered 1.7e-4 → 1.19e-4 (−30%, owner call after seeing the rig on device); D10 amended from a fixed value to a ceiling. |
 | T4 | Close out | not started | **owner stop** | commit + push | |
 
 **T1 — Plate material**
@@ -250,25 +252,28 @@ ELR-Lighting-And-Plate-Materials T2: make the ELR backer panel bright orange
   - No `castShadow` is set and `sun.shadow` is not touched; `readonly usesShadows = false` at
     `ELRRangeScene.ts:83` is unchanged.
   - `elr-range-config.ts:235` reads `export const SKY_HEX = 0xe6dcc8;` and
-    `:234` still reads `export const FOG_DENSITY = 1.7e-4;`.
+    `:234` reads `export const FOG_DENSITY = 1.19e-4;` (amended D10, 2026-08-19).
   - A new case in `elr-range-config.test.ts` asserts `sunDirection(WOODED_ZERO_ENVIRONMENT)` scaled by
     400 gives `(-299.3, 162.7, 209.6)` to 1 decimal place — the mechanical check that the 24° rig is
     actually in effect.
   - `npx vitest run` green, `npx tsc --noEmit` clean, `npm run build` succeeds.
-- **Do not:** call `buildLighting()` (D8). Do not change `FOG_DENSITY`, `GROUND_HEX`, or any grass/tree
-  constant. Do not enable `renderer.shadowMap` anywhere.
+- **Do not:** call `buildLighting()` (D8). Do not change `GROUND_HEX` or any grass/tree
+  constant. Do not enable `renderer.shadowMap` anywhere. Do not raise `FOG_DENSITY` anywhere near the
+  shared rig's `7.45e-4` — D10's 89 %-haze ceiling still stands.
 - **Verification handle** — `permanent`:
   - **Where:** ELR Range, high line — the sky and open ground at ~100–800 m, then the 2000 m station.
   - **Positive:** sky and fog read warm cream rather than cold blue-grey, and the **ground and trees are
     clearly brighter** with shadows raking from a visibly higher sun. The plate should look about the
     same as it did after T1 — the rig is roughly neutral on vertical surfaces (see Context); that is
-    expected, not a failure.
-  - **Negative:** the **2000 m gong must be no hazier than before.** Fog density is untouched at
-    `1.7e-4`, so haze there stays ~11 %. If the far gong faded, `FOG_DENSITY` was changed — which D10
-    forbids outright.
+    expected, not a failure. The 2000 m gong should read with noticeably less haze than before this task
+    (owner call: 30 % lower density, ~11 % → ~5.5 %).
+  - **Negative:** the **2000 m gong must not lose the range's whole job to haze.** `FOG_DENSITY` stays
+    far below the shared rig's `7.45e-4` (D10's ceiling); if the far gong reads anywhere near as hazy as
+    the shared-rig density would produce, `FOG_DENSITY` drifted toward that ceiling, which D10 forbids.
   - **Reads:** `WOODED_ZERO_ENVIRONMENT.lighting` (`wooded-zero-environment.ts:109-117`) and
     `sunDirection` (`environment-config.ts:202`), both consumed by `addLights()` in
-    `GameBuild/app/src/range/ELRRangeScene.ts`; plus `SKY_HEX` at `elr-range-config.ts:235`.
+    `GameBuild/app/src/range/ELRRangeScene.ts`; plus `SKY_HEX` and `FOG_DENSITY` at
+    `elr-range-config.ts:234-235`.
 
 ```
 ELR-Lighting-And-Plate-Materials T3: put ELR on the shared light rig
@@ -276,8 +281,10 @@ ELR-Lighting-And-Plate-Materials T3: put ELR on the shared light rig
 - Sun 14 -> 24 deg and 1.25 -> 1.6, hemi to the shared 0.75, read from
   WOODED_ZERO_ENVIRONMENT.lighting rather than copied in; ELR never received
   the owner's 2026-07-26 sun correction.
-- Sky and fog colour to warm cream 0xe6dcc8. Fog DENSITY deliberately unchanged:
-  the shared 7.45e-4 would put 89% haze on the 2000 m gong.
+- Sky and fog colour to warm cream 0xe6dcc8.
+- FOG_DENSITY 1.7e-4 -> 1.19e-4 (-30%, owner call after seeing the rig on
+  device): ~11% -> ~5.5% haze at 2000 m. D10 amended: the value is now a
+  tuned dial, capped well below the shared rig's 7.45e-4 (89% haze ceiling).
 ```
 
 **T4 — Close out**
