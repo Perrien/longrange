@@ -177,8 +177,8 @@ Three things the executor must get right:
 |---|---|---|---|---|---|
 | T1 | Plate material: metalness 0, roughness 0.45 | completed | **owner stop** | commit | |
 | T2 | Backer panel goes bright orange | completed | **owner stop** | commit | |
-| T3 | ELR light rig + warm sky/fog colour | awaiting owner | **owner stop** | commit + push | Material alteration 2026-08-19: FOG_DENSITY lowered 1.7e-4 → 1.19e-4 (−30%, owner call after seeing the rig on device); D10 amended from a fixed value to a ceiling. |
-| T4 | Close out | not started | **owner stop** | commit + push | |
+| T3 | ELR light rig + warm sky/fog colour | completed | **owner stop** | commit + push | Material alteration 2026-08-19: FOG_DENSITY lowered 1.7e-4 → 1.19e-4 (−30%, owner call after seeing the rig on device); D10 amended from a fixed value to a ceiling. |
+| T4 | Close out | completed | **owner stop** | commit + push | Filed `Bug-Flaky-Timeout-In-Base-Layer-Compositing-Test`; 1 untriaged ticket in `Design/Tickets/` at close-out. Plan archived; source exploration left live. |
 
 **T1 — Plate material**
 
@@ -312,5 +312,7 @@ ELR-Lighting-And-Plate-Materials T4: close out
 
 ## Deferred
 
-Empty at authoring. The executor appends adjacent problems it found and must not fix — and files each
-as a ticket in `Design/Tickets/` immediately with `Status: untriaged`, per the protocol.
+- **Flaky timeout in `plate-surface.test.ts`'s base-layer compositing suite**, hit once during T3's
+  gates on a file untouched by that task's change; passed in isolation and with
+  `--no-file-parallelism`. Filed as `Bug-Flaky-Timeout-In-Base-Layer-Compositing-Test`, `Status:
+  untriaged`.
