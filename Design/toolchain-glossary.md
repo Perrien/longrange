@@ -160,5 +160,5 @@ workflow. **No build step depends on any of it.**
 - `Design/build-plan.md` §2 — why this stack was chosen
 - `Design/btk-assessment-and-path-forward.md` — why a web/PWA rather than native Swift
 - `GameBuild/validation/ORACLE_VERSION` — the oracle's identity and regeneration rules
-- `Design/execution/execution-protocol.md` §5 — the gate order
+- `Design/Execution-Protocol.md` §5 — the gate order
 - `.github/workflows/ci.yml` — what CI actually runs, with version pins

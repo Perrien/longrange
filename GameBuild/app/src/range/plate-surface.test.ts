@@ -260,6 +260,17 @@ describe('plate material patch', () => {
     surface.dispose();
   });
 
+  it('is a dielectric with a tightened specular lobe (metalness 0, roughness 0.45)', () => {
+    // A painted plate is a dielectric, and with no environment map anywhere in
+    // the app the specular share metalness used to route reflected nothing —
+    // it was pure loss on every range.
+    const surface = createPlateSurface([0xf0f0ea]);
+    const material = createPlateMaterial(surface.texture);
+    expect(material.metalness).toBe(0);
+    expect(material.roughness).toBe(0.45);
+    surface.dispose();
+  });
+
   it('emits NO alphaTest and never inspects the texel alpha', () => {
     // THE 10-FPS LESSON (owner, on device 2026-08-06). For one round this material
     // carried the atlas alpha into `diffuseColor` and set `alphaTest`, to punch a

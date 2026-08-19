@@ -44,3 +44,4 @@ Thumbs.db
 
 # Claude Code local session/tooling state — not project source
 .claude/
+/.obsidian

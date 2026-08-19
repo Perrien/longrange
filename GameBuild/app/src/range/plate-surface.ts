@@ -207,7 +207,10 @@ const MAP_FRAGMENT = '#include <map_fragment>';
  * to do it and this is the receipt for why the cheap-looking way is not cheap.
  */
 export function createPlateMaterial(surface: THREE.DataArrayTexture): THREE.MeshStandardMaterial {
-  const material = new THREE.MeshStandardMaterial({ metalness: 0.3, roughness: 0.6 });
+  // metalness 0: a painted plate is a dielectric, and with no environment map
+  // anywhere in the app the specular share this used to route to reflects
+  // nothing — it was pure loss on every range.
+  const material = new THREE.MeshStandardMaterial({ metalness: 0, roughness: 0.45 });
 
   material.onBeforeCompile = (shader) => {
     if (!shader.vertexShader.includes(VERTEX_ANCHOR) || !shader.fragmentShader.includes(FRAGMENT_ANCHOR)) {

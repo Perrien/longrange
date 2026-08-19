@@ -9,7 +9,7 @@
 > **Decision (2026-07-10):** proceed on the **web/PWA path (Option A)**, building on
 > the BTK skeleton. Driven by the owner's device constraint (§4): iPad + iPhone,
 > no paid Apple account, no weekly re-signing. Execution plan lives in
-> [`phase-2-plan.md`](./archive/phase-2-plan.md) *(archived; superseded by
+> [`phase-2-plan.md`](./Archived/Plans/phase-2-plan.md) *(archived; superseded by
 > [`build-plan.md`](./build-plan.md))*.
 
 ## TL;DR

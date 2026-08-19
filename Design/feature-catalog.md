@@ -1,33 +1,31 @@
-# LongRange — Feature Catalog & Build Tracker
+# LongRange — Feature Catalog & Build Record
 
-`Status: restructured as a build tracker 2026-07-21 (was "draft 1" pre-build vision doc, 2026-07-13); built entries grouped into one Built section 2026-07-21`
+`Status: demoted from backlog to design record 2026-08-13 (was a build tracker from 2026-07-21; a pre-build vision doc before that)`
 
-> **Purpose.** The single list of every feature the game should eventually have, and
-> its current build status. Each entry has a **title**, a **short description**, and
-> either **Notes** (requirements / design decisions / code approach, for anything not
-> yet built) or a **Built** line (completion date + the significant code changes it
-> introduced — new modules, views, data-layer changes). Keep entries lean: small
-> changes to an already-built feature don't need documenting here — that's what git
-> history and `PROGRESS.md` task rows are for. When a feature ships, move its entry
-> down into the **Built** section rather than deleting it, so this stays a complete
-> map of the game. Not-built and partially-built entries stay in their category
-> (§A–J) so open work is easy to scan; fully built entries live in one place at the
-> bottom, grouped by the category they came from.
+> **`Design/Tickets/` is the authority on what to build next — not this document (2026-08-13).**
+> Every unbuilt and partially-built entry below was migrated into a ticket that day, so anything you
+> would act on has a ticket. What this document is now: the **design record** — the complete map of the
+> game, the design notes and numbers behind features that haven't been built, and the built history
+> (what shipped, when, and the significant code it introduced). It is a **planning input**, read when a
+> plan or exploration is being authored, never during execution.
 >
-> This document used to also carry the pre-build vision brief (rationale, framework
-> handoff prompt) that produced [`build-plan.md`](./build-plan.md) — that job is done.
-> What's below is the live "what's built / what's left" reference. For the ballistics
-> correctness spec, see [`../Wiki/Home.md`](../Wiki/Home.md); for the architecture/stack
-> decisions, see `build-plan.md`; for day-to-day task state, see
-> [`execution/PROGRESS.md`](./execution/PROGRESS.md) (the authoritative build log this
-> catalog was condensed from, 2026-07-21).
+> The rule that follows from that split: a ticket is one to three sentences and carries no detail, so
+> when an exploration picks one up, this is where the depth lives. Where the two disagree about scope,
+> the ticket is newer.
+>
+> Keep entries lean: small changes to an already-built feature don't need documenting here — that's what
+> git history is for. When a feature ships, move its entry down into the **Built** section rather than
+> deleting it, so this stays a complete map. Unbuilt entries stay in their category (§A–J).
+>
+> For the ballistics correctness spec, see [`../Wiki/Home.md`](../Wiki/Home.md); for the
+> architecture/stack decisions, see `build-plan.md`; for the historical per-task build log, see
+> [`Archived/PROGRESS.md`](./Archived/PROGRESS.md) (retired 2026-08-11 — do not read, 643 KB).
 >
 > **The staged increment plan is retired as an ordered roadmap (2026-07-21).** The
-> `increment-2*.md` / `increments-3-6.md` docs are no longer "build in this order" —
-> **this catalog decides what gets built next.** Those docs still hold real, locked
-> decisions and research data (D-numbered decisions, Done-when specs, catalog seed
-> mappings), so they've moved to [`archive/`](./archive/) rather than being deleted,
-> and individual entries below link into them where that detail is still needed.
+> `increment-2*.md` / `increments-3-6.md` docs are no longer "build in this order". Those docs still
+> hold real, locked decisions and research data (D-numbered decisions, Done-when specs, catalog seed
+> mappings), so they live in [`Archived/Plans/`](./Archived/Plans/) rather than being deleted, and
+> individual entries below link into them where that detail is still needed.
 
 ---
 
@@ -172,7 +170,7 @@ retrofits every existing range and dresses a new dedicated DOPE-ladder range.
 **Not built** — planned 2.4, split 2.4a–f; **D1–D10 locked with owner 2026-07-20**, build
 not yet started (owner paused active build 2026-07-21; the increment plan is retired as
 an ordered roadmap, §K). Full decisions in
-[`archive/increment-2.4-plan.md`](./archive/increment-2.4-plan.md).
+[`archive/increment-2.4-plan.md`](./Archived/Plans/increment-2.4-plan.md).
 
 #### Solver truing (two-lever: chronograph → MV, node → BC)
 Fits the model to the player's confirmed reality. Two independent levers, each moving one
@@ -184,16 +182,16 @@ so a BC fit made before chronographing dumps that residual onto BC and stays **p
 until the curve is chrono-anchored (D13). Re-truing after a new chrono is a manual re-fit,
 flagged by a "chrono is newer than your BC" signal rather than auto-recomputed (D15).
 **Both levers built** — lever 1 (chrono → MV) **2026-07-27** via the DOPE-first plan (step 3);
-lever 2 (BC) **2026-07-31** via [`archive/bc-truing-plan.md`](./archive/bc-truing-plan.md), as an
+lever 2 (BC) **2026-07-31** via [`archive/bc-truing-plan.md`](./Archived/Plans/bc-truing-plan.md), as an
 **asserted-hold fit** (`engine-bridge/bc-fit.ts` bracketed bisection + the in-scope DOPE panel's
 "Update BC" dialog + `state/store.ts`'s `setLotEffectiveBc`) — **not** via a confirmed downrange
 node, which still doesn't exist (see the node/confidence system below, still not built). D15
 frames a future confirmed node as a *second producer* of the same `effective.bc` value once
 that system is built — this ships the first producer. Lever decisions locked: D11–D13
 (2026-07-21), D14 (2026-07-24), **D15 (2026-07-26, supersedes D11's no-chrono path)** — see
-[`Plans/D15-two-lever-truing-independent.md`](./Plans/D15-two-lever-truing-independent.md),
-[`archive/increment-2.4-plan.md`](./archive/increment-2.4-plan.md) §8, and
-[`archive/increment-2.md`](./archive/increment-2.md) §2.5.
+[`Archived/Plans/D15-two-lever-truing-independent.md`](./Archived/Plans/D15-two-lever-truing-independent.md),
+[`archive/increment-2.4-plan.md`](./Archived/Plans/increment-2.4-plan.md) §8, and
+[`archive/increment-2.md`](./Archived/Plans/increment-2.md) §2.5.
 
 #### Exposed effective MV/BC + manual override ("manual truing")
 Surface the two values currently driving the believed DOPE table (effective MV, BC)
@@ -210,7 +208,7 @@ already gives the player the equivalent hand-truing control (assert the number y
 holding, the game fits BC to it) without a second, separate raw-BC input. D14's overwrite rule
 (below) would still apply if a raw manual-BC field is ever added on top of a future confirmed-
 node system, but nothing currently builds one. **D14 locked with owner 2026-07-24** (see
-[`archive/increment-2.4-plan.md`](./archive/increment-2.4-plan.md) §8): a confirmed
+[`archive/increment-2.4-plan.md`](./Archived/Plans/increment-2.4-plan.md) §8): a confirmed
 node's auto-fit always overwrites a manual MV/BC override — manual edits are an
 unmeasured placeholder, useful for previewing/hand-truing between confirmed nodes, but
 never outrank real measured data.
@@ -252,7 +250,7 @@ is diegetic (a real camera the player "places", possibly a purchasable) or simpl
 range facility; and what it costs to render a second view per frame on iPad.
 
 **Not built** — unscheduled, logged 2026-07-27 from the ELR probe. Relevant prior art
-in-repo: `Design/archive/mil-zero-range-plan.md` §7.1 (Inspect), `range/plate-surface.ts`
+in-repo: `Design/Archived/Plans/mil-zero-range-plan.md` §7.1 (Inspect), `range/plate-surface.ts`
 (hit marks already live in the plate's own texture, so the data the cam would show
 already exists).
 
@@ -309,14 +307,14 @@ Unlocks after KD mastery on Range A.
 
 #### Range C — ELR (250-step ladder to 2000)
 **Not built — but de-risked and next up.** Superseded in scope by
-[`archive/elr-dope-range-plan.md`](./archive/elr-dope-range-plan.md): **250 m/yd steps to 2000**, not
+[`archive/elr-dope-range-plan.md`](./Archived/Plans/elr-dope-range-plan.md): **250 m/yd steps to 2000**, not
 500-steps to 2500. 2000 is where the engine is validated (oracle to 1800, extendable by
 data edit) *and* where the .50 BMG is still supersonic (M1.0 at 2267 m); the scope's
 elevation-travel ceiling is designed in as the lesson, met by **holdover** rather than a
 gear gate (2000 m needs 23.02 MIL against a 20 MIL flat base).
 
 A throwaway 3 km **probe was built and answered on device** (2026-07-28; archived at
-[`archive/elr-probe-plan.md`](./archive/elr-probe-plan.md) §5.0), so the expensive unknowns
+[`archive/elr-probe-plan.md`](./Archived/Plans/elr-probe-plan.md) §5.0), so the expensive unknowns
 are now settled rather than assumed: an 18 s time of flight is **fine** (no compression
 mechanic needed), the iPad holds **60 fps** at 3 km with `near = 10 m`, the depth buffer is
 **24-bit** (no two-pass split), trace/impact/ping all read at **2000 m**, and the range sits
@@ -330,7 +328,7 @@ the convex `groundY` profile and the LOS→ground-run fixed-point solve; `sight-
 carries the occlusion search). What the probe left behind and the ELR range still uses:
 `bullseye-texture.ts`, `scope/perf-hud.ts`, `scope/miss-projection.ts`, `scope/phase-timer.ts`,
 and the `eyeHeightM` / `groundYAt` capabilities on `SteelSceneApi`. The probe's findings live
-on in [`archive/elr-probe-plan.md`](./archive/elr-probe-plan.md) §5.0.
+on in [`archive/elr-probe-plan.md`](./Archived/Plans/elr-probe-plan.md) §5.0.
 
 #### Mission / UKD ranges
 Unlabeled, irregularly placed targets; terrain + incline/decline; ranging via
@@ -367,20 +365,20 @@ contrast — not just visual mood.
 Poppers, dueling trees, plate racks, swingers/spinners, dropping plates, hostage/
 no-shoot plates for discipline.
 **Partially built.** The Target × Mount × Group system that these all hang off shipped
-2026-07-31 (`Design/archive/target-system-plan.md`), with **poppers** (hinge-stem /
+2026-07-31 (`Design/Archived/Plans/target-system-plan.md`), with **poppers** (hinge-stem /
 knockdown, grouped reset) on the Test Range. **Hostage / no-shoot paddles** followed: a
 windowed IDPA backing plate plus two independently-shootable paddles — top on a binary
 2-way clamp, centre on an alternating 4-stop cycle (`targets/flip.ts`,
 `mount-registry.ts`'s `hostage-clamp-2way`/`-3way`). Owner defect round closed 2026-08-06
 (swing clearance, plain-white face, and a real see-through window via the new `cut` face
-layer + `alphaTest` — see `Design/execution/PROGRESS.md`). **Dueling tree** built and
-owner-confirmed 2026-08-06 (`Design/archive/dueling-tree-plan.md`): a 5-ft centre post
+layer + `alphaTest` — see `Design/Archived/PROGRESS.md`). **Dueling tree** built and
+owner-confirmed 2026-08-06 (`Design/Archived/Plans/dueling-tree-plan.md`): a 5-ft centre post
 carrying 5 round paddles all resting on one side, reusing the hostage-paddle flip
 mechanism unchanged (same 180° swing-away-from-shooter) — the new part was the
 arrangement, not the reaction. Two size-specific arm mounts (6″ shipped default, 8″
 built/tested but not shipped — a documented three-field data swap, not a runtime
 toggle). **Popper star** (a simplified Texas star) built and owner-confirmed 2026-08-07
-(`Design/archive/popper-star-plan.md`): five 60 cm arms on a hub at 90 yd turning 1 rev/
+(`Design/Archived/Plans/popper-star-plan.md`): five 60 cm arms on a hub at 90 yd turning 1 rev/
 10 s, each carrying a 10″ purple plate that folds back on a radial hinge and **latches
 down until the 12″ hub plate is shot** — a new `reset-switch` reaction whose target group
 comes from the placement, so the mount stays reusable. **This is the first target in the
@@ -500,8 +498,8 @@ post-process the player reads wind speed/direction from at each station — the 
 half of "wind is adjustable so every target re-solves," above.
 **Built** — shipped flat/unlit as part of Increment 1 (2026-07-16, task 1.7), mirage OFF
 by default (owner feedback: didn't read as directional). **Faithfully re-ported from BTK
-2026-07-31** (`Design/Plans/wind-system-btk-port-plan.md`, W1–W7, owner-confirmed on
-device — see `execution/PROGRESS.md`'s W1–W7 rows for the full trail): instanced
+2026-07-31** (`Design/Archived/Plans/wind-system-btk-port-plan.md`, W1–W7, owner-confirmed on
+device — see `Archived/PROGRESS.md`'s W1–W7 rows for the full trail): instanced
 shader-deformed flag cloth + rigid-body sock (`scope/WindMarkers.ts`), and a three
 depth-layered noise-slab mirage (`scope/Mirage.ts` + `game/mirage-model.ts`) replacing
 the old flat single layer. Mirage ships with an Off/Light/Medium/Heavy strength preset
@@ -548,7 +546,7 @@ where the come-up needs it. This turns the owner's zeroing workflow into a real 
 (fire a group, don't touch the rifle, dial until the crosshair sits on the group, confirm,
 re-aim) and teaches the direction rule by muscle memory: *the crosshair chases the group;
 the impact moves opposite the crosshair.*
-**Built** — 2026-08-06 (`Design/archive/dial-moves-view-plan.md`, DV1–DV3, owner-confirmed
+**Built** — 2026-08-06 (`Design/Archived/Plans/dial-moves-view-plan.md`, DV1–DV3, owner-confirmed
 on device). New `scope/turret-view.ts` (pure): `sightOffset` = live turret +
 the rifle's stored `playerZero` — the stored zero is included because confirming a zero is
 physically just re-indexing the turret ring, so the erector does not move and the view must
@@ -596,7 +594,7 @@ presets that snap both. Covers **all 10 cartridges** the project ever researched
 .223, 6mm Creedmoor, 6.5 Creedmoor, 6.5 PRC, .308, .300 Win Mag, .300 PRC, .338 Lapua,
 .50 BMG) — closes the "only 4 of 7 shipped" gap this entry used to describe, and adds 3
 more (6mm CM, 6.5 PRC, .300 PRC) beyond the original research ladder.
-**Built** — 2026-08-02 (`Design/archive/rifle-ammo-store-plan.md`, tasks S1–S11, all
+**Built** — 2026-08-02 (`Design/Archived/Plans/rifle-ammo-store-plan.md`, tasks S1–S11, all
 owner-confirmed on device). `game/cartridges.data.json` (per-cartridge velocity-curve
 params + slider bands, replacing the old enumerated `catalog.data.json`, deleted at S8),
 `game/ballistic-derivation.ts` (pure MV/BC/length/recoil/Sg formulas), `game/spec.ts` +
@@ -668,7 +666,7 @@ engagement) that doubles as the proving ground for the shared config-driven
 environment module (textured terrain, sky/fog/lighting, instanced
 trees/bushes/rocks/grass tufts, mountains, drifting clouds) ahead of
 retrofitting it onto the DOPE range (§E "Shared range-environment rendering
-system"). Plan (archived, completed): `Design/archive/
+system"). Plan (archived, completed): `Design/Archived/Plans/
 test-range-environment-plan.md`.
 **Built** — 2026-07-22 (all 4 plan stages, owner-confirmed on device; plan
 CLOSED). `range/TestRangeScene.ts`, `range/environment/*` (`terrain.ts`,
@@ -680,7 +678,7 @@ while tuning the Test Range): scope zoom floor lowered 4.5×→1× (true
 unaided-eye view; `scope-projection.ts`/`state/store.ts`), and the FFP reticle
 now drops all hash marks/labels below 3× magnification, keeping just the
 crosshair (`scope/reticle.ts`'s `RETICLE_HASH_MIN_MAG`) — both apply to every
-range, not just the Test Range. See `Design/execution/PROGRESS.md` for the full
+range, not just the Test Range. See `Design/Archived/PROGRESS.md` for the full
 iteration log (multiple owner feedback rounds per stage, including a couple of
 real rendering bugs found along the way: an unbound vertex-color attribute that
 was silently zeroing canopy/bush color, and fog saturation washing out the
@@ -698,7 +696,7 @@ Clean and Inspect from the (now-generalized) paper-bay path via a new `targetKin
 capability rather than reimplementing them. Also carries the first real upgrade
 pass on the shared environment module (low morning sun, near-field shadow map,
 tree silhouette variety, ridgeline mountains, aerial-perspective fog,
-wind-driven vegetation). Plan: `Design/archive/mil-zero-range-plan.md` (5 stages).
+wind-driven vegetation). Plan: `Design/Archived/Plans/mil-zero-range-plan.md` (5 stages).
 
 Key locked results, all verified numerically in the plan: shooter elevation is
 ballistically free (`error ≈ g·H²/(4v₀²)`, *independent of target distance* —
@@ -709,9 +707,9 @@ and the knoll needs a *short steep* forward face, not a tall one, or it grazes
 its own 25 m sight line.
 
 **BUILT — all 5 stages, owner-confirmed on device 2026-07-26.** Plan archived at
-`Design/archive/mil-zero-range-plan.md`; live build record in
-`Design/execution/PROGRESS.md`. Also carries **D16** (raw 5–35 MOA off-the-shelf
-zero error, `Design/archive/D16-raw-zero-error.md`) and the **true-MOA target
+`Design/Archived/Plans/mil-zero-range-plan.md`; live build record in
+`Design/Archived/PROGRESS.md`. Also carries **D16** (raw 5–35 MOA off-the-shelf
+zero error, `Design/Archived/Plans/D16-raw-zero-error.md`) and the **true-MOA target
 face** fix — the MOA grid was sized on the "1 inch = 1 MOA at 100 yd" shorthand
 and was 4.5% small per square, drifting ~0.45 MOA off the reticle by the 10 mark;
 it now derives from `22 × 100 yd × 1 MOA`. That fix applies to the original Zero
@@ -773,7 +771,7 @@ having to leave the aim to go press the FIRE button. `F` is read **at the moment
 release**, so letting it go before releasing is a clean "come off the trigger", and a
 release *without* `F` never fires however far it dragged — which is why the feature
 needs no setting to switch off: holding the key is itself the safety.
-**Built** — 2026-08-07 (`Design/Plans/mouse-release-fire.md`). New pure
+**Built** — 2026-08-07 (`Design/Archived/Plans/mouse-release-fire.md`). New pure
 `scope/mouse-trigger.ts` + tests hold the whole rule; `scope/ScopeView.tsx` gained the
 app's only keyboard listener (arm/disarm, incl. disarm on blur so a key-up lost to a
 ⌘-Tab cannot leave the rifle armed) and one branch in its existing `onPointerUp`,

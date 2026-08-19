@@ -10,21 +10,22 @@
 >
 > Claims about BTK below were **verified against the code on 2026-07-13**, not taken
 > from prose. Where this plan supersedes `phase-2-plan.md` / `game-design.md`, that is
-> intentional (they are archived under [`archive/`](./archive/README.md));
+> intentional (they are archived under [`Archived/Plans/`](./Archived/Plans/README.md));
 > discrepancies are noted in §5.8.
 >
-> **Execution layer (added 2026-07-13).** This plan is executed via
-> [`execution/`](./execution/): the agent's working rules are
-> [`execution/execution-protocol.md`](./execution/execution-protocol.md); state lives
-> in [`execution/PROGRESS.md`](./execution/PROGRESS.md); each increment is broken
-> into session-sized, individually-verified tasks. Increments 0 and 1 are **complete**
+> **Execution layer (added 2026-07-13, repointed 2026-08-13).** This plan is executed via
+> [`Execution-Protocol.md`](./Execution-Protocol.md), which carries the agent's working rules;
+> task state lives in the active plan itself, and the historical build log is
+> [`Archived/PROGRESS.md`](./Archived/PROGRESS.md) (retired — do not read, 643 KB).
+> Increments 0 and 1 are **complete**
 > (tagged `inc0-complete` / `inc1-complete`; their per-task plan docs were removed once
 > closed — history lives in `PROGRESS.md` and git tags). **The staged, in-order
 > increment plan was retired 2026-07-21** — see `feature-catalog.md`'s intro and
-> CLAUDE.md's Working agreement. Increment 2's detailed plan is archived at
-> [`archive/increment-2.md`](./archive/increment-2.md); Increments 3–6's coarse
-> breakdown is at [`archive/increments-3-6.md`](./archive/increments-3-6.md).
-> `Design/feature-catalog.md` now decides what gets built next.
+> CLAUDE.md. Increment 2's detailed plan is archived at
+> [`increment-2.md`](./Archived/Plans/increment-2.md); Increments 3–6's coarse
+> breakdown is at [`increments-3-6.md`](./Archived/Plans/increments-3-6.md).
+> **`Design/Tickets/` now decides what gets built next** (2026-08-13; it replaced
+> `feature-catalog.md` in that role).
 > The executing agent starts with the protocol, not with this document's §11.
 
 ---
@@ -678,7 +679,7 @@ LongRange/
 
 > These spikes were executed and closed as Increment 0 (tagged `inc0-complete`); the
 > per-task plan doc was removed once complete — task history lives in
-> `execution/PROGRESS.md`. This list remains as the original summary.
+> `Archived/PROGRESS.md`. This list remains as the original summary.
 
 Each is small, concrete, and has a binary success check.
 

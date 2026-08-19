@@ -4,7 +4,7 @@
 #
 # Toolchain pins (owner decision 2026-08-07): Emscripten 6.0.6 — the SAME version
 # used for local builds. Do not bump one without the others (see
-# Design/execution/PROGRESS.md decisions log).
+# Design/Archived/PROGRESS.md decisions log).
 #
 # The golden vectors were GENERATED under 6.0.2 and were verified bit-identical
 # (worst rel diff 0.000e+0) when rebuilt under 6.0.6 on 2026-08-07, so the bump
