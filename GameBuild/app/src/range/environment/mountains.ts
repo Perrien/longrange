@@ -1,3 +1,4 @@
+// TEMP DEMO EDIT — safe to delete, just showing VSCode diffs.
 // Distant mountains for the environment module. Stage 4b of
 // `Design/archive/mil-zero-range-plan.md` replaced the ring of instanced cones
 // with overlapping ridge silhouettes.
