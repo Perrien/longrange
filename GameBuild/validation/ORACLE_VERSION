@@ -2,7 +2,7 @@
 # (execution-protocol §4.1; increment-0 task 0.7)
 btk-commit: 29d43c13f4945cb9caf4e73d2041c22645ebf4e7   # pristine BallisticsToolkit/, 2026-07-07
 oracle-patches: (none)
-emscripten: 6.0.2 (generated) · 6.0.6 (verified identical, 2026-08-07 — see Toolchain compatibility below)
+emscripten: 6.0.2 (generated) · 6.0.6 (verified identical, 2026-08-07) · 6.0.9 (verified identical, 2026-09-14 — see Toolchain compatibility below)
 tolerance: 1e-4 relative (expected: ~0; engine is an unmodified copy)
 vectors: vectors/golden.json (regenerate: node GameBuild/validation/run.mjs --generate — requires local pristine BTK build)
 
@@ -33,6 +33,25 @@ vectors: vectors/golden.json (regenerate: node GameBuild/validation/run.mjs --ge
 #   with its .emscripten pinned to its own versioned LLVM/Binaryen paths so it still
 #   works while 6.0.6 is the linked version. A copy of the 6.0.2-built artifact is at
 #   CCode/NewUnit/emcc-baseline/ (local-only) as the control build.
+
+# 2026-09-14 — **Emscripten 6.0.6 → 6.0.9 verified as a no-op on these vectors.**
+#   Measured on a fresh machine (new-machine-checklist §3) with Homebrew's 6.0.9 /
+#   arm64 macOS 26.6.2, clean build-wasm/ (no carried CMake cache). Check mode
+#   reported **36 cases, worst rel diff 0.000e+0** — all 660 rows bit-identical —
+#   and match-check.mjs against pristine BTK 29d43c1 also passed at 0.000e+0.
+#
+#   The BINARY changed again: 248 754 B (sha256 f7ec754f…) -> 248 792 B
+#   (sha256 c93b880f…). Same lesson as 6.0.6: codegen moved, results did not,
+#   and that was measured rather than assumed. Full gate at the same time:
+#   ctest 30/30, tsc clean, vitest 1616/90, app build green.
+#
+#   SCOPE OF THE PROOF — local Homebrew build only. CI still pins 6.0.6 via
+#   emsdk (.github/workflows/ci.yml), so the two platforms now run different
+#   compiler versions against the same vectors. Both pass; that is acceptable
+#   because the vectors are the contract, not the compiler. Bump CI when convenient.
+#
+#   No 6.0.6 keg is retained on this machine. The 6.0.2-built control artifact
+#   still exists at ~/Developer/NewUnit/emcc-baseline/ (local-only).
 
 # --- Matrix extensions (NOT oracle changes) -------------------------------
 # The oracle IDENTITY above is unchanged by these. Extending the sampled matrix

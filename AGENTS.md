@@ -220,7 +220,7 @@ than quietly routing it out of the repository.
 
 ```
 LongRange/
-├── CLAUDE.md          ← this file: project context & conventions
+├── AGENTS.md          ← this file: project context & conventions
 ├── BallisticsToolkit/ ← the engine we build on (C++/WASM + Three.js; MIT). Pristine oracle; local-only, git-ignored
 ├── GameBuild/         ← the buildable product
 │   ├── engine/        ← owned copy of the BTK C++/WASM core (extended for Bucket A); native tests
