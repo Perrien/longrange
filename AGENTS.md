@@ -1,4 +1,3 @@
-<!-- TEMP DEMO EDIT — safe to delete, just showing VSCode diffs. -->
 # LongRange — Long-Range Rifle Shooting Simulation Game
 
 A simulation-leaning game about long-range rifle shooting, built as an installable **web/PWA** in

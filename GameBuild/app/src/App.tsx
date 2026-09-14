@@ -1,4 +1,3 @@
-// TEMP DEMO EDIT — safe to delete, just showing VSCode diffs.
 // Root — the player state machine (task 1.8a, D1/D5; Settings overlay task 2.1d).
 //
 //   rangeSelect → (pick a range) → scope → (gear icon) → Settings overlay
